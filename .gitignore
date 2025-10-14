@@ -1,6 +1,6 @@
-# Project place file
-/Sovereign_V2.rbxlx
-
-# Roblox Studio lock files
-/*.rbxlx.lock
-/*.rbxl.lock
+node_modules/
+Packages/
+*.rbxlx
+*.rbxlx.lock
+*.rbxl
+*.rbxl.lock
