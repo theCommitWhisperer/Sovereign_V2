@@ -15,9 +15,6 @@
     "ServerScriptService": {
       "Server": {
         "$path": "src/server"
-      },
-      "ServerPackages": {
-        "$path": "ServerPackages"
       }
     },
 
@@ -27,6 +24,10 @@
           "$path": "src/client"
         }
       }
+    },
+
+    "StarterGui": {
+      "$path": "src/ui"
     },
 
     "Workspace": {
