@@ -44,7 +44,7 @@ function Checkbox:render()
 			FontFace = UIConfig.Font.Default,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			BackgroundTransparency = 1,
-			TextColor3 = UIConfig.Color.Primary, -- Changed from black to white
+			TextColor3 = UIConfig.Color.Primary, -- Corrected text color
 		}),
 	})
 end

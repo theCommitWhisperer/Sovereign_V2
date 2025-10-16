@@ -14,7 +14,6 @@ function Textbox:render()
 			VerticalAlignment = Enum.VerticalAlignment.Center,
 			Padding = UDim.new(0, 10),
 		}),
-		-- Input is now first to appear on the left.
 		Input = React.createElement("TextBox", {
 			Size = UDim2.new(0.3, 0, 1, 0),
 			Text = self.props.defaultText or "",
@@ -30,13 +29,12 @@ function Textbox:render()
 				end
 			end,
 		}),
-		-- Label is second to appear on the right.
 		Label = React.createElement("TextLabel", {
 			Text = self.props.Label,
 			Size = UDim2.new(0.7, 0, 1, 0),
 			TextSize = 24,
 			FontFace = UIConfig.Font.Default,
-			TextColor3 = UIConfig.Color.Primary, -- Use white text
+			TextColor3 = UIConfig.Color.Primary,
 			BackgroundTransparency = 1,
 			TextXAlignment = Enum.TextXAlignment.Right,
 		}),
