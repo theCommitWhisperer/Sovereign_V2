@@ -22,9 +22,9 @@ function Checkbox:render()
 		end,
 	}, {
 		Box = React.createElement("Frame", {
-			Size = UDim2.new(0, 24, 0, 24),
-			Position = UDim2.new(0, 0, 0.5, 0),
-			AnchorPoint = Vector2.new(0, 0.5),
+			Size = UDim2.fromOffset(24, 24),
+			Position = UDim2.new(1, 0, 0.5, 0),
+			AnchorPoint = Vector2.new(1, 0.5),
 			BackgroundColor3 = UIConfig.Color.Secondary,
 			BorderSizePixel = 0,
 		}, {
@@ -37,12 +37,12 @@ function Checkbox:render()
 			}) or nil,
 		}),
 		Label = React.createElement("TextLabel", {
-			Text = self.props.Text,
-			Size = UDim2.new(1, -30, 1, 0),
-			Position = UDim2.new(0, 30, 0, 0),
+			Text = " " .. (self.props.Text or ""), -- Add padding for alignment
+			Size = UDim2.new(1, -30, 1, 0), -- Keep size relative to parent
+			Position = UDim2.fromScale(0, 0),
 			TextSize = 24,
 			FontFace = UIConfig.Font.Default,
-			TextXAlignment = Enum.TextXAlignment.Left,
+			TextXAlignment = Enum.TextXAlignment.Right,
 			BackgroundTransparency = 1,
 			TextColor3 = UIConfig.Color.Primary, -- Corrected text color
 		}),

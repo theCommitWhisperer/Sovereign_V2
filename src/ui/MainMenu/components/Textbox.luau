@@ -31,7 +31,7 @@ function Textbox:render()
 		}),
 		Label = React.createElement("TextLabel", {
 			Text = self.props.Label,
-			Size = UDim2.new(0.7, 0, 1, 0),
+			Size = UDim2.new(0.7, -10, 1, 0),
 			TextSize = 24,
 			FontFace = UIConfig.Font.Default,
 			TextColor3 = UIConfig.Color.Primary,
