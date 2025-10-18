@@ -17,7 +17,9 @@ function Settings:init()
 		isFullScreen = true,
 		showSubtitles = false,
 		showUnitHealthBars = "Always",
+		scrollbarVisible = false,
 	})
+	self.lastScrollTime = 0
 end
 
 function Settings:render()
@@ -59,16 +61,34 @@ function Settings:render()
 
 			ContentFrame = React.createElement("ScrollingFrame", {
 				Name = "ContentFrame",
-				Size = UDim2.new(0.6, 0, 0.55, 0),
+				Size = UDim2.new(0.5, 0, 0.55, 0),
 				Position = UDim2.fromScale(0.5, 0.5),
 				AnchorPoint = Vector2.new(0.5, 0.5),
 				BackgroundTransparency = 1,
 				BorderSizePixel = 0,
 				AutomaticCanvasSize = Enum.AutomaticSize.Y,
 				ScrollBarImageColor3 = Color3.new(0, 0, 0),
-				ScrollBarImageTransparency = 0.7,
+				ScrollBarImageTransparency = self.state.scrollbarVisible and 0.7 or 1,
 				ScrollBarThickness = 6,
 				ClipsDescendants = true,
+				[React.Event.InputChanged] = function(rbx, input)
+					if
+						input.UserInputType == Enum.UserInputType.MouseWheel
+						or input.UserInputType == Enum.UserInputType.Touch
+					then
+						self.lastScrollTime = tick()
+						if not self.state.scrollbarVisible then
+							self:setState({ scrollbarVisible = true })
+						end
+
+						spawn(function()
+							task.wait(2)
+							if tick() - self.lastScrollTime >= 2 then
+								self:setState({ scrollbarVisible = false })
+							end
+						end)
+					end
+				end,
 			}, {
 				-- [FIX] Using a UIPadding object to create space for the tooltip
 				Padding = React.createElement("UIPadding", {
