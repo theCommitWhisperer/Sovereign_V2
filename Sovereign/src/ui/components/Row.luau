@@ -1,34 +1,40 @@
--- src/ui/components/Row.luau
+-- A component that displays a label and a control in a single row.
 local React = require(game.ReplicatedStorage.Packages.react)
+local UIConfig = require(script.Parent.Parent.UIConfig)
 
 local Row = React.Component:extend("Row")
 
 function Row:render()
-	local props = self.props
-	local children = props.children
-
-	local elementsToRender = {
+	return React.createElement("Frame", {
+		Name = "Row",
+		Size = self.props.Size or UDim2.new(1, 0, 0, 30),
+		BackgroundTransparency = 1,
+		LayoutOrder = self.props.LayoutOrder,
+	}, {
 		Layout = React.createElement("UIListLayout", {
 			FillDirection = Enum.FillDirection.Horizontal,
 			VerticalAlignment = Enum.VerticalAlignment.Center,
-			-- [FIX] This property spreads the items out across the full width
-			HorizontalAlignment = Enum.HorizontalAlignment.Spread,
-			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 10),
+			SortOrder = Enum.SortOrder.LayoutOrder, -- This tells the layout to respect order
 		}),
-	}
-
-	if children then
-		for _, child in pairs(children) do
-			table.insert(elementsToRender, child)
-		end
-	end
-
-	return React.createElement("Frame", {
-		Name = "Row",
-		Size = props.Size or UDim2.new(1, 0, 0, 40),
-		LayoutOrder = props.LayoutOrder,
-		BackgroundTransparency = 1,
-	}, elementsToRender)
+		Label = React.createElement("TextLabel", {
+			LayoutOrder = 1, -- The label is now explicitly first
+			Name = "Label",
+			Text = self.props.Label,
+			Size = UDim2.new(0.5, -5, 1, 0),
+			FontFace = UIConfig.Font.Default,
+			TextColor3 = UIConfig.Color.Primary,
+			TextSize = 22,
+			BackgroundTransparency = 1,
+			TextXAlignment = Enum.TextXAlignment.Left,
+		}),
+		ControlContainer = React.createElement("Frame", {
+			LayoutOrder = 2, -- The control is now explicitly second
+			Name = "ControlContainer",
+			Size = UDim2.new(0.5, -5, 1, 0),
+			BackgroundTransparency = 1,
+		}, self.props.children),
+	})
 end
 
 return Row
