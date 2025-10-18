@@ -6,13 +6,21 @@ local UIConfig = require(script.Parent.Parent.Parent.UIConfig)
 local Button = require(components.Button)
 local Checkbox = require(components.Checkbox)
 local Textbox = require(components.Textbox)
+local Slider = require(components.Slider)
+local Slider = require(components.Slider)
 local Settings = React.Component:extend("Settings")
 
 function Settings:init()
-	self:setState({ musicVolume = "100", soundEffectsVolume = "100", isFullScreen = true, showSubtitles = false })
+	self:setState({ musicVolume = 100, soundEffectsVolume = 100, isFullScreen = true, showSubtitles = false })
 end
 
 function Settings:render()
+	print(
+		"Settings Log: Rendering with state - musicVolume:",
+		self.state.musicVolume,
+		"soundEffectsVolume:",
+		self.state.soundEffectsVolume
+	)
 	local navigate = self.props.navigate
 	return React.createElement("ScreenGui", { Name = "SettingsGui", ZIndexBehavior = Enum.ZIndexBehavior.Sibling }, {
 		Background = React.createElement("Frame", {
@@ -76,13 +84,15 @@ function Settings:render()
 						BackgroundTransparency = 1,
 						TextXAlignment = Enum.TextXAlignment.Left,
 					}),
-					Input = React.createElement(Textbox, {
-						Size = UDim2.new(0.3, 0, 1, 0),
+					Input = React.createElement(Slider, {
+						Size = UDim2.new(0, 250, 0, 4),
 						Position = UDim2.fromScale(1, 0.5),
 						AnchorPoint = Vector2.new(1, 0.5),
-						Text = self.state.musicVolume,
-						onTextChanged = function(newText)
-							self:setState({ musicVolume = newText })
+						min = 0,
+						max = 100,
+						value = self.state.musicVolume,
+						onValueChanged = function(newValue)
+							self:setState({ musicVolume = newValue })
 						end,
 					}),
 				}),
@@ -104,13 +114,15 @@ function Settings:render()
 						BackgroundTransparency = 1,
 						TextXAlignment = Enum.TextXAlignment.Left,
 					}),
-					Input = React.createElement(Textbox, {
-						Size = UDim2.new(0.3, 0, 1, 0),
+					Input = React.createElement(Slider, {
+						Size = UDim2.new(0, 250, 0, 4),
 						Position = UDim2.fromScale(1, 0.5),
 						AnchorPoint = Vector2.new(1, 0.5),
-						Text = self.state.soundEffectsVolume,
-						onTextChanged = function(newText)
-							self:setState({ soundEffectsVolume = newText })
+						min = 0,
+						max = 100,
+						value = self.state.soundEffectsVolume,
+						onValueChanged = function(newValue)
+							self:setState({ soundEffectsVolume = newValue })
 						end,
 					}),
 				}),

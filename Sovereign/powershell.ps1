@@ -1,150 +1,113 @@
 # --- IMPORTANT: UPDATE THIS PATH! ---
-$projectRoot = "C:\Users\point\Documents\repos\Sovereign"
+$projectRoot = "C:\Users\point\Documents\repos\temp\Sovereign_V2\Sovereign\"
 
 # --- Define Paths ---
-$uiDir = Join-Path $projectRoot "src\ui"
-$appFile = Join-Path $uiDir "App.luau"
-$routerFile = Join-Path $uiDir "Router.luau"
-$mainMenuFile = Join-Path $uiDir "screens\MainMenu\MainMenu.luau"
+$componentsDir = Join-Path $projectRoot "src\ui\components"
+$sliderFile = Join-Path $componentsDir "Slider.luau"
+$settingsFile = Join-Path $projectRoot "src\ui\screens\Settings\Settings.luau"
 
-# This is the UI entry point script. We need to create it.
-$mainClientFile = Join-Path $uiDir "main.client.luau"
-
-# --- 1. Create the main.client.luau entry point script ---
-Set-Content -Path $mainClientFile -Value @"
--- This script is the entry point for the entire UI
-print("main.client.luau: Script started.")
-
+# --- 1. Create the new Slider.luau component ---
+Set-Content -Path $sliderFile -Value @"
+-- A reusable slider component for things like volume control.
 local React = require(game.ReplicatedStorage.Packages.react)
-local ReactRoblox = require(game.ReplicatedStorage.Packages["react-roblox"])
-local App = require(script.Parent.App)
+local UIConfig = require(script.Parent.Parent.UIConfig)
 
-local player = game:GetService("Players").LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
+local Slider = React.Component:extend("Slider")
 
-print("main.client.luau: PlayerGui found.")
-
--- This ScreenGui will host the Roact application
-local rootGui = Instance.new("ScreenGui")
-rootGui.Name = "SovereignApp"
-rootGui.Parent = playerGui
-
-print("main.client.luau: SovereignApp ScreenGui created.")
-
-local root = ReactRoblox.createRoot(rootGui)
-print("main.client.luau: Roact root created. Rendering App...")
-
-root:render(React.createElement(App))
-
-print("main.client.luau: App rendering process initiated.")
-
-script.Destroying:Connect(function()
-	root:unmount()
-end)
-"@
-
-# --- 2. Add logging to App.luau ---
-Set-Content -Path $appFile -Value @"
-local React = require(game.ReplicatedStorage.Packages.react)
-local Router = require(script.Parent.Router)
-
--- Updated paths to the new 'screens' directory
-local MainMenu = require(script.Parent.screens.MainMenu.MainMenu)
-local Settings = require(script.Parent.screens.Settings.Settings)
-local Lobby = require(script.Parent.screens.Lobby.Lobby)
-local HUD = require(script.Parent.screens.HUD.HUD)
-local VictoryScreen = require(script.Parent.screens.PostGame.VictoryScreen)
-local DefeatScreen = require(script.Parent.screens.PostGame.DefeatScreen)
-
-local App = React.Component:extend("App")
-
-function App:init()
-    print("App.luau: init() called.")
-    self:setState({
-        route = "mainMenu", -- Default screen
-    })
-
-    self.routes = {
-        mainMenu = MainMenu,
-        settings = Settings,
-        lobby = Lobby,
-        hud = HUD,
-        victory = VictoryScreen,
-        defeat = DefeatScreen,
+function Slider:init()
+    self.state = {
+        value = self.props.value or 50,
     }
+    self.frameRef = React.createRef()
+    self.isDragging = false
 
-    self.navigate = function(route)
-        print("App.luau: navigate() called with route:", route)
-        self:setState({ route = route })
+    self.onDrag = function(input)
+        if self.isDragging and self.frameRef.current then
+            local frame = self.frameRef.current
+            local relativeX = input.Position.X - frame.AbsolutePosition.X
+            local percentage = math.clamp(relativeX / frame.AbsoluteSize.X, 0, 1)
+            local newValue = math.floor(self.props.min + (self.props.max - self.props.min) * percentage)
+
+            self:setState({ value = newValue })
+            if self.props.onValueChanged then
+                self.props.onValueChanged(newValue)
+            end
+        end
+    end
+
+    self.onRelease = function()
+        self.isDragging = false
     end
 end
 
-function App:render()
-    print("App.luau: render() called. Current route is:", self.state.route)
-    return React.createElement(Router, {
-        route = self.state.route,
-        routes = self.routes,
-        routeProps = {
-            navigate = self.navigate,
-        },
+function Slider:render()
+    local value = self.state.value
+    local min = self.props.min
+    local max = self.props.max
+    local percentage = (value - min) / (max - min)
+
+    return React.createElement("Frame", {
+        Name = "Slider",
+        Size = self.props.Size or UDim2.new(1, 0, 0, 20),
+        Position = self.props.Position,
+        AnchorPoint = self.props.AnchorPoint,
+        LayoutOrder = self.props.LayoutOrder,
+        BackgroundTransparency = self.props.BackgroundTransparency or 0,
+        BackgroundColor3 = self.props.BackgroundColor3 or UIConfig.Color.Secondary,
+        [React.Ref] = self.frameRef,
+        [React.Event.MouseMoved] = self.onDrag,
+        [React.Event.MouseButton1Up] = self.onRelease,
+    }, {
+        Progress = React.createElement("Frame", {
+            Name = "Progress",
+            Size = UDim2.new(percentage, 0, 1, 0),
+            BackgroundColor3 = UIConfig.Color.PrimaryButton,
+            BorderSizePixel = 0,
+        }),
+        Handle = React.createElement("TextButton", {
+            Name = "Handle",
+            Size = UDim2.new(0, 20, 1, 10),
+            Position = UDim2.new(percentage, 0, 0.5, 0),
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Text = "",
+            BackgroundColor3 = UIConfig.Color.Primary,
+            [React.Event.MouseButton1Down] = function()
+                self.isDragging = true
+            end,
+        }),
+        ValueLabel = React.createElement("TextLabel", {
+            Name = "ValueLabel",
+            Size = UDim2.new(0, 50, 1, 0),
+            Position = UDim2.new(1, 10, 0.5, 0),
+            AnchorPoint = Vector2.new(0, 0.5),
+            BackgroundTransparency = 1,
+            Text = tostring(value),
+            TextColor3 = UIConfig.Color.Primary,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            FontFace = UIConfig.Font.Default,
+            TextSize = 24,
+        }),
     })
 end
 
-return App
+return Slider
 "@
 
-# --- 3. Add logging to Router.luau ---
-Set-Content -Path $routerFile -Value @"
-local React = require(game.ReplicatedStorage.Packages.react)
+# --- 2. Update Settings.luau to use the new Slider component ---
+$settingsContent = Get-Content -Raw -Path $settingsFile
 
-local Router = React.Component:extend("Router")
+# Add the Slider component to the list of required components
+$settingsContent = $settingsContent -replace 'local Textbox = require\(components.Textbox\)', "local Textbox = require(components.Textbox)`nlocal Slider = require(components.Slider)"
 
-function Router:render()
-    print("Router.luau: render() called.")
-    local route = self.props.route
-    local routes = self.props.routes
+# Replace the Music Volume Textbox with the Slider
+$settingsContent = $settingsContent -replace 'Input = React.createElement\(Textbox, {\s*Size = UDim2.new\(0.3, 0, 1, 0\),\s*Position = UDim2.fromScale\(1, 0.5\),\s*AnchorPoint = Vector2.new\(1, 0.5\),\s*Text = self.state.musicVolume,\s*onTextChanged = function\(newText\)\s*self:setState\({ musicVolume = newText }\)\s*end,\s*}\)', "Input = React.createElement(Slider, {`n                        Size = UDim2.new(0.3, 0, 1, 0),`n                        Position = UDim2.fromScale(1, 0.5),`n                        AnchorPoint = Vector2.new(1, 0.5),`n                        min = 0,`n                        max = 100,`n                        value = self.state.musicVolume,`n                        onValueChanged = function(newValue)`n                            self:setState({ musicVolume = newValue })`n                        end,`n                    })"
 
-    print("Router.luau: Attempting to find component for route:", route)
+# Replace the Sound Effects Volume Textbox with the Slider
+$settingsContent = $settingsContent -replace 'Input = React.createElement\(Textbox, {\s*Size = UDim2.new\(0.3, 0, 1, 0\),\s*Position = UDim2.fromScale\(1, 0.5\),\s*AnchorPoint = Vector2.new\(1, 0.5\),\s*Text = self.state.soundEffectsVolume,\s*onTextChanged = function\(newText\)\s*self:setState\({ soundEffectsVolume = newText }\)\s*end,\s*}\)', "Input = React.createElement(Slider, {`n                        Size = UDim2.new(0.3, 0, 1, 0),`n                        Position = UDim2.fromScale(1, 0.5),`n                        AnchorPoint = Vector2.new(1, 0.5),`n                        min = 0,`n                        max = 100,`n                        value = self.state.soundEffectsVolume,`n                        onValueChanged = function(newValue)`n                            self:setState({ soundEffectsVolume = newValue })`n                        end,`n                    })"
 
-    if routes[route] then
-        print("Router.luau: Found component for route. Rendering now.")
-        return React.createElement(routes[route], self.props.routeProps)
-    else
-        warn("Router.luau: No component found for route:", route, "- Rendering nothing.")
-        return nil
-    end
-end
+# Also, update the initial state to use numbers instead of strings for the volumes
+$settingsContent = $settingsContent -replace 'self:setState\({ musicVolume = "100", soundEffectsVolume = "100", isFullScreen = true, showSubtitles = false }\)', "self:setState({ musicVolume = 100, soundEffectsVolume = 100, isFullScreen = true, showSubtitles = false })"
 
-return Router
-"@
+Set-Content -Path $settingsFile -Value $settingsContent
 
-# --- 4. Add logging to MainMenu.luau ---
-Set-Content -Path $mainMenuFile -Value @"
-local React = require(game.ReplicatedStorage.Packages.react)
-local UIConfig = require(script.Parent.Parent.Parent.UIConfig)
-local Title = require(script.Parent.Parent.Parent.components.Title)
-local Button = require(script.Parent.Parent.Parent.components.Button)
-
-local MainMenu = React.Component:extend("MainMenu")
-
-function MainMenu:render()
-	print("MainMenu.luau: render() called. UI should be visible.")
-	return React.createElement("ScreenGui", {
-		Name = "MainMenuGui",
-        -- Rest of the component code...
-	})
-end
-
-return MainMenu
--- Note: To keep the script brief, the full render function is not included here,
--- but the script will correctly inject the print statement into your existing file.
--- The provided manual instructions below contain the complete file content.
-"@
-# The PowerShell command above for MainMenu.luau is simplified for brevity.
-# For full accuracy, here is the complete Set-Content command to replace the one above.
-$mainMenuContent = Get-Content -Raw -Path $mainMenuFile
-$newMainMenuContent = $mainMenuContent -replace 'function MainMenu:render\(\)', "function MainMenu:render()\n\tprint(`"MainMenu.luau: render() called. UI should be visible.`")"
-Set-Content -Path $mainMenuFile -Value $newMainMenuContent
-
-
-Write-Host "Added logging statements to key UI files."
+Write-Host "Successfully created the Slider component and updated the Settings screen!"
