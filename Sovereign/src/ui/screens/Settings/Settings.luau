@@ -4,10 +4,9 @@ local React = require(game.ReplicatedStorage.Packages.react)
 local components = script.Parent.Parent.Parent.components
 local UIConfig = require(script.Parent.Parent.Parent.UIConfig)
 local Button = require(components.Button)
-local Checkbox = require(components.Checkbox)
-local Textbox = require(components.Textbox)
 local Slider = require(components.Slider)
-local Slider = require(components.Slider)
+local Toggle = require(components.Toggle) -- [ADD] Require the new Toggle component
+
 local Settings = React.Component:extend("Settings")
 
 function Settings:init()
@@ -15,12 +14,6 @@ function Settings:init()
 end
 
 function Settings:render()
-	print(
-		"Settings Log: Rendering with state - musicVolume:",
-		self.state.musicVolume,
-		"soundEffectsVolume:",
-		self.state.soundEffectsVolume
-	)
 	local navigate = self.props.navigate
 	return React.createElement("ScreenGui", { Name = "SettingsGui", ZIndexBehavior = Enum.ZIndexBehavior.Sibling }, {
 		Background = React.createElement("Frame", {
@@ -50,7 +43,6 @@ function Settings:render()
 				CanvasSize = UDim2.new(0, 0, 0, 0),
 				ScrollBarImageColor3 = Color3.new(0, 0, 0),
 			}, {
-				-- You can adjust the padding between setting rows here
 				Layout = React.createElement("UIListLayout", {
 					SortOrder = Enum.SortOrder.LayoutOrder,
 					Padding = UDim.new(0, 10),
@@ -127,6 +119,7 @@ function Settings:render()
 					}),
 				}),
 
+				-- [CHANGE] Swapped Checkbox for the new Toggle component
 				FullScreen = React.createElement("Frame", {
 					Name = "FullScreenRow",
 					Size = UDim2.new(1, 0, 0, 40),
@@ -144,16 +137,18 @@ function Settings:render()
 						BackgroundTransparency = 1,
 						TextXAlignment = Enum.TextXAlignment.Left,
 					}),
-					Input = React.createElement(Checkbox, {
+					Input = React.createElement(Toggle, {
+						Size = UDim2.new(0, 120, 1, 0), -- Set a fixed width for the toggle
 						Position = UDim2.fromScale(1, 0.5),
 						AnchorPoint = Vector2.new(1, 0.5),
-						checked = self.state.isFullScreen,
+						value = self.state.isFullScreen,
 						onValueChanged = function(newValue)
 							self:setState({ isFullScreen = newValue })
 						end,
 					}),
 				}),
 
+				-- [CHANGE] Swapped Checkbox for the new Toggle component
 				ShowSubtitles = React.createElement("Frame", {
 					Name = "ShowSubtitlesRow",
 					Size = UDim2.new(1, 0, 0, 40),
@@ -171,17 +166,17 @@ function Settings:render()
 						BackgroundTransparency = 1,
 						TextXAlignment = Enum.TextXAlignment.Left,
 					}),
-					Input = React.createElement(Checkbox, {
+					Input = React.createElement(Toggle, {
+						Size = UDim2.new(0, 120, 1, 0), -- Set a fixed width for the toggle
 						Position = UDim2.fromScale(1, 0.5),
 						AnchorPoint = Vector2.new(1, 0.5),
-						checked = self.state.showSubtitles,
+						value = self.state.showSubtitles,
 						onValueChanged = function(newValue)
 							self:setState({ showSubtitles = newValue })
 						end,
 					}),
 				}),
 
-				-- [NEW] SPACER: Adjust the '30' to change the space above the back button
 				ButtonSpacer = React.createElement("Frame", {
 					Name = "ButtonSpacer",
 					Size = UDim2.new(1, 0, 0, 30),
