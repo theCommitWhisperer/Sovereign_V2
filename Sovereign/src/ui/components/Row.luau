@@ -23,8 +23,8 @@ function Row:render()
 			Text = self.props.Label,
 			Size = UDim2.new(0.5, -5, 1, 0),
 			FontFace = UIConfig.Font.Default,
-			TextColor3 = UIConfig.Color.Primary,
-			TextSize = 22,
+			TextColor3 = self.props.TextColor3 or UIConfig.Color.Primary, -- Use prop or default
+			TextSize = self.props.TextSize or 22, -- Use prop or default
 			BackgroundTransparency = 1,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
