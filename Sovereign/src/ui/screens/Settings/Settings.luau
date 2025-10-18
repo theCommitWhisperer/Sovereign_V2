@@ -5,12 +5,19 @@ local components = script.Parent.Parent.Parent.components
 local UIConfig = require(script.Parent.Parent.Parent.UIConfig)
 local Button = require(components.Button)
 local Slider = require(components.Slider)
-local Toggle = require(components.Toggle) -- [ADD] Require the new Toggle component
+local Toggle = require(components.Toggle)
 
 local Settings = React.Component:extend("Settings")
 
 function Settings:init()
-	self:setState({ musicVolume = 100, soundEffectsVolume = 100, isFullScreen = true, showSubtitles = false })
+	self:setState({
+		masterVolume = 100,
+		musicVolume = 100,
+		soundEffectsVolume = 100,
+		isFullScreen = true,
+		showSubtitles = false,
+		showUnitHealthBars = "Always",
+	})
 end
 
 function Settings:render()
@@ -25,59 +32,134 @@ function Settings:render()
 		}),
 		ScrollImage = React.createElement("ImageLabel", {
 			Name = "ScrollImage",
-			Size = UDim2.new(0.5, 0, 0.85, 0),
-			Position = UDim2.new(0.5, 0, 0.05, 0),
-			AnchorPoint = Vector2.new(0.5, 0),
+			Size = UDim2.new(0.6, 0, 0.9, 0),
+			Position = UDim2.fromScale(0.5, 0.5),
+			AnchorPoint = Vector2.new(0.5, 0.5),
 			Image = "rbxassetid://97541657322605",
 			ScaleType = Enum.ScaleType.Stretch,
 			BackgroundTransparency = 1,
 			ZIndex = 2,
 		}, {
+			Header = React.createElement("Frame", {
+				Name = "Header",
+				Size = UDim2.new(0.5, 0, 0.15, 0),
+				Position = UDim2.fromScale(0.5, 0.086),
+				AnchorPoint = Vector2.new(0.5, 0),
+				BackgroundTransparency = 1,
+			}, {
+				Title = React.createElement("TextLabel", {
+					Text = "Settings",
+					Size = UDim2.fromScale(1, 1),
+					TextSize = 42,
+					FontFace = UIConfig.Font.Title,
+					BackgroundTransparency = 1,
+					TextColor3 = UIConfig.Color.Primary,
+				}),
+			}),
+
 			ContentFrame = React.createElement("ScrollingFrame", {
 				Name = "ContentFrame",
-				Size = UDim2.new(0.5, 0, 0.5, 0),
+				Size = UDim2.new(0.6, 0, 0.55, 0),
 				Position = UDim2.fromScale(0.5, 0.5),
 				AnchorPoint = Vector2.new(0.5, 0.5),
 				BackgroundTransparency = 1,
 				BorderSizePixel = 0,
-				CanvasSize = UDim2.new(0, 0, 0, 0),
+				AutomaticCanvasSize = Enum.AutomaticSize.Y,
 				ScrollBarImageColor3 = Color3.new(0, 0, 0),
+				ScrollBarImageTransparency = 0.7,
+				ScrollBarThickness = 6,
+				ClipsDescendants = true,
 			}, {
+				-- [FIX] Using a UIPadding object to create space for the tooltip
+				Padding = React.createElement("UIPadding", {
+					PaddingTop = UDim.new(0, 30),
+				}),
 				Layout = React.createElement("UIListLayout", {
 					SortOrder = Enum.SortOrder.LayoutOrder,
-					Padding = UDim.new(0, 10),
+					Padding = UDim.new(0, 15), -- This now only controls space between items
 					HorizontalAlignment = Enum.HorizontalAlignment.Center,
 				}),
 
-				Title = React.createElement("TextLabel", {
-					Text = "Settings",
-					Size = UDim2.new(1, 0, 0, 50),
-					TextSize = 42,
-					FontFace = UIConfig.Font.Title,
+				Keybindings = React.createElement("Frame", {
+					Name = "KeybindingsRow",
+					Size = UDim2.new(0.8, 0, 0, 40),
+					BackgroundTransparency = 1,
 					LayoutOrder = 1,
-					BackgroundTransparency = 1,
-					TextColor3 = UIConfig.Color.Primary,
-				}),
-
-				MusicVolume = React.createElement("Frame", {
-					Name = "MusicVolumeRow",
-					Size = UDim2.new(1, 0, 0, 40),
-					BackgroundTransparency = 1,
-					LayoutOrder = 3,
 				}, {
 					Label = React.createElement("TextLabel", {
-						Text = "Music Volume:",
-						Size = UDim2.new(0.7, 0, 1, 0),
+						Text = "Keybindings",
+						Size = UDim2.new(0.5, 0, 1, 0),
 						Position = UDim2.fromScale(0, 0.5),
 						AnchorPoint = Vector2.new(0, 0.5),
-						TextSize = 24,
+						TextSize = 28,
+						FontFace = UIConfig.Font.Default,
+						TextColor3 = UIConfig.Color.Primary,
+						BackgroundTransparency = 1,
+						TextXAlignment = Enum.TextXAlignment.Left,
+					}),
+					Input = React.createElement(Button, {
+						Name = "KeybindingsButton",
+						Text = "Edit",
+						TextSize = 28,
+						Size = UDim2.new(0, 150, 1, 0),
+						Position = UDim2.fromScale(1, 0.5),
+						AnchorPoint = Vector2.new(1, 0.5),
+						BackgroundTransparency = 1,
+						OnClick = function()
+							if navigate then
+								navigate("keybindings")
+							end
+						end,
+					}),
+				}),
+				MasterVolume = React.createElement("Frame", {
+					Name = "MasterVolumeRow",
+					Size = UDim2.new(0.8, 0, 0, 40),
+					BackgroundTransparency = 1,
+					LayoutOrder = 2,
+				}, {
+					Label = React.createElement("TextLabel", {
+						Text = "Master Volume:",
+						Size = UDim2.new(0.5, 0, 1, 0),
+						Position = UDim2.fromScale(0, 0.5),
+						AnchorPoint = Vector2.new(0, 0.5),
+						TextSize = 28,
 						FontFace = UIConfig.Font.Default,
 						TextColor3 = UIConfig.Color.Primary,
 						BackgroundTransparency = 1,
 						TextXAlignment = Enum.TextXAlignment.Left,
 					}),
 					Input = React.createElement(Slider, {
-						Size = UDim2.new(0, 250, 0, 4),
+						Size = UDim2.new(0, 200, 0, 4),
+						Position = UDim2.fromScale(1, 0.5),
+						AnchorPoint = Vector2.new(1, 0.5),
+						min = 0,
+						max = 100,
+						value = self.state.masterVolume,
+						onValueChanged = function(newValue)
+							self:setState({ masterVolume = newValue })
+						end,
+					}),
+				}),
+				MusicVolume = React.createElement("Frame", {
+					Name = "MusicVolumeRow",
+					Size = UDim2.new(0.8, 0, 0, 40),
+					BackgroundTransparency = 1,
+					LayoutOrder = 3,
+				}, {
+					Label = React.createElement("TextLabel", {
+						Text = "Music Volume:",
+						Size = UDim2.new(0.5, 0, 1, 0),
+						Position = UDim2.fromScale(0, 0.5),
+						AnchorPoint = Vector2.new(0, 0.5),
+						TextSize = 28,
+						FontFace = UIConfig.Font.Default,
+						TextColor3 = UIConfig.Color.Primary,
+						BackgroundTransparency = 1,
+						TextXAlignment = Enum.TextXAlignment.Left,
+					}),
+					Input = React.createElement(Slider, {
+						Size = UDim2.new(0, 200, 0, 4),
 						Position = UDim2.fromScale(1, 0.5),
 						AnchorPoint = Vector2.new(1, 0.5),
 						min = 0,
@@ -88,26 +170,25 @@ function Settings:render()
 						end,
 					}),
 				}),
-
 				SoundEffectsVolume = React.createElement("Frame", {
 					Name = "SoundEffectsVolumeRow",
-					Size = UDim2.new(1, 0, 0, 40),
+					Size = UDim2.new(0.8, 0, 0, 40),
 					BackgroundTransparency = 1,
 					LayoutOrder = 4,
 				}, {
 					Label = React.createElement("TextLabel", {
 						Text = "Sound Effects Volume:",
-						Size = UDim2.new(0.7, 0, 1, 0),
+						Size = UDim2.new(0.5, 0, 1, 0),
 						Position = UDim2.fromScale(0, 0.5),
 						AnchorPoint = Vector2.new(0, 0.5),
-						TextSize = 24,
+						TextSize = 28,
 						FontFace = UIConfig.Font.Default,
 						TextColor3 = UIConfig.Color.Primary,
 						BackgroundTransparency = 1,
 						TextXAlignment = Enum.TextXAlignment.Left,
 					}),
 					Input = React.createElement(Slider, {
-						Size = UDim2.new(0, 250, 0, 4),
+						Size = UDim2.new(0, 200, 0, 4),
 						Position = UDim2.fromScale(1, 0.5),
 						AnchorPoint = Vector2.new(1, 0.5),
 						min = 0,
@@ -118,27 +199,25 @@ function Settings:render()
 						end,
 					}),
 				}),
-
-				-- [CHANGE] Swapped Checkbox for the new Toggle component
 				FullScreen = React.createElement("Frame", {
 					Name = "FullScreenRow",
-					Size = UDim2.new(1, 0, 0, 40),
+					Size = UDim2.new(0.8, 0, 0, 40),
 					BackgroundTransparency = 1,
 					LayoutOrder = 5,
 				}, {
 					Label = React.createElement("TextLabel", {
 						Text = "Full Screen",
-						Size = UDim2.new(0.8, 0, 1, 0),
+						Size = UDim2.new(0.5, 0, 1, 0),
 						Position = UDim2.fromScale(0, 0.5),
 						AnchorPoint = Vector2.new(0, 0.5),
-						TextSize = 24,
+						TextSize = 28,
 						FontFace = UIConfig.Font.Default,
 						TextColor3 = UIConfig.Color.Primary,
 						BackgroundTransparency = 1,
 						TextXAlignment = Enum.TextXAlignment.Left,
 					}),
 					Input = React.createElement(Toggle, {
-						Size = UDim2.new(0, 120, 1, 0), -- Set a fixed width for the toggle
+						Size = UDim2.new(0, 150, 1, 0),
 						Position = UDim2.fromScale(1, 0.5),
 						AnchorPoint = Vector2.new(1, 0.5),
 						value = self.state.isFullScreen,
@@ -147,27 +226,25 @@ function Settings:render()
 						end,
 					}),
 				}),
-
-				-- [CHANGE] Swapped Checkbox for the new Toggle component
 				ShowSubtitles = React.createElement("Frame", {
 					Name = "ShowSubtitlesRow",
-					Size = UDim2.new(1, 0, 0, 40),
+					Size = UDim2.new(0.8, 0, 0, 40),
 					BackgroundTransparency = 1,
 					LayoutOrder = 6,
 				}, {
 					Label = React.createElement("TextLabel", {
 						Text = "Show Subtitles",
-						Size = UDim2.new(0.8, 0, 1, 0),
+						Size = UDim2.new(0.5, 0, 1, 0),
 						Position = UDim2.fromScale(0, 0.5),
 						AnchorPoint = Vector2.new(0, 0.5),
-						TextSize = 24,
+						TextSize = 28,
 						FontFace = UIConfig.Font.Default,
 						TextColor3 = UIConfig.Color.Primary,
 						BackgroundTransparency = 1,
 						TextXAlignment = Enum.TextXAlignment.Left,
 					}),
 					Input = React.createElement(Toggle, {
-						Size = UDim2.new(0, 120, 1, 0), -- Set a fixed width for the toggle
+						Size = UDim2.new(0, 150, 1, 0),
 						Position = UDim2.fromScale(1, 0.5),
 						AnchorPoint = Vector2.new(1, 0.5),
 						value = self.state.showSubtitles,
@@ -176,21 +253,53 @@ function Settings:render()
 						end,
 					}),
 				}),
-
-				ButtonSpacer = React.createElement("Frame", {
-					Name = "ButtonSpacer",
-					Size = UDim2.new(1, 0, 0, 30),
+				ShowUnitHealthBars = React.createElement("Frame", {
+					Name = "ShowUnitHealthBarsRow",
+					Size = UDim2.new(0.8, 0, 0, 40),
 					BackgroundTransparency = 1,
 					LayoutOrder = 7,
+				}, {
+					Label = React.createElement("TextLabel", {
+						Text = "Show Unit Health Bars",
+						Size = UDim2.new(0.5, 0, 1, 0),
+						Position = UDim2.fromScale(0, 0.5),
+						AnchorPoint = Vector2.new(0, 0.5),
+						TextSize = 28,
+						FontFace = UIConfig.Font.Default,
+						TextColor3 = UIConfig.Color.Primary,
+						BackgroundTransparency = 1,
+						TextXAlignment = Enum.TextXAlignment.Left,
+					}),
+					Input = React.createElement(Toggle, {
+						Size = UDim2.new(0, 150, 1, 0),
+						Position = UDim2.fromScale(1, 0.5),
+						AnchorPoint = Vector2.new(1, 0.5),
+						value = self.state.showUnitHealthBars,
+						onValueChanged = function(newValue)
+							local options = { "Always", "When Damaged", "Never" }
+							local currentIndex = table.find(options, self.state.showUnitHealthBars) or 1
+							local nextIndex = (currentIndex % #options) + 1
+							self:setState({ showUnitHealthBars = options[nextIndex] })
+						end,
+					}),
 				}),
+			}),
 
+			Footer = React.createElement("Frame", {
+				Name = "Footer",
+				Size = UDim2.new(0.5, 0, 0.15, 0),
+				Position = UDim2.fromScale(0.5, 0.78),
+				AnchorPoint = Vector2.new(0.5, 0),
+				BackgroundTransparency = 1,
+			}, {
 				BackButton = React.createElement(Button, {
 					Name = "BackButton",
 					Text = "Back",
-					LayoutOrder = 8,
+					Size = UDim2.new(0, 200, 0, 50),
+					Position = UDim2.fromScale(0.5, 0.5),
+					AnchorPoint = Vector2.new(0.5, 0.5),
 					BackgroundTransparency = 1,
 					TextSize = 32,
-					Size = UDim2.new(0, 200, 0, 50),
 					OnClick = function()
 						if navigate then
 							navigate("mainMenu")
