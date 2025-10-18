@@ -1,3 +1,4 @@
+-- thecommitwhisperer/sovereign_v2/Sovereign_V2-a5a2c87f4791d0aeedd3f50cf89de31685a4f9fb/Sovereign/src/ui/UIConfig.luau
 local UIConfig = {
 	Font = {
 		Default = Font.new("rbxasset://fonts/families/IndieFlower.json"),
@@ -31,6 +32,10 @@ local UIConfig = {
 		PlayerListTitleSize = 28,
 		PlayerListNameColor = Color3.fromRGB(220, 220, 220),
 		PlayerListNameSize = 20,
+		AddAIButtonTextColor = Color3.fromRGB(255, 255, 255),
+		AddAIButtonTextSize = 22,
+		RemoveButtonTextColor = Color3.fromRGB(255, 100, 100),
+		RemoveButtonTextSize = 18,
 
 		-- Map Preview & Selector
 		MapPreviewTitleColor = Color3.fromRGB(255, 255, 255),

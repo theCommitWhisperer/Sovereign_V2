@@ -1,3 +1,4 @@
+-- thecommitwhisperer/sovereign_v2/Sovereign_V2-a5a2c87f4791d0aeedd3f50cf8nde31685a4f9fb/Sovereign/src/ui/screens/Lobby/Lobby.luau
 local React = require(game.ReplicatedStorage.Packages.react)
 local UIConfig = require(script.Parent.Parent.Parent.UIConfig)
 local Button = require(script.Parent.Parent.Parent.components.Button)
@@ -10,8 +11,13 @@ local Lobby = React.Component:extend("Lobby")
 
 function Lobby:init()
 	self.state = {
+		players = {
+			{ name = "Player1", isAI = false },
+		},
+		maps = { "Default Map", "Forest Lands", "Desert Sands", "Frozen Peaks" },
 		selectedMap = "Default Map",
 		randomEvents = true,
+		legendsMode = false, -- New setting for "Legends Mode"
 		startingGold = "Standard",
 		peaceTime = "5 minutes",
 		honor = "Standard",
@@ -24,12 +30,59 @@ function Lobby:init()
 		gameSpeed = "Normal",
 		victoryCondition = "Conquest",
 	}
+
+	self.addAI = function()
+		if #self.state.players < 4 then
+			local newPlayers = table.clone(self.state.players)
+			table.insert(newPlayers, { name = "AI_Opponent" .. #newPlayers, isAI = true })
+			self:setState({ players = newPlayers })
+		end
+	end
+
+	self.removePlayer = function(playerToRemove)
+		local newPlayers = {}
+		for _, player in ipairs(self.state.players) do
+			if player ~= playerToRemove then
+				table.insert(newPlayers, player)
+			end
+		end
+		self:setState({ players = newPlayers })
+	end
+
+	self.selectMap = function(mapName)
+		self:setState({ selectedMap = mapName })
+	end
 end
 
 function Lobby:render()
 	local navigate = self.props.navigate
 	local lobbyConfig = UIConfig.LobbyPage
 	local paddingConfig = lobbyConfig.Padding
+
+	-- Create the map list elements
+	local mapListChildren = {
+		Layout = React.createElement("UIListLayout", {
+			FillDirection = Enum.FillDirection.Vertical,
+			HorizontalAlignment = Enum.HorizontalAlignment.Center,
+			Padding = UDim.new(0, 5),
+		}),
+	}
+	for _, mapName in ipairs(self.state.maps) do
+		table.insert(
+			mapListChildren,
+			React.createElement("TextButton", {
+				key = mapName,
+				Text = mapName,
+				Size = UDim2.new(1, 0, 0, 40),
+				BackgroundColor3 = self.state.selectedMap == mapName and lobbyConfig.MapSelectorBackgroundColor
+					or Color3.fromRGB(50, 50, 50),
+				TextColor3 = lobbyConfig.MapSelectorTextColor,
+				[React.Event.MouseButton1Click] = function()
+					self.selectMap(mapName)
+				end,
+			})
+		)
+	end
 
 	return React.createElement("Frame", {
 		Name = "LobbyScreen",
@@ -54,17 +107,16 @@ function Lobby:render()
 			UIListLayout = React.createElement("UIListLayout", {
 				FillDirection = Enum.FillDirection.Horizontal,
 				HorizontalAlignment = Enum.HorizontalAlignment.Center,
-				VerticalAlignment = Enum.VerticalAlignment.Center,
-				Padding = UDim.new(0.02, 0), -- Spacing between Left and Right panels
+				VerticalAlignment = Enum.VerticalAlignment.Top,
+				Padding = UDim.new(0.02, 0),
 			}),
 
 			-- ## Left Panel ##
 			LeftPanel = React.createElement("Frame", {
 				Name = "LeftPanel",
 				Size = UDim2.new(0.3, 0, 1, 0),
-				BackgroundTransparency = lobbyConfig.PanelBackgroundTransparency,
 				BackgroundColor3 = lobbyConfig.PanelBackgroundColor,
-				BorderSizePixel = 0,
+				BackgroundTransparency = lobbyConfig.PanelBackgroundTransparency,
 			}, {
 				UIPadding = React.createElement("UIPadding", {
 					PaddingTop = paddingConfig.LeftPanelSections.Top,
@@ -76,24 +128,27 @@ function Lobby:render()
 					FillDirection = Enum.FillDirection.Vertical,
 					HorizontalAlignment = Enum.HorizontalAlignment.Center,
 					SortOrder = Enum.SortOrder.LayoutOrder,
-					Padding = UDim.new(0.02, 0), -- Spacing between sections in left panel
+					Padding = UDim.new(0, 20),
 				}),
 				MapPreview = React.createElement(MapPreview, {
 					LayoutOrder = 1,
 					mapName = self.state.selectedMap,
-					Size = UDim2.new(0.9, 0, 0.4, 0),
+					Size = UDim2.new(1, 0, 0.4, 0),
 				}),
 				MapSelectorFrame = React.createElement("Frame", {
 					LayoutOrder = 2,
 					Name = "MapSelectorFrame",
-					Size = UDim2.new(0.9, 0, 0.2, 0),
+					Size = UDim2.new(1, 0, 0.3, 0),
 					BackgroundTransparency = 1,
 				}, {
 					UIListLayout = React.createElement("UIListLayout", {
 						FillDirection = Enum.FillDirection.Vertical,
 						HorizontalAlignment = Enum.HorizontalAlignment.Center,
+						SortOrder = Enum.SortOrder.LayoutOrder,
+						Padding = UDim.new(0, 10),
 					}),
 					Title = React.createElement("TextLabel", {
+						LayoutOrder = 1,
 						Text = "Map Selector",
 						Size = UDim2.new(1, 0, 0, 30),
 						FontFace = UIConfig.Font.Title,
@@ -101,30 +156,26 @@ function Lobby:render()
 						TextSize = lobbyConfig.MapPreviewTitleSize,
 						BackgroundTransparency = 1,
 					}),
-					MapSelectionDropdown = React.createElement("TextButton", {
-						Text = self.state.selectedMap,
-						Size = UDim2.new(1, 0, 0, 40),
-						BackgroundColor3 = lobbyConfig.MapSelectorBackgroundColor,
-						TextColor3 = lobbyConfig.MapSelectorTextColor,
-						[React.Event.MouseButton1Click] = function()
-							local maps = { "Default Map", "Forest Lands", "Desert Sands", "Frozen Peaks" }
-							local currentIndex = table.find(maps, self.state.selectedMap) or 1
-							local nextIndex = (currentIndex % #maps) + 1
-							self:setState({ selectedMap = maps[nextIndex] })
-						end,
-					}),
+					MapList = React.createElement("Frame", {
+						LayoutOrder = 2,
+						Size = UDim2.new(1, 0, 1, -30),
+						BackgroundTransparency = 1,
+					}, mapListChildren),
 				}),
 				MapSettingsFrame = React.createElement("Frame", {
 					LayoutOrder = 3,
 					Name = "MapSettingsFrame",
-					Size = UDim2.new(0.9, 0, 0.2, 0),
+					Size = UDim2.new(1, 0, 0.2, 0), -- Increased size to fit new setting
 					BackgroundTransparency = 1,
 				}, {
 					UIListLayout = React.createElement("UIListLayout", {
 						FillDirection = Enum.FillDirection.Vertical,
 						HorizontalAlignment = Enum.HorizontalAlignment.Center,
+						SortOrder = Enum.SortOrder.LayoutOrder,
+						Padding = UDim.new(0, 10),
 					}),
 					Title = React.createElement("TextLabel", {
+						LayoutOrder = 1,
 						Text = "Map Settings",
 						Size = UDim2.new(1, 0, 0, 30),
 						FontFace = UIConfig.Font.Title,
@@ -133,6 +184,7 @@ function Lobby:render()
 						BackgroundTransparency = 1,
 					}),
 					RandomEvents = React.createElement(Row, {
+						LayoutOrder = 2,
 						Label = "Random Events",
 						TextColor3 = lobbyConfig.OptionsTextColor,
 						TextSize = lobbyConfig.OptionsTextSize,
@@ -141,6 +193,20 @@ function Lobby:render()
 							value = self.state.randomEvents,
 							onValueChanged = function(newValue)
 								self:setState({ randomEvents = newValue })
+							end,
+						}),
+					}),
+					-- New "Legends Mode" setting
+					LegendsMode = React.createElement(Row, {
+						LayoutOrder = 3,
+						Label = "Legends Mode",
+						TextColor3 = lobbyConfig.OptionsTextColor,
+						TextSize = lobbyConfig.OptionsTextSize,
+					}, {
+						Control = React.createElement(Toggle, {
+							value = self.state.legendsMode,
+							onValueChanged = function(newValue)
+								self:setState({ legendsMode = newValue })
 							end,
 						}),
 					}),
@@ -163,268 +229,282 @@ function Lobby:render()
 					FillDirection = Enum.FillDirection.Vertical,
 					HorizontalAlignment = Enum.HorizontalAlignment.Center,
 					SortOrder = Enum.SortOrder.LayoutOrder,
-					Padding = UDim.new(0.02, 0), -- Spacing between sections in right panel
 				}),
-				PlayerList = React.createElement(PlayerList, {
+				ContentFrame = React.createElement("Frame", {
 					LayoutOrder = 1,
-					players = {
-						{ name = "Player1", isAI = false },
-						{ name = "AI_Opponent1", isAI = true },
-					},
-					Size = UDim2.new(1, 0, 0.2, 0),
-				}),
-				GameSettingsFrame = React.createElement("Frame", {
-					LayoutOrder = 2,
-					Name = "GameSettingsFrame",
-					Size = UDim2.new(1, 0, 0.5, 0),
-					BackgroundColor3 = lobbyConfig.PanelBackgroundColor,
-					BackgroundTransparency = lobbyConfig.PanelBackgroundTransparency,
-					BorderSizePixel = 0,
+					Name = "ContentFrame",
+					Size = UDim2.new(1, 0, 1, -100),
+					BackgroundTransparency = 1,
 				}, {
-					UIPadding = React.createElement("UIPadding", {
-						PaddingTop = paddingConfig.GameSettings.Top,
-						PaddingBottom = paddingConfig.GameSettings.Bottom,
-						PaddingLeft = paddingConfig.GameSettings.Left,
-						PaddingRight = paddingConfig.GameSettings.Right,
-					}),
 					UIListLayout = React.createElement("UIListLayout", {
 						FillDirection = Enum.FillDirection.Vertical,
 						HorizontalAlignment = Enum.HorizontalAlignment.Center,
 						SortOrder = Enum.SortOrder.LayoutOrder,
+						Padding = UDim.new(0.02, 0),
 					}),
-					Title = React.createElement("TextLabel", {
+					PlayerList = React.createElement(PlayerList, {
 						LayoutOrder = 1,
-						Text = "Game Settings",
-						Size = UDim2.new(1, 0, 0, 30),
-						FontFace = UIConfig.Font.Title,
-						TextColor3 = lobbyConfig.GameSettingsTitleColor,
-						TextSize = lobbyConfig.GameSettingsTitleSize,
-						BackgroundTransparency = 1,
+						players = self.state.players,
+						onAddAI = self.addAI,
+						onRemovePlayer = self.removePlayer,
+						Size = UDim2.new(1, 0, 0, 250),
+						Button = Button,
 					}),
-					SettingsContainer = React.createElement("Frame", {
+					GameSettingsFrame = React.createElement("Frame", {
 						LayoutOrder = 2,
-						Size = UDim2.new(0.95, 0, 0.8, 0),
-						BackgroundTransparency = 1,
+						Name = "GameSettingsFrame",
+						Size = UDim2.new(1, 0, 0.5, 0),
+						BackgroundColor3 = lobbyConfig.PanelBackgroundColor,
+						BackgroundTransparency = lobbyConfig.PanelBackgroundTransparency,
+						BorderSizePixel = 0,
 					}, {
+						UIPadding = React.createElement("UIPadding", {
+							PaddingTop = paddingConfig.GameSettings.Top,
+							PaddingBottom = paddingConfig.GameSettings.Bottom,
+							PaddingLeft = paddingConfig.GameSettings.Left,
+							PaddingRight = paddingConfig.GameSettings.Right,
+						}),
 						UIListLayout = React.createElement("UIListLayout", {
-							FillDirection = Enum.FillDirection.Horizontal,
-							VerticalAlignment = Enum.VerticalAlignment.Top,
+							FillDirection = Enum.FillDirection.Vertical,
+							HorizontalAlignment = Enum.HorizontalAlignment.Center,
 							SortOrder = Enum.SortOrder.LayoutOrder,
-							Padding = UDim.new(0.02, 0), -- Spacing between settings columns
 						}),
-						LeftColumn = React.createElement("Frame", {
+						Title = React.createElement("TextLabel", {
 							LayoutOrder = 1,
-							Size = UDim2.new(0.49, 0, 1, 0),
+							Text = "Game Settings",
+							Size = UDim2.new(1, 0, 0, 30),
+							FontFace = UIConfig.Font.Title,
+							TextColor3 = lobbyConfig.GameSettingsTitleColor,
+							TextSize = lobbyConfig.GameSettingsTitleSize,
 							BackgroundTransparency = 1,
-						}, {
-							UIPadding = React.createElement("UIPadding", {
-								PaddingTop = paddingConfig.SettingsColumns.Top,
-								PaddingBottom = paddingConfig.SettingsColumns.Bottom,
-								PaddingLeft = paddingConfig.SettingsColumns.Left,
-								PaddingRight = paddingConfig.SettingsColumns.Right,
-							}),
-							UIListLayout = React.createElement("UIListLayout", {
-								FillDirection = Enum.FillDirection.Vertical,
-								SortOrder = Enum.SortOrder.LayoutOrder,
-								Padding = paddingConfig.SettingsRows.Bottom,
-							}),
-							StartingResourcesTitle = React.createElement("TextLabel", {
-								LayoutOrder = 1,
-								Text = "Starting Resources",
-								Size = UDim2.new(1, 0, 0, 25),
-								FontFace = UIConfig.Font.Title,
-								TextColor3 = lobbyConfig.StartingResourcesTitleColor,
-								TextSize = lobbyConfig.StartingResourcesTitleSize,
-								BackgroundTransparency = 1,
-								TextXAlignment = Enum.TextXAlignment.Left,
-							}),
-							GoldRow = React.createElement(Row, {
-								LayoutOrder = 2,
-								Label = "Gold",
-								TextColor3 = lobbyConfig.OptionsTextColor,
-								TextSize = lobbyConfig.OptionsTextSize,
-							}, {
-								Control = React.createElement(Toggle, {
-									value = self.state.startingGold,
-									options = { "Low", "Standard", "High" },
-									onValueChanged = function(newValue)
-										self:setState({ startingGold = newValue })
-									end,
-								}),
-							}),
-							TroopsRow = React.createElement(Row, {
-								LayoutOrder = 3,
-								Label = "Troops",
-								TextColor3 = lobbyConfig.OptionsTextColor,
-								TextSize = lobbyConfig.OptionsTextSize,
-							}, {
-								Control = React.createElement(Toggle, {
-									value = self.state.startingTroops,
-									options = { "Low", "Standard", "High" },
-									onValueChanged = function(newValue)
-										self:setState({ startingTroops = newValue })
-									end,
-								}),
-							}),
-							ResourcesRow = React.createElement(Row, {
-								LayoutOrder = 4,
-								Label = "Resources",
-								TextColor3 = lobbyConfig.OptionsTextColor,
-								TextSize = lobbyConfig.OptionsTextSize,
-							}, {
-								Control = React.createElement(Toggle, {
-									value = self.state.startingResources,
-									options = { "Low", "Standard", "High" },
-									onValueChanged = function(newValue)
-										self:setState({ startingResources = newValue })
-									end,
-								}),
-							}),
-							FoodRow = React.createElement(Row, {
-								LayoutOrder = 5,
-								Label = "Food",
-								TextColor3 = lobbyConfig.OptionsTextColor,
-								TextSize = lobbyConfig.OptionsTextSize,
-							}, {
-								Control = React.createElement(Toggle, {
-									value = self.state.startingFood,
-									options = { "Low", "Standard", "High" },
-									onValueChanged = function(newValue)
-										self:setState({ startingFood = newValue })
-									end,
-								}),
-							}),
-							WeaponsRow = React.createElement(Row, {
-								LayoutOrder = 6,
-								Label = "Weapons",
-								TextColor3 = lobbyConfig.OptionsTextColor,
-								TextSize = lobbyConfig.OptionsTextSize,
-							}, {
-								Control = React.createElement(Toggle, {
-									value = self.state.startingWeapons,
-									options = { "None", "Bronze", "Iron", "Steel" },
-									onValueChanged = function(newValue)
-										self:setState({ startingWeapons = newValue })
-									end,
-								}),
-							}),
 						}),
-						RightColumn = React.createElement("Frame", {
+						SettingsContainer = React.createElement("Frame", {
 							LayoutOrder = 2,
-							Size = UDim2.new(0.49, 0, 1, 0),
+							Size = UDim2.new(0.95, 0, 0.8, 0),
 							BackgroundTransparency = 1,
 						}, {
-							UIPadding = React.createElement("UIPadding", {
-								PaddingTop = paddingConfig.SettingsColumns.Top,
-								PaddingBottom = paddingConfig.SettingsColumns.Bottom,
-								PaddingLeft = paddingConfig.SettingsColumns.Left,
-								PaddingRight = paddingConfig.SettingsColumns.Right,
-							}),
 							UIListLayout = React.createElement("UIListLayout", {
-								FillDirection = Enum.FillDirection.Vertical,
+								FillDirection = Enum.FillDirection.Horizontal,
+								VerticalAlignment = Enum.VerticalAlignment.Top,
 								SortOrder = Enum.SortOrder.LayoutOrder,
-								Padding = paddingConfig.SettingsRows.Bottom,
+								Padding = UDim.new(0.02, 0),
 							}),
-							GameRulesTitle = React.createElement("TextLabel", {
+							LeftColumn = React.createElement("Frame", {
 								LayoutOrder = 1,
-								Text = "Game Rules",
-								Size = UDim2.new(1, 0, 0, 25),
-								FontFace = UIConfig.Font.Title,
-								TextColor3 = lobbyConfig.GameRulesTitleColor,
-								TextSize = lobbyConfig.GameRulesTitleSize,
+								Size = UDim2.new(0.49, 0, 1, 0),
 								BackgroundTransparency = 1,
-								TextXAlignment = Enum.TextXAlignment.Left,
+							}, {
+								UIPadding = React.createElement("UIPadding", {
+									PaddingTop = paddingConfig.SettingsColumns.Top,
+									PaddingBottom = paddingConfig.SettingsColumns.Bottom,
+									PaddingLeft = paddingConfig.SettingsColumns.Left,
+									PaddingRight = paddingConfig.SettingsColumns.Right,
+								}),
+								UIListLayout = React.createElement("UIListLayout", {
+									FillDirection = Enum.FillDirection.Vertical,
+									SortOrder = Enum.SortOrder.LayoutOrder,
+									Padding = paddingConfig.SettingsRows.Bottom,
+								}),
+								StartingResourcesTitle = React.createElement("TextLabel", {
+									LayoutOrder = 1,
+									Text = "Starting Resources",
+									Size = UDim2.new(1, 0, 0, 25),
+									FontFace = UIConfig.Font.Title,
+									TextColor3 = lobbyConfig.StartingResourcesTitleColor,
+									TextSize = lobbyConfig.StartingResourcesTitleSize,
+									BackgroundTransparency = 1,
+									TextXAlignment = Enum.TextXAlignment.Left,
+								}),
+								GoldRow = React.createElement(Row, {
+									LayoutOrder = 2,
+									Label = "Gold",
+									TextColor3 = lobbyConfig.OptionsTextColor,
+									TextSize = lobbyConfig.OptionsTextSize,
+								}, {
+									Control = React.createElement(Toggle, {
+										value = self.state.startingGold,
+										options = { "Low", "Standard", "High" },
+										onValueChanged = function(newValue)
+											self:setState({ startingGold = newValue })
+										end,
+									}),
+								}),
+								TroopsRow = React.createElement(Row, {
+									LayoutOrder = 3,
+									Label = "Troops",
+									TextColor3 = lobbyConfig.OptionsTextColor,
+									TextSize = lobbyConfig.OptionsTextSize,
+								}, {
+									Control = React.createElement(Toggle, {
+										value = self.state.startingTroops,
+										options = { "Low", "Standard", "High" },
+										onValueChanged = function(newValue)
+											self:setState({ startingTroops = newValue })
+										end,
+									}),
+								}),
+								ResourcesRow = React.createElement(Row, {
+									LayoutOrder = 4,
+									Label = "Resources",
+									TextColor3 = lobbyConfig.OptionsTextColor,
+									TextSize = lobbyConfig.OptionsTextSize,
+								}, {
+									Control = React.createElement(Toggle, {
+										value = self.state.startingResources,
+										options = { "Low", "Standard", "High" },
+										onValueChanged = function(newValue)
+											self:setState({ startingResources = newValue })
+										end,
+									}),
+								}),
+								FoodRow = React.createElement(Row, {
+									LayoutOrder = 5,
+									Label = "Food",
+									TextColor3 = lobbyConfig.OptionsTextColor,
+									TextSize = lobbyConfig.OptionsTextSize,
+								}, {
+									Control = React.createElement(Toggle, {
+										value = self.state.startingFood,
+										options = { "Low", "Standard", "High" },
+										onValueChanged = function(newValue)
+											self:setState({ startingFood = newValue })
+										end,
+									}),
+								}),
+								WeaponsRow = React.createElement(Row, {
+									LayoutOrder = 6,
+									Label = "Weapons",
+									TextColor3 = lobbyConfig.OptionsTextColor,
+									TextSize = lobbyConfig.OptionsTextSize,
+								}, {
+									Control = React.createElement(Toggle, {
+										value = self.state.startingWeapons,
+										options = { "None", "Bronze", "Iron", "Steel" },
+										onValueChanged = function(newValue)
+											self:setState({ startingWeapons = newValue })
+										end,
+									}),
+								}),
 							}),
-							PeaceTimeRow = React.createElement(Row, {
+							RightColumn = React.createElement("Frame", {
 								LayoutOrder = 2,
-								Label = "Peace Time",
-								TextColor3 = lobbyConfig.OptionsTextColor,
-								TextSize = lobbyConfig.OptionsTextSize,
+								Size = UDim2.new(0.49, 0, 1, 0),
+								BackgroundTransparency = 1,
 							}, {
-								Control = React.createElement(Toggle, {
-									value = self.state.peaceTime,
-									options = { "None", "5 minutes", "10 minutes", "20 minutes" },
-									onValueChanged = function(newValue)
-										self:setState({ peaceTime = newValue })
-									end,
+								UIPadding = React.createElement("UIPadding", {
+									PaddingTop = paddingConfig.SettingsColumns.Top,
+									PaddingBottom = paddingConfig.SettingsColumns.Bottom,
+									PaddingLeft = paddingConfig.SettingsColumns.Left,
+									PaddingRight = paddingConfig.SettingsColumns.Right,
 								}),
-							}),
-							GameSpeedRow = React.createElement(Row, {
-								LayoutOrder = 3,
-								Label = "Game Speed",
-								TextColor3 = lobbyConfig.OptionsTextColor,
-								TextSize = lobbyConfig.OptionsTextSize,
-							}, {
-								Control = React.createElement(Toggle, {
-									value = self.state.gameSpeed,
-									options = { "Slow", "Normal", "Fast" },
-									onValueChanged = function(newValue)
-										self:setState({ gameSpeed = newValue })
-									end,
+								UIListLayout = React.createElement("UIListLayout", {
+									FillDirection = Enum.FillDirection.Vertical,
+									SortOrder = Enum.SortOrder.LayoutOrder,
+									Padding = paddingConfig.SettingsRows.Bottom,
 								}),
-							}),
-							VictoryConditionRow = React.createElement(Row, {
-								LayoutOrder = 4,
-								Label = "Victory Condition",
-								TextColor3 = lobbyConfig.OptionsTextColor,
-								TextSize = lobbyConfig.OptionsTextSize,
-							}, {
-								Control = React.createElement(Toggle, {
-									value = self.state.victoryCondition,
-									options = { "Conquest", "Score", "Wonder" },
-									onValueChanged = function(newValue)
-										self:setState({ victoryCondition = newValue })
-									end,
+								GameRulesTitle = React.createElement("TextLabel", {
+									LayoutOrder = 1,
+									Text = "Game Rules",
+									Size = UDim2.new(1, 0, 0, 25),
+									FontFace = UIConfig.Font.Title,
+									TextColor3 = lobbyConfig.GameRulesTitleColor,
+									TextSize = lobbyConfig.GameRulesTitleSize,
+									BackgroundTransparency = 1,
+									TextXAlignment = Enum.TextXAlignment.Left,
 								}),
-							}),
-							TradeRow = React.createElement(Row, {
-								LayoutOrder = 5,
-								Label = "Ability to Trade",
-								TextColor3 = lobbyConfig.OptionsTextColor,
-								TextSize = lobbyConfig.OptionsTextSize,
-							}, {
-								Control = React.createElement(Toggle, {
-									value = self.state.abilityToTrade,
-									onValueChanged = function(newValue)
-										self:setState({ abilityToTrade = newValue })
-									end,
+								PeaceTimeRow = React.createElement(Row, {
+									LayoutOrder = 2,
+									Label = "Peace Time",
+									TextColor3 = lobbyConfig.OptionsTextColor,
+									TextSize = lobbyConfig.OptionsTextSize,
+								}, {
+									Control = React.createElement(Toggle, {
+										value = self.state.peaceTime,
+										options = { "None", "5 minutes", "10 minutes", "20 minutes" },
+										onValueChanged = function(newValue)
+											self:setState({ peaceTime = newValue })
+										end,
+									}),
 								}),
-							}),
-							HonorRow = React.createElement(Row, {
-								LayoutOrder = 6,
-								Label = "Honor",
-								TextColor3 = lobbyConfig.OptionsTextColor,
-								TextSize = lobbyConfig.OptionsTextSize,
-							}, {
-								Control = React.createElement(Toggle, {
-									value = self.state.honor,
-									options = { "Standard", "High", "Low" },
-									onValueChanged = function(newValue)
-										self:setState({ honor = newValue })
-									end,
+								GameSpeedRow = React.createElement(Row, {
+									LayoutOrder = 3,
+									Label = "Game Speed",
+									TextColor3 = lobbyConfig.OptionsTextColor,
+									TextSize = lobbyConfig.OptionsTextSize,
+								}, {
+									Control = React.createElement(Toggle, {
+										value = self.state.gameSpeed,
+										options = { "Slow", "Normal", "Fast" },
+										onValueChanged = function(newValue)
+											self:setState({ gameSpeed = newValue })
+										end,
+									}),
 								}),
-							}),
-							RankRow = React.createElement(Row, {
-								LayoutOrder = 7,
-								Label = "Rank",
-								TextColor3 = lobbyConfig.OptionsTextColor,
-								TextSize = lobbyConfig.OptionsTextSize,
-							}, {
-								Control = React.createElement(Toggle, {
-									value = self.state.rank,
-									options = { "Knight", "Baron", "Duke", "King" },
-									onValueChanged = function(newValue)
-										self:setState({ rank = newValue })
-									end,
+								VictoryConditionRow = React.createElement(Row, {
+									LayoutOrder = 4,
+									Label = "Victory Condition",
+									TextColor3 = lobbyConfig.OptionsTextColor,
+									TextSize = lobbyConfig.OptionsTextSize,
+								}, {
+									Control = React.createElement(Toggle, {
+										value = self.state.victoryCondition,
+										options = { "Conquest", "Score", "Wonder" },
+										onValueChanged = function(newValue)
+											self:setState({ victoryCondition = newValue })
+										end,
+									}),
+								}),
+								TradeRow = React.createElement(Row, {
+									LayoutOrder = 5,
+									Label = "Ability to Trade",
+									TextColor3 = lobbyConfig.OptionsTextColor,
+									TextSize = lobbyConfig.OptionsTextSize,
+								}, {
+									Control = React.createElement(Toggle, {
+										value = self.state.abilityToTrade,
+										onValueChanged = function(newValue)
+											self:setState({ abilityToTrade = newValue })
+										end,
+									}),
+								}),
+								HonorRow = React.createElement(Row, {
+									LayoutOrder = 6,
+									Label = "Honor",
+									TextColor3 = lobbyConfig.OptionsTextColor,
+									TextSize = lobbyConfig.OptionsTextSize,
+								}, {
+									Control = React.createElement(Toggle, {
+										value = self.state.honor,
+										options = { "Standard", "High", "Low" },
+										onValueChanged = function(newValue)
+											self:setState({ honor = newValue })
+										end,
+									}),
+								}),
+								RankRow = React.createElement(Row, {
+									LayoutOrder = 7,
+									Label = "Rank",
+									TextColor3 = lobbyConfig.OptionsTextColor,
+									TextSize = lobbyConfig.OptionsTextSize,
+								}, {
+									Control = React.createElement(Toggle, {
+										value = self.state.rank,
+										options = { "Knight", "Baron", "Duke", "King" },
+										onValueChanged = function(newValue)
+											self:setState({ rank = newValue })
+										end,
+									}),
 								}),
 							}),
 						}),
 					}),
 				}),
 				ButtonsFrame = React.createElement("Frame", {
-					LayoutOrder = 3,
-					Size = UDim2.new(1, 0, 0.2, 0),
+					LayoutOrder = 2,
+					Size = UDim2.new(1, 0, 0, 100),
 					BackgroundTransparency = 1,
+					Position = UDim2.new(0, 0, 1, -100),
+					AnchorPoint = Vector2.new(0, 1),
 				}, {
 					UIPadding = React.createElement("UIPadding", {
 						PaddingTop = paddingConfig.ButtonsFrame.Top,
@@ -436,7 +516,7 @@ function Lobby:render()
 						FillDirection = Enum.FillDirection.Vertical,
 						HorizontalAlignment = Enum.HorizontalAlignment.Center,
 						SortOrder = Enum.SortOrder.LayoutOrder,
-						Padding = UDim.new(0, 10), -- Spacing between buttons
+						Padding = UDim.new(0, 10),
 					}),
 					StartButton = React.createElement("TextButton", {
 						LayoutOrder = 1,
