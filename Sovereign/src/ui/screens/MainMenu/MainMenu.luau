@@ -1,19 +1,16 @@
+-- src/ui/screens/MainMenu/MainMenu.luau
+
 local React = require(game.ReplicatedStorage.Packages.react)
 local UIConfig = require(script.Parent.Parent.Parent.UIConfig)
 
-local TitleLabel = require(script.Parent.TitleLabel)
-local Button = require(script.Parent.Button)
-local SettingsPage = require(script.Parent.SettingsPage)
+-- Corrected paths to the 'components' directory
+local Title = require(script.Parent.Parent.Parent.components.Title)
+local Button = require(script.Parent.Parent.Parent.components.Button)
 
-local MainMenuScreen = React.Component:extend("MainMenuScreen")
+local MainMenu = React.Component:extend("MainMenu")
 
-function MainMenuScreen:init()
-	self:setState({
-		showSettings = false,
-	})
-end
-
-function MainMenuScreen:render()
+function MainMenu:render()
+	print("MainMenu.luau: render() called. UI should be visible.")
 	return React.createElement("ScreenGui", {
 		Name = "MainMenuGui",
 		ClipToDeviceSafeArea = true,
@@ -34,7 +31,6 @@ function MainMenuScreen:render()
 		}),
 		MenuContainer = React.createElement("Frame", {
 			Name = "MenuContainer",
-			Visible = not self.state.showSettings,
 			AnchorPoint = Vector2.new(0, 0.5),
 			BackgroundTransparency = 1,
 			Position = UDim2.new(0.08, 0, 0.5, 0),
@@ -48,7 +44,7 @@ function MainMenuScreen:render()
 				SortOrder = Enum.SortOrder.LayoutOrder,
 				VerticalAlignment = Enum.VerticalAlignment.Center,
 			}),
-			Title = React.createElement(TitleLabel, {
+			Title = React.createElement(Title, {
 				LayoutOrder = 1,
 				Size = UDim2.new(1, 0, 0, 80),
 				Text = "Sovereign",
@@ -64,28 +60,27 @@ function MainMenuScreen:render()
 				BackgroundTransparency = 1,
 			}),
 			PlayGameButton = React.createElement(Button, {
-                Name = "PlayGameButton",
+				Name = "PlayGameButton",
 				LayoutOrder = 3,
 				Size = UDim2.new(1, 0, 0, 40),
 				Text = "Play",
 				TextSize = 40,
-                BackgroundTransparency = 1,
-                TextXAlignment = Enum.TextXAlignment.Left,
+				BackgroundTransparency = 1,
+				TextXAlignment = Enum.TextXAlignment.Left,
 				OnClick = function()
-					print("Play button clicked!")
+					self.props.navigate("lobby")
 				end,
 			}),
 			SettingsGameButton = React.createElement(Button, {
-                Name = "SettingsGameButton",
+				Name = "SettingsGameButton",
 				LayoutOrder = 4,
 				Size = UDim2.new(1, 0, 0, 40),
 				Text = "Settings",
 				TextSize = 40,
-                BackgroundTransparency = 1,
-                TextXAlignment = Enum.TextXAlignment.Left,
+				BackgroundTransparency = 1,
+				TextXAlignment = Enum.TextXAlignment.Left,
 				OnClick = function()
-					print("Settings button clicked!")
-					self:setState({ showSettings = not self.state.showSettings })
+					self.props.navigate("settings")
 				end,
 			}),
 			ExitGameButton = React.createElement(Button, {
@@ -94,19 +89,14 @@ function MainMenuScreen:render()
 				Size = UDim2.new(1, 0, 0, 40),
 				Text = "Exit",
 				TextSize = 40,
-                BackgroundTransparency = 1,
-                TextXAlignment = Enum.TextXAlignment.Left,
+				BackgroundTransparency = 1,
+				TextXAlignment = Enum.TextXAlignment.Left,
 				OnClick = function()
 					game:GetService("Players").LocalPlayer:Kick("Player exited the game.")
 				end,
 			}),
 		}),
-        SettingsPage = self.state.showSettings and React.createElement(SettingsPage, {
-            OnBack = function()
-                self:setState({ showSettings = false })
-            end,
-        }) or nil,
 	})
 end
 
-return MainMenuScreen
+return MainMenu

@@ -4,3 +4,4 @@ Packages/
 *.rbxlx.lock
 *.rbxl
 *.rbxl.lock
+sourcemap.json

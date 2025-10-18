@@ -1,11 +1,9 @@
 local React = require(game.ReplicatedStorage.Packages.react)
-local UIConfig = require(script.Parent.Parent.Parent.UIConfig)
-
-local TitleLabel = React.Component:extend("TitleLabel")
-
-function TitleLabel:render()
+local UIConfig = require(script.Parent.Parent.UIConfig)
+local Title = React.Component:extend("Title")
+function Title:render()
 	local props = {
-		Name = "TitleLabel",
+		Name = "Title",
 		Text = "Sovereign",
 		FontFace = UIConfig.getFont(self.props.FontFace, UIConfig.Font.Title),
 		TextSize = 64,
@@ -17,14 +15,11 @@ function TitleLabel:render()
 		BackgroundTransparency = 1,
 		TextXAlignment = Enum.TextXAlignment.Center,
 	}
-
 	for k, v in pairs(self.props) do
 		if k ~= "FontFace" then
 			props[k] = v
 		end
 	end
-
 	return React.createElement("TextLabel", props)
 end
-
-return TitleLabel
+return Title
