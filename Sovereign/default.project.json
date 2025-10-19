@@ -9,7 +9,8 @@
     },
 
     "ServerScriptService": {
-      "Server": { "$path": "src/server" }
+      "Server": { "$path": "src/server" },
+      "TestRunner": { "$path": "src/server/TestRunner.server.luau" }
     },
 
     "StarterPlayer": {
