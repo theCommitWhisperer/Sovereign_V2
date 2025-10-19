@@ -28,8 +28,28 @@ function App:init()
 		keybindings = Keybindings,
 	}
 
+	-- NEW: Get RemoteEvent reference
+	local ReplicatedStorage = game:GetService("ReplicatedStorage")
+	local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
+	self.gameEvent = RemoteEvents:WaitForChild("GameEvent")
+
+	-- NEW: Listen for game started confirmation
+	self.gameEvent.OnClientEvent:Connect(function(action, data)
+		if action == "GameStarted" then
+			print("App.luau: Game started! Switching to HUD.")
+			self:setState({ route = "hud" })
+		end
+	end)
+
 	self.navigate = function(route)
 		print("App.luau: navigate() called with route:", route)
+
+		-- NEW: If navigating to HUD, send StartGame event to server
+		if route == "hud" then
+			print("App.luau: Sending StartGame request to server")
+			self.gameEvent:FireServer("StartGame", {})
+		end
+
 		self:setState({ route = route })
 	end
 end

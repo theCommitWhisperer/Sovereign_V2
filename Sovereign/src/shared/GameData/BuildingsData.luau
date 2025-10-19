@@ -1,174 +1,173 @@
 --!strict
--- Sovereign_V2/src/shared/GameData/BuildingsData.luau
+-- BuildingsData: Definitions for all buildings
 
--- Defines all game buildings, their stats, costs, and other properties.
-
-export type BuildingComponent = {
-	name: string,
-	units: { string }?,
-	resource: string?,
-	per_minute: number?,
-}
+local BuildingsData = {}
 
 export type BuildingData = {
-	model_asset_name: string,
+	model_asset_name: string?,
 	type: string,
 	subtype: string,
-	icon_asset_path: string,
 	cost: { [string]: number },
 	construction: { build_time_seconds: number },
 	size: Vector3,
 	storage_capacity: { [string]: number }?,
-	components: { BuildingComponent }?,
+	components: { any }?,
 	popularity_impact: number?,
 	deletion_confirmation_required: boolean?,
-	workers_required: number?,
-	production: { { [string]: any } }?,
-	housing: number?,
-	isContinuous: boolean?,
+	produces_resource: string?,
+	production_rate: number?,
+	requires_worker: boolean?,
+	consumes_resource: string?,
+	consumption_rate: number?,
 }
 
-export type BuildingsData = { [string]: BuildingData }
+BuildingsData.Keep = {
+	model_asset_name = nil,
+	type = "Building",
+	subtype = "Castle Core",
+	cost = { Wood = 100, Stone = 50 },
+	construction = { build_time_seconds = 30 },
+	size = Vector3.new(24, 30, 24),
+	storage_capacity = {
+		Wood = 200,
+		Stone = 100,
+		Gold = 500,
+	},
+	components = {},
+	popularity_impact = 5,
+	deletion_confirmation_required = true,
+} :: BuildingData
 
-local buildings: BuildingsData = {
-	Keep = {
-		model_asset_name = "Keep_Model",
-		deletion_confirmation_required = true,
-		type = "Building",
-		subtype = "Castle Core",
-		icon_asset_path = "rbxassetid://88457906243791",
-		cost = { Wood = 100, Stone = 50 },
-		construction = { build_time_seconds = 30 },
-		size = Vector3.new(24, 30, 24),
-		storage_capacity = { Wood = 200, Stone = 100, Gold = 500, Bread = 100 },
-		components = { { name = "UnitTrainer", units = { "Armed_Peasant" } } },
-		popularity_impact = 5,
+BuildingsData.Storehouse = {
+	model_asset_name = nil,
+	type = "Building",
+	subtype = "Storage",
+	cost = { Wood = 20, Stone = 5 },
+	construction = { build_time_seconds = 10 },
+	size = Vector3.new(12, 10, 12),
+	storage_capacity = {
+		Wood = 500,
+		Stone = 500,
+		Iron_Bars = 200,
+		Weapons = 100,
 	},
-	Stockpile = {
-		model_asset_name = "Stockpile_Model",
-		type = "Building",
-		subtype = "Storage",
-		icon_asset_path = "rbxassetid://YOUR_STOCKPILE_ICON_ID",
-		cost = { Wood = 10 },
-		construction = { build_time_seconds = 8 },
-		size = Vector3.new(12, 8, 12),
-		storage_capacity = { Wood = 1000, Stone = 750, Iron_Ore = 200, Pitch = 100 },
-	},
-	Granary = {
-		model_asset_name = "Granary_Model",
-		type = "Building",
-		subtype = "Storage",
-		icon_asset_path = "rbxassetid://YOUR_GRANARY_ICON_ID",
-		cost = { Wood = 15, Stone = 5 },
-		construction = { build_time_seconds = 10 },
-		size = Vector3.new(14, 10, 14),
-		storage_capacity = {
-			Wheat = 500,
-			Flour = 500,
-			Bread = 1000,
-			Apples = 500,
-			Cheese = 500,
-			Meat = 500,
-			Hops = 250,
-			Ale = 250,
-		},
-	},
-	Armory = {
-		model_asset_name = "Armory_Model",
-		type = "Building",
-		subtype = "Storage",
-		icon_asset_path = "rbxassetid://14900962896",
-		cost = { Wood = 20 },
-		construction = { build_time_seconds = 12 },
-		size = Vector3.new(10, 10, 12),
-		storage_capacity = { Iron_Bars = 500, Weapons = 500, Armor = 500 },
-	},
-	Barracks = {
-		model_asset_name = "Barracks_Model",
-		deletion_confirmation_required = true,
-		type = "Building",
-		subtype = "Military Training",
-		icon_asset_path = "rbxassetid://140533775632460",
-		cost = { Wood = 20, Stone = 10 },
-		construction = { build_time_seconds = 15 },
-		size = Vector3.new(15, 10, 15),
-		components = { { name = "UnitTrainer", units = { "Pikeman", "Axeman", "Crossbowman", "Knight" } } },
-	},
-	Hovel = {
-		model_asset_name = "Hovel_Model",
-		type = "Building",
-		subtype = "Housing",
-		icon_asset_path = "rbxassetid://137116266378030",
-		cost = { Wood = 10 },
-		construction = { build_time_seconds = 5 },
-		housing = 10,
-		size = Vector3.new(8, 6, 8),
-	},
-	Woodcutters_Post = {
-		type = "Building",
-		subtype = "Resource Gathering",
-		model_asset_name = "Woodcutters_Post_Model",
-		icon_asset_path = "rbxassetid://107565042194087",
-		cost = { Wood = 5 },
-		construction = { build_time_seconds = 7 },
-		workers_required = 1,
-		production = { { output_resource = "Wood", produced_per_worker = 15 } },
-		size = Vector3.new(10, 8, 10),
-	},
-	Stone_Quarry = {
-		model_asset_name = "Stone_Quarry_Model",
-		type = "Building",
-		subtype = "Resource Gathering",
-		icon_asset_path = "rbxassetid://97561023332862",
-		cost = { Wood = 10 },
-		construction = { build_time_seconds = 10 },
-		workers_required = 1,
-		production = { { output_resource = "Stone", produced_per_worker = 10 } },
-		size = Vector3.new(12, 8, 12),
-	},
-	Iron_Mine = {
-		model_asset_name = "Iron_Mine_Model",
-		type = "Building",
-		subtype = "Resource Gathering",
-		icon_asset_path = "rbxassetid://YOUR_IRON_MINE_ICON",
-		cost = { Wood = 15 },
-		construction = { build_time_seconds = 12 },
-		workers_required = 1,
-		production = { { output_resource = "Iron_Ore", produced_per_worker = 8 } },
-		size = Vector3.new(10, 8, 10),
-	},
-	Blacksmith = {
-		model_asset_name = "Blacksmith_Model",
-		type = "Building",
-		subtype = "Resource Processing",
-		icon_asset_path = "rbxassetid://YOUR_BLACKSMITH_ICON",
-		cost = { Wood = 20, Stone = 10 },
-		construction = { build_time_seconds = 18 },
-		workers_required = 1,
-		production = {
-			{ input_resources = { Iron_Bars = 1, Wood = 2 }, output_resource = "Weapons", produced_per_worker = 2 },
-		},
-		size = Vector3.new(14, 12, 12),
-	},
-	Stone_Wall = {
-		model_asset_name = "Wall_Model",
-		type = "Building",
-		subtype = "Defensive",
-		icon_asset_path = "rbxassetid://125281070766447",
-		cost = { Stone = 5 },
-		construction = { build_time_seconds = 3 },
-		size = Vector3.new(4, 10, 16),
-		isContinuous = true,
-	},
-	Tower = {
-		model_asset_name = "Tower_Model",
-		type = "Building",
-		subtype = "Defensive",
-		icon_asset_path = "rbxassetid://110315288937844",
-		cost = { Wood = 10, Stone = 20 },
-		construction = { build_time_seconds = 12 },
-		size = Vector3.new(8, 20, 8),
-	},
-}
+	components = {},
+} :: BuildingData
 
-return buildings
+BuildingsData.Granary = {
+	model_asset_name = nil,
+	type = "Building",
+	subtype = "Storage",
+	cost = { Wood = 15, Stone = 5 },
+	construction = { build_time_seconds = 8 },
+	size = Vector3.new(10, 12, 10),
+	storage_capacity = {
+		Food = 1000,
+	},
+	components = {},
+} :: BuildingData
+
+BuildingsData.Hovel = {
+	model_asset_name = nil,
+	type = "Building",
+	subtype = "Housing",
+	cost = { Wood = 10 },
+	construction = { build_time_seconds = 5 },
+	size = Vector3.new(8, 6, 8),
+	storage_capacity = {},
+	components = {},
+} :: BuildingData
+
+BuildingsData.Woodcutters_Post = {
+	model_asset_name = nil,
+	type = "Building",
+	subtype = "Resource Gathering",
+	cost = { Wood = 5 },
+	construction = { build_time_seconds = 7 },
+	size = Vector3.new(10, 8, 10),
+	storage_capacity = {
+		Wood = 30,
+	},
+	components = {},
+	produces_resource = "Wood",
+	production_rate = 1,
+	requires_worker = true,
+} :: BuildingData
+
+BuildingsData.Stone_Quarry = {
+	model_asset_name = nil,
+	type = "Building",
+	subtype = "Resource Gathering",
+	cost = { Wood = 10 },
+	construction = { build_time_seconds = 10 },
+	size = Vector3.new(12, 8, 12),
+	storage_capacity = {
+		Stone = 100,
+	},
+	components = {},
+	produces_resource = "Stone",
+	production_rate = 0.8,
+	requires_worker = true,
+} :: BuildingData
+
+BuildingsData.Farm = {
+	model_asset_name = nil,
+	type = "Building",
+	subtype = "Food Production",
+	cost = { Wood = 15 },
+	construction = { build_time_seconds = 10 },
+	size = Vector3.new(16, 6, 16),
+	storage_capacity = {
+		Food = 150,
+	},
+	components = {},
+	produces_resource = "Food",
+	production_rate = 2,
+	requires_worker = true,
+} :: BuildingData
+
+BuildingsData.Kitchen = {
+	model_asset_name = nil,
+	type = "Building",
+	subtype = "Food Processing",
+	cost = { Wood = 10, Stone = 5 },
+	construction = { build_time_seconds = 8 },
+	size = Vector3.new(8, 8, 8),
+	storage_capacity = {
+		Food = 100,
+	},
+	components = {},
+	requires_worker = true,
+	consumes_resource = "Food",
+	consumption_rate = 0.5,
+} :: BuildingData
+
+BuildingsData.Restaurant = {
+	model_asset_name = nil,
+	type = "Building",
+	subtype = "Food Service",
+	cost = { Wood = 20, Stone = 10 },
+	construction = { build_time_seconds = 12 },
+	size = Vector3.new(12, 10, 12),
+	storage_capacity = {
+		Food = 50,
+	},
+	components = {},
+	popularity_impact = 3,
+	requires_worker = true,
+	consumes_resource = "Food",
+	consumption_rate = 1,
+} :: BuildingData
+
+BuildingsData.Barracks = {
+	model_asset_name = nil,
+	type = "Building",
+	subtype = "Military Training",
+	cost = { Wood = 20, Stone = 10 },
+	construction = { build_time_seconds = 15 },
+	size = Vector3.new(15, 10, 15),
+	storage_capacity = {},
+	components = {},
+} :: BuildingData
+
+return BuildingsData

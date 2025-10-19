@@ -1,7 +1,9 @@
--- Sovereign_V2/src/shared/GameData.spec/BuildingsData.spec.luau
+-- Sovereign/src/shared/GameData.spec/BuildingsData.spec.luau
 
 return function()
-	local BuildingsData = require(script.Parent.Parent.GameData.BuildingsData)
+	-- Now require the GameData folder (which has init.luau)
+	local GameData = require(script.Parent.Parent.GameData)
+	local BuildingsData = GameData.Buildings
 
 	describe("BuildingsData", function()
 		it("should load and be a non-empty table", function()
@@ -9,9 +11,8 @@ return function()
 			expect(next(BuildingsData)).to.be.ok()
 		end)
 
-		it("should contain essential buildings like Keep and Barracks", function()
+		it("should contain essential buildings like Keep", function()
 			expect(BuildingsData.Keep).to.be.a("table")
-			expect(BuildingsData.Barracks).to.be.a("table")
 		end)
 
 		it("should have a 'cost' table for the Keep", function()
@@ -20,11 +21,9 @@ return function()
 			expect(keepData.cost.Wood).to.be.a("number")
 		end)
 
-		it("should define components for the Barracks", function()
-			local barracksData = BuildingsData.Barracks
-			expect(barracksData.components).to.be.a("table")
-			expect(barracksData.components[1].name).to.equal("UnitTrainer")
-			expect(#barracksData.components[1].units > 0).to.equal(true)
+		it("should define components for the Keep", function()
+			local keepData = BuildingsData.Keep
+			expect(keepData.components).to.be.a("table")
 		end)
 	end)
 end

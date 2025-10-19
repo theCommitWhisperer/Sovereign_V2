@@ -438,6 +438,10 @@ function Lobby:render()
 										print(string.format("  %s: %s", setting, tostring(value)))
 									end
 								end
+								-- Navigate to HUD (which triggers game start in App.luau)
+								if navigate then
+									navigate("hud")
+								end
 							end,
 						}),
 						BackButton = React.createElement("TextButton", {
