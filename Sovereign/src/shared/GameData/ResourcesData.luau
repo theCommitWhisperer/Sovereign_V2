@@ -1,121 +1,55 @@
 --!strict
--- Sovereign_V2/src/shared/GameData/ResourcesData.luau
+-- ResourcesData: Definitions for all resources
 
--- Defines all game resources, their types, and descriptions.
+local ResourcesData = {}
 
 export type ResourceData = {
-	type: string,
-	subtype: string,
-	category: string,
-	description: string,
+	display_name: string,
+	icon: string?,
+	is_tradeable: boolean,
+	max_carry_amount: number,
 }
 
-export type ResourcesData = { [string]: ResourceData }
+ResourcesData.Wood = {
+	display_name = "Wood",
+	icon = "🌲",
+	is_tradeable = true,
+	max_carry_amount = 100,
+} :: ResourceData
 
-local resources: ResourcesData = {
-	["Wood"] = {
-		type = "Resource",
-		subtype = "Construction Material",
-		category = "materials",
-		description = "Basic construction material, gathered from trees.",
-	},
-	["Stone"] = {
-		type = "Resource",
-		subtype = "Construction Material",
-		category = "materials",
-		description = "Durable building material, gathered from stone deposits.",
-	},
-	["Iron_Ore"] = {
-		type = "Resource",
-		subtype = "Raw Material",
-		category = "materials",
-		description = "Raw ore, processed into iron bars for weapons and armor.",
-	},
-	["Iron_Bars"] = {
-		type = "Resource",
-		subtype = "Processed Material",
-		category = "military",
-		description = "Processed iron, used in crafting advanced weapons and armor.",
-	},
-	["Wheat"] = {
-		type = "Resource",
-		subtype = "Food (Raw)",
-		category = "food",
-		description = "Grain, processed into flour for bread.",
-	},
-	["Flour"] = {
-		type = "Resource",
-		subtype = "Food (Processed)",
-		category = "food",
-		description = "Milled wheat, baked into bread.",
-	},
-	["Bread"] = {
-		type = "Resource",
-		subtype = "Food (Finished)",
-		category = "food",
-		description = "Staple food item, highly boosts peasant popularity.",
-	},
-	["Apples"] = {
-		type = "Resource",
-		subtype = "Food (Finished)",
-		category = "food",
-		description = "Fresh fruit, provides a basic popularity boost.",
-	},
-	["Cheese"] = {
-		type = "Resource",
-		subtype = "Food (Finished)",
-		category = "food",
-		description = "Dairy product, provides a moderate popularity boost.",
-	},
-	["Meat"] = {
-		type = "Resource",
-		subtype = "Food (Finished)",
-		category = "food",
-		description = "Hunting game, provides a good popularity boost.",
-	},
-	["Hops"] = { type = "Resource", subtype = "Crop", category = "food", description = "Plant used to brew ale." },
-	["Ale"] = {
-		type = "Resource",
-		subtype = "Beverage",
-		category = "food",
-		description = "Brewed hops, consumed by peasants for significant popularity boost.",
-	},
-	["Pitch"] = {
-		type = "Resource",
-		subtype = "Military Resource",
-		category = "military",
-		description = "Flammable material used for defensive purposes.",
-	},
-	["Weapons"] = {
-		type = "Resource",
-		subtype = "Military Gear",
-		category = "military",
-		description = "Basic weapons for training military units.",
-	},
-	["Armor"] = {
-		type = "Resource",
-		subtype = "Military Gear",
-		category = "military",
-		description = "Basic armor for training military units.",
-	},
-	["Gold"] = {
-		type = "Resource",
-		subtype = "Currency",
-		category = "currency",
-		description = "Primary currency for trade and upkeep.",
-	},
-	["Horses"] = {
-		type = "Resource",
-		subtype = "Strategic",
-		category = "strategic",
-		description = "Mounts required for training cavalry units.",
-	},
-	["Honor"] = {
-		type = "Resource",
-		subtype = "Strategic",
-		category = "strategic",
-		description = "A measure of piety and valor, required for elite and blessed units.",
-	},
-}
+ResourcesData.Stone = {
+	display_name = "Stone",
+	icon = "🪨",
+	is_tradeable = true,
+	max_carry_amount = 100,
+} :: ResourceData
 
-return resources
+ResourcesData.Gold = {
+	display_name = "Gold",
+	icon = "💰",
+	is_tradeable = true,
+	max_carry_amount = 1000,
+} :: ResourceData
+
+ResourcesData.Food = {
+	display_name = "Food",
+	icon = "🌾",
+	is_tradeable = true,
+	max_carry_amount = 200,
+} :: ResourceData
+
+ResourcesData.Iron_Bars = {
+	display_name = "Iron Bars",
+	icon = "🔩",
+	is_tradeable = true,
+	max_carry_amount = 50,
+} :: ResourceData
+
+ResourcesData.Weapons = {
+	display_name = "Weapons",
+	icon = "⚔️",
+	is_tradeable = true,
+	max_carry_amount = 50,
+} :: ResourceData
+
+return ResourcesData

@@ -1,7 +1,6 @@
--- Sovereign_V2/src/shared/GameData.spec/UnitsData.spec.luau
-
 return function()
-	local UnitsData = require(script.Parent.Parent.GameData.UnitsData)
+	local GameData = require(script.Parent.Parent.GameData)
+	local UnitsData = GameData.Units
 
 	describe("UnitsData", function()
 		it("should load and be a non-empty table", function()
@@ -9,9 +8,9 @@ return function()
 			expect(next(UnitsData)).to.be.ok()
 		end)
 
-		it("should contain core units like Peasant and Knight", function()
+		it("should contain core units like Peasant and King", function()
 			expect(UnitsData.Peasant).to.be.a("table")
-			expect(UnitsData.Knight).to.be.a("table")
+			expect(UnitsData.King).to.be.a("table")
 		end)
 
 		it("should have a 'cost' table for the Peasant unit", function()
@@ -21,10 +20,10 @@ return function()
 		end)
 
 		it("should have correct data types for a combat unit", function()
-			local knightData = UnitsData.Knight
-			expect(typeof(knightData.hit_points)).to.equal("number")
-			expect(typeof(knightData.attack_damage)).to.equal("number")
-			expect(typeof(knightData.movement.speed_meters_per_second)).to.equal("number")
+			local kingData = UnitsData.King
+			expect(typeof(kingData.hit_points)).to.equal("number")
+			expect(typeof(kingData.attack_damage)).to.equal("number")
+			expect(typeof(kingData.movement.speed_meters_per_second)).to.equal("number")
 		end)
 	end)
 end

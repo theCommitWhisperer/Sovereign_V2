@@ -1,7 +1,5 @@
--- Sovereign_V2/src/shared/DebugSystem/Manager.spec/DebugManager.spec.luau
-
 return function()
-	local DebugManager = require(script.Parent.Parent.Manager.DebugManager)
+	local DebugManager = require(script.Parent.Parent)
 
 	describe("DebugManager", function()
 		it("should be a table", function()
@@ -10,25 +8,47 @@ return function()
 
 		it("should log an info message without errors", function()
 			expect(function()
-				DebugManager.info("TestSystem", "This is an info message.")
-			end).to.be.ok()
+				DebugManager.info("Test info message")
+			end).never.to.throw()
 		end)
 
 		it("should handle logging with data tables", function()
 			expect(function()
-				DebugManager.info("TestSystem", "Logging with data.", {
-					testKey = "testValue",
-					testNumber = 42,
+				DebugManager.info("Test with data", {
+					key1 = "value1",
+					key2 = 42,
 				})
-			end).to.be.ok()
+			end).never.to.throw()
 		end)
 
 		it("should handle logging with Vector3 data", function()
 			expect(function()
-				DebugManager.info("TestSystem", "Logging with Vector3.", {
+				DebugManager.info("Test with Vector3", {
 					position = Vector3.new(10, 20, 30),
 				})
-			end).to.be.ok()
+			end).never.to.throw()
+		end)
+
+		it("should create channels", function()
+			local channel = DebugManager.createChannel("TestChannel", true)
+			expect(typeof(channel)).to.equal("table")
+			expect(channel.name).to.equal("TestChannel")
+			expect(channel.enabled).to.equal(true)
+		end)
+
+		it("should respect channel enabled flag", function()
+			local channel = DebugManager.createChannel("DisabledChannel", false)
+			expect(function()
+				channel:info("This should not print")
+			end).never.to.throw()
+		end)
+
+		it("should allow enabling/disabling channels", function()
+			DebugManager.createChannel("ToggleChannel", true)
+			expect(function()
+				DebugManager.setChannelEnabled("ToggleChannel", false)
+				DebugManager.setChannelEnabled("ToggleChannel", true)
+			end).never.to.throw()
 		end)
 	end)
 end
