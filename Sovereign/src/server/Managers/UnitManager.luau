@@ -7,6 +7,8 @@ local ServerStorage = game:GetService("ServerStorage")
 
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local PlayerManager = require(script.Parent.PlayerManager) -- Same folder now
+local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
+local UnitManagerDebug = DebugManager.createChannel("UnitManager", false)
 
 local UnitManager = {}
 
@@ -51,7 +53,7 @@ local function getDummyModel(): Model
 		end
 	end
 
-	warn("[UnitManager] No Dummy found in ServerStorage, creating simple model")
+	UnitManagerDebug:warn("No Dummy found in ServerStorage, creating simple model")
 	local model = Instance.new("Model")
 	model.Name = "Dummy"
 
@@ -94,7 +96,7 @@ end
 function UnitManager.createUnit(unitType: string, ownerId: number, position: Vector3?): Model?
 	local unitInfo = GameData.Units[unitType]
 	if not unitInfo then
-		warn(`[UnitManager] Unknown unit type: {unitType}`)
+		UnitManagerDebug:warn(`Unknown unit type: {unitType}`)
 		return nil
 	end
 
@@ -110,12 +112,12 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 		playerName = tostring(ownerId)
 	end
 
-	print(`[UnitManager] Creating {unitType} for {playerName} (ID: {ownerId})`)
+	UnitManagerDebug:info(`Creating {unitType} for {playerName} (ID: {ownerId})`)
 
 	-- Get dummy model
 	local dummyModel = getDummyModel()
 	if not dummyModel then
-		warn("[UnitManager] Failed to get dummy model")
+		UnitManagerDebug:warn("Failed to get dummy model")
 		return nil
 	end
 
@@ -165,7 +167,7 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 	if success and player then
 		PlayerManager.addUnit(player, unit)
 	else
-		warn(`[UnitManager] Could not find player with UserId {ownerId}`)
+		UnitManagerDebug:warn(`Could not find player with UserId {ownerId}`)
 	end
 
 	return unit

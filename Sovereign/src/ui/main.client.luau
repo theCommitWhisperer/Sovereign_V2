@@ -1,5 +1,9 @@
 -- src/ui/main.client.luau
-print("main.client.luau: Script started.")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
+local MainClientDebug = DebugManager.createChannel("MainUI", false)
+
+MainClientDebug:info("Main Client Script started.")
 
 local React = require(game.ReplicatedStorage.Packages.react)
 local ReactRoblox = require(game.ReplicatedStorage.Packages["react-roblox"])
@@ -8,20 +12,20 @@ local App = require(script.Parent.App) -- App.luau is in the same folder as this
 local player = game:GetService("Players").LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
-print("main.client.luau: PlayerGui found.")
+MainClientDebug:info("PlayerGui found.")
 
 local rootGui = Instance.new("ScreenGui")
 rootGui.Name = "SovereignApp"
 rootGui.Parent = playerGui
 
-print("main.client.luau: SovereignApp ScreenGui created.")
+MainClientDebug:info("SovereignApp ScreenGui created.")
 
 local root = ReactRoblox.createRoot(rootGui)
-print("main.client.luau: Roact root created. Rendering App...")
+MainClientDebug:info("Roact root created. Rendering App...")
 
 root:render(React.createElement(App))
 
-print("main.client.luau: App rendering process initiated.")
+MainClientDebug:info("App rendering process initiated.")
 
 script.Destroying:Connect(function()
 	root:unmount()

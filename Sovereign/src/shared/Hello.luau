@@ -1,3 +1,7 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
+local channel = DebugManager.newChannel("Hello", "info")
+
 return function()
-	print("Hello, world!")
+	channel:info("Hello, world!")
 end

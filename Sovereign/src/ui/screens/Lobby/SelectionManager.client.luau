@@ -1,26 +1,24 @@
+--!strict
+-- SelectionManager: Handles unit selection and visual feedback
+
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local SelectionDebug = DebugManager.createChannel("Selection", false) -- Enable for now
-
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
-local SelectionManager = {}
+local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
+local SelectionDebug = DebugManager.createChannel("Selection", false)
 
-SelectionDebug:info("Script loading...")
+local SelectionManager = {}
 
 -- State
 local selectedUnits: { Model } = {}
 local isBoxSelecting = false
 local boxStartPosition: Vector2? = nil
 local selectionBox: Frame? = nil
-
-local selectionChangedEvent = Instance.new("BindableEvent")
-SelectionManager.SelectionChanged = selectionChangedEvent.Event
 
 -- Selection indicators
 local selectionIndicators: { [Model]: Instance } = {}
@@ -62,73 +60,28 @@ end
 
 -- Add a unit to selection
 function SelectionManager.addToSelection(unit: Model)
-	SelectionDebug:info(`addToSelection called for {unit.Name}`)
-
 	-- Check if unit belongs to player
 	local owner = unit:GetAttribute("Owner")
-	SelectionDebug:info("Unit owner check", {
-		owner = owner,
-		playerId = player.UserId,
-	})
-
 	if owner ~= player.UserId then
-		SelectionDebug:warn("Unit doesn't belong to player, rejecting")
 		return
 	end
 
 	-- Check if already selected
 	for _, selectedUnit in selectedUnits do
 		if selectedUnit == unit then
-			SelectionDebug:info("Unit already selected")
 			return
 		end
 	end
 
 	table.insert(selectedUnits, unit)
-	SelectionDebug:info(`Added to selection`, { totalSelected = #selectedUnits })
 
 	-- Create visual indicator
 	local indicator = createSelectionIndicator(unit)
 	if indicator then
 		selectionIndicators[unit] = indicator
-		SelectionDebug:info("Created selection indicator")
-	else
-		SelectionDebug:warn("Failed to create selection indicator")
 	end
 
-	-- Fire selection changed event
-	selectionChangedEvent:Fire(selectedUnits)
-
-	SelectionDebug:info(`Successfully selected {unit.Name}`)
-end
-
--- Clear all selections
-function SelectionManager.clearSelection()
-	for _, unit in selectedUnits do
-		if selectionIndicators[unit] then
-			selectionIndicators[unit]:Destroy()
-			selectionIndicators[unit] = nil
-		end
-	end
-
-	selectedUnits = {}
-
-	-- Fire selection changed event
-	selectionChangedEvent:Fire(selectedUnits)
-
-	SelectionDebug:info("Cleared selection")
-end
--- Clear all selections
-function SelectionManager.clearSelection()
-	for _, unit in selectedUnits do
-		if selectionIndicators[unit] then
-			selectionIndicators[unit]:Destroy()
-			selectionIndicators[unit] = nil
-		end
-	end
-
-	selectedUnits = {}
-	SelectionDebug:info("Cleared selection")
+	SelectionDebug:info(`Selected {unit.Name}`)
 end
 
 -- Remove a unit from selection
@@ -148,6 +101,19 @@ function SelectionManager.removeFromSelection(unit: Model)
 	end
 end
 
+-- Clear all selections
+function SelectionManager.clearSelection()
+	for _, unit in selectedUnits do
+		if selectionIndicators[unit] then
+			selectionIndicators[unit]:Destroy()
+			selectionIndicators[unit] = nil
+		end
+	end
+
+	selectedUnits = {}
+	SelectionDebug:info("Cleared selection")
+end
+
 -- Get currently selected units
 function SelectionManager.getSelectedUnits(): { Model }
 	return selectedUnits
@@ -158,48 +124,27 @@ local function worldToScreen(position: Vector3): (Vector2, boolean)
 	local screenPos, onScreen = camera:WorldToViewportPoint(position)
 	return Vector2.new(screenPos.X, screenPos.Y), onScreen
 end
+
 -- Get unit at mouse position
 local function getUnitAtMouse(mousePosition: Vector2): Model?
-	SelectionDebug:info("getUnitAtMouse", { position = mousePosition })
-
 	local ray = camera:ScreenPointToRay(mousePosition.X, mousePosition.Y)
 	local raycastParams = RaycastParams.new()
 	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-
-	-- Exclude player character AND terrain
-	local filterList = { player.Character }
-	if workspace:FindFirstChild("Terrain") then
-		table.insert(filterList, workspace.Terrain)
-	end
-	raycastParams.FilterDescendantsInstances = filterList
+	raycastParams.FilterDescendantsInstances = { player.Character }
 
 	local result = workspace:Raycast(ray.Origin, ray.Direction * 1000, raycastParams)
 
 	if result and result.Instance then
-		SelectionDebug:info("Raycast hit", {
-			instanceName = result.Instance.Name,
-			parent = result.Instance.Parent and result.Instance.Parent.Name or "nil",
-		})
-
 		-- Check if we hit a unit
 		local model = result.Instance:FindFirstAncestorOfClass("Model")
-		SelectionDebug:info("Found model", { model = model and model.Name or "nil" })
-
-		if model then
-			local unitType = model:GetAttribute("UnitType")
-			SelectionDebug:info("Model UnitType", { unitType = unitType })
-
-			if unitType then
-				SelectionDebug:info(`Found unit: {model.Name}`)
-				return model
-			end
+		if model and model:GetAttribute("UnitType") then
+			return model
 		end
-	else
-		SelectionDebug:info("Raycast didn't hit anything")
 	end
 
 	return nil
 end
+
 -- Get all units in box
 local function getUnitsInBox(topLeft: Vector2, bottomRight: Vector2): { Model }
 	local unitsInBox = {}
@@ -250,41 +195,27 @@ local function createSelectionBoxUI(): Frame
 
 	return box
 end
+
 -- Handle mouse input
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	SelectionDebug:info("Input detected", {
-		inputType = tostring(input.UserInputType),
-		gameProcessed = gameProcessed,
-	})
-
 	if gameProcessed then
-		SelectionDebug:info("Input was processed by game, ignoring")
 		return
 	end
 
 	-- Left mouse button - start selection
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		SelectionDebug:info("Left mouse clicked")
 		local mousePosition = UserInputService:GetMouseLocation()
-		SelectionDebug:info("Mouse position", { position = mousePosition })
 
 		-- Try to select a unit
 		local unit = getUnitAtMouse(mousePosition)
-		SelectionDebug:info("Unit at mouse", { unit = unit and unit.Name or "nil" })
 
 		if unit then
-			SelectionDebug:info("Found unit", {
-				name = unit.Name,
-				owner = unit:GetAttribute("Owner"),
-				playerId = player.UserId,
-			})
 			-- Single unit selection
 			if not UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
 				SelectionManager.clearSelection()
 			end
 			SelectionManager.addToSelection(unit)
 		else
-			SelectionDebug:info("No unit found, starting box selection")
 			-- Start box selection
 			if not UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
 				SelectionManager.clearSelection()
@@ -321,9 +252,6 @@ UserInputService.InputEnded:Connect(function(input)
 		end
 
 		boxStartPosition = nil
-
-		-- Fire selection changed event (in case box selection added units)
-		selectionChangedEvent:Fire(selectedUnits)
 	end
 end)
 

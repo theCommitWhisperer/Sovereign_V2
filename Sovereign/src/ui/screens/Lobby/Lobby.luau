@@ -1,4 +1,6 @@
 local React = require(game.ReplicatedStorage.Packages.react)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
 local UIConfig = require(script.Parent.Parent.Parent.UIConfig)
 local LobbySettings = require(script.Parent.Parent.Parent.LobbySettings)
 local Button = require(script.Parent.Parent.Parent.components.Button)
@@ -6,6 +8,8 @@ local Toggle = require(script.Parent.Parent.Parent.components.Toggle)
 local PlayerList = require(script.Parent.PlayerList)
 local MapPreview = require(script.Parent.MapPreview)
 local Row = require(script.Parent.Parent.Parent.components.Row)
+local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
+local LobbyDebug = DebugManager.createChannel("Lobby", false)
 
 local Lobby = React.Component:extend("Lobby")
 
@@ -432,12 +436,34 @@ function Lobby:render()
 							TextColor3 = lobbyConfig.StartButtonTextColor,
 							TextSize = lobbyConfig.StartButtonTextSize,
 							[React.Event.MouseButton1Click] = function()
-								print("Starting game with the following settings:")
-								for setting, value in pairs(self.state) do
-									if type(value) ~= "table" and type(value) ~= "function" then
-										print(string.format("  %s: %s", setting, tostring(value)))
-									end
-								end
+								local settings = {
+									selectedMap = self.state.selectedMap,
+									startingTroops = self.state.startingTroops,
+									startingGold = self.state.startingGold,
+									startingFood = self.state.startingFood,
+									startingWeapons = self.state.startingWeapons,
+									startingResources = self.state.startingResources,
+									gameSpeed = self.state.gameSpeed,
+									resourceDensity = self.state.resourceDensity,
+									victoryCondition = self.state.victoryCondition,
+									peaceTime = self.state.peaceTime,
+									wildlifeHostility = self.state.wildlifeHostility,
+									unitMorale = self.state.unitMorale,
+									abilityToTrade = self.state.abilityToTrade,
+									randomEvents = self.state.randomEvents,
+									legendsMode = self.state.legendsMode,
+									vikingRaids = self.state.vikingRaids,
+									honor = self.state.honor,
+									rank = self.state.rank,
+								}
+
+								local ReplicatedStorage = game:GetService("ReplicatedStorage")
+								local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
+								local GameEvent = RemoteEvents:WaitForChild("GameEvent")
+								GameEvent:FireServer("StartGame", settings)
+
+								LobbyDebug:info("Starting game with settings", settings)
+
 								-- Navigate to HUD (which triggers game start in App.luau)
 								if navigate then
 									navigate("hud")

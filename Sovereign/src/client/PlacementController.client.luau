@@ -10,6 +10,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
+local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
+local PlacementDebug = DebugManager.createChannel("Placement", false)
+
 -- Wait for RemoteEvents
 local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
 local gameEvent = RemoteEvents:WaitForChild("GameEvent")
@@ -39,11 +42,11 @@ local function startPlacement(buildingName: string)
 
 	local buildingInfo = GameData.Buildings[buildingName]
 	if not buildingInfo then
-		warn("[PlacementController] Unknown building:", buildingName)
+		PlacementDebug:warn("Unknown building:", { buildingName = buildingName })
 		return
 	end
 
-	print("[PlacementController] Starting placement for:", buildingName)
+	PlacementDebug:info("Starting placement for:", buildingName)
 
 	isPlacing = true
 	currentBuildingName = buildingName
@@ -117,7 +120,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		-- Left click - place building
 		if canPlace and ghostBuilding then
-			print("[PlacementController] Placing building at:", ghostBuilding.Position)
+			PlacementDebug:info("Placing building at:", ghostBuilding.Position)
 
 			-- Send to server
 			gameEvent:FireServer("PlaceBuilding", {
@@ -130,7 +133,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		end
 	elseif input.UserInputType == Enum.UserInputType.MouseButton2 or input.KeyCode == Enum.KeyCode.Escape then
 		-- Right click or ESC - cancel
-		print("[PlacementController] Placement cancelled")
+		PlacementDebug:info("Placement cancelled")
 		cleanup()
 	end
 end)
@@ -149,4 +152,4 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
-print("[PlacementController] Initialized")
+PlacementDebug:info("Initialized")

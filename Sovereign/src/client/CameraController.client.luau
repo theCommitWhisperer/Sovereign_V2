@@ -10,6 +10,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
+local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
+local CameraDebug = DebugManager.createChannel("Camera", false)
+
 -- Wait for game to start
 local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
 local gameEvent = RemoteEvents:WaitForChild("GameEvent")
@@ -47,7 +50,7 @@ gameEvent.OnClientEvent:Connect(function(action, data)
 		cameraTarget = humanoidRootPart.Position
 		camera.CFrame = CFrame.new(cameraTarget + Vector3.new(0, currentHeight, CAMERA_DISTANCE), cameraTarget)
 
-		print("[CameraController] RTS camera initialized")
+		CameraDebug:info("RTS camera initialized")
 	end
 end)
 

@@ -4,7 +4,11 @@
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
+
+local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
+local HealthBarDebug = DebugManager.createChannel("HealthBar", false) -- Corrected to be off by default
 
 local HealthBarManager = {}
 
@@ -107,6 +111,6 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
-print("[HealthBarManager] Initialized")
+HealthBarDebug:info("Initialized")
 
 return HealthBarManager

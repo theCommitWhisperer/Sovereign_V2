@@ -175,6 +175,33 @@ UnitsData.Spearman = {
 	population_cost = 1,
 } :: UnitData
 
+UnitsData.Viking = {
+	type = "Unit",
+	subtype = "Infantry",
+	cost = {
+		Food = 10,
+		Gold = 100,
+	},
+	training_time_seconds = 10,
+	health = {
+		max_health = 80,
+		current_health = 80,
+	},
+	movement = {
+		speed_meters_per_second = 1.2,
+		can_swim = false,
+		can_climb = false,
+	},
+	carry_capacity = 0,
+	combat = {
+		attack_damage = 20,
+		attack_speed = 1.5,
+		attack_range = 2,
+		armor = 3,
+	},
+	population_cost = 1,
+} :: UnitData
+
 UnitsData.Archer = {
 	type = "Unit",
 	subtype = "Ranged",
@@ -222,7 +249,7 @@ UnitsData.Knight = {
 	},
 	carry_capacity = 0,
 	combat = {
-		attack_damage = 20,
+		attack_damage = 30,
 		attack_speed = 1.2,
 		attack_range = 2,
 		armor = 5,

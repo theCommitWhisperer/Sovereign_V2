@@ -6,8 +6,11 @@ local Players = game:GetService("Players")
 
 -- Require game data (safe - read-only configs)
 local GameData = require(ReplicatedStorage.Shared.GameData)
+local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-print("[GameManager] Loading server-side managers...")
+local GameManagerDebug = DebugManager.createChannel("GameManager", false) -- Corrected to be off by default
+
+GameManagerDebug:info("Loading server-side managers...")
 
 -- Require from Managers subfolder (secure - server-only logic)
 local Managers = script.Parent.Managers
@@ -24,8 +27,8 @@ local Systems = script.Parent.Systems
 local MovementSystem = require(Systems.MovementSystem)
 local VikingRaidSystem = require(Systems.VikingRaidSystem)
 
-print("[GameManager] Managers loaded successfully")
-print("[GameManager] Server starting...")
+GameManagerDebug:info("Managers loaded successfully")
+GameManagerDebug:info("Server starting...")
 
 -- Create RemoteEvent for game actions
 local RemoteEvents = Instance.new("Folder")
@@ -36,7 +39,7 @@ local GameEvent = Instance.new("RemoteEvent")
 GameEvent.Name = "GameEvent"
 GameEvent.Parent = RemoteEvents
 
-print("[GameManager] RemoteEvents created")
+GameManagerDebug:info("RemoteEvents created")
 
 -- Player joined - create their data
 Players.PlayerAdded:Connect(function(player)
@@ -54,7 +57,7 @@ local function spawnInitialSetup(player: Player, factionData: any)
 	-- 1. Spawn the Keep
 	local keep = BuildingManager.createBuilding(player, "Keep", spawnPoint)
 	if not keep then
-		warn(`[GameManager] Failed to create Keep for {player.Name}`)
+		GameManagerDebug:warn(`Failed to create Keep for {player.Name}`)
 		return
 	end
 
@@ -75,40 +78,40 @@ local function spawnInitialSetup(player: Player, factionData: any)
 	ResourceNodeManager.spawnNodesNearPosition(spawnPoint.Position, 150, "Stone", 15)
 	ResourceNodeManager.spawnNodesNearPosition(spawnPoint.Position, 100, "Food", 10)
 
-	print(
-		`[GameManager] Spawned Keep, King, {factionData.StartingPeasants} peasants, and resource nodes for {player.Name}`
+	GameManagerDebug:info(
+		`Spawned Keep, King, {factionData.StartingPeasants} peasants, and resource nodes for {player.Name}`
 	)
 end
 
 -- Handle game events from client
 GameEvent.OnServerEvent:Connect(function(player, action, data)
-	print(`[GameManager] Received event from {player.Name}: {action}`)
+	GameManagerDebug:info(`Received event from {player.Name}: {action}`)
 
 	local playerData = PlayerManager.get(player)
 	if not playerData then
-		warn(`[GameManager] No player data for {player.Name}`)
+		GameManagerDebug:warn(`No player data for {player.Name}`)
 		return
 	end
 
 	if action == "StartGame" then
-		print(`[GameManager] {player.Name} starting game...`)
+		GameManagerDebug:info(`{player.Name} starting game...`)
 		-- Get game settings from data
 		local settings = typeof(data) == "table" and data or {}
 		local vikingRaidsEnabled = settings.vikingRaids or false
 		local peaceTimeStr = settings.peaceTime or "10 minutes"
 
 		-- Parse peace time (format: "10 minutes")
-		local peaceTimeMinutes = 10 -- default
+		local peaceTimeMinutes = 0 -- default
 		local minutes = peaceTimeStr:match("(%d+)")
 		if minutes then
 			peaceTimeMinutes = tonumber(minutes) or 10
 		end
 
-		print(`[GameManager] Viking Raids: {vikingRaidsEnabled}, Peace Time: {peaceTimeMinutes} minutes`)
+		GameManagerDebug:info(`Viking Raids: {vikingRaidsEnabled}, Peace Time: {peaceTimeMinutes} minutes`)
 
 		if vikingRaidsEnabled then
 			VikingRaidSystem.enableRaids(player.UserId, peaceTimeMinutes)
-			print(`[GameManager] Viking Raids enabled for {player.Name}`)
+			GameManagerDebug:info(`Viking Raids enabled for {player.Name}`)
 		end
 
 		-- Assign faction (for now, just use Kingdom)
@@ -137,36 +140,36 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 			resources = playerData.Resources,
 		})
 
-		print(`[GameManager] {player.Name} spawned as Kingdom`)
+		GameManagerDebug:info(`{player.Name} spawned as Kingdom`)
 	elseif action == "StartPlacement" then
-		print(`[GameManager] {player.Name} wants to place: {data}`)
+		GameManagerDebug:info(`{player.Name} wants to place: {data}`)
 
 		-- Client wants to start placing a building
 		if typeof(data) == "string" then
 			local buildingInfo = GameData.Buildings[data]
 			if not buildingInfo then
-				warn(`[GameManager] Unknown building: {data}`)
+				GameManagerDebug:warn(`Unknown building: {data}`)
 				return
 			end
 
 			if PlayerManager.hasEnoughResources(player, buildingInfo.cost) then
-				print(`[GameManager] Approving placement for {player.Name}: {data}`)
+				GameManagerDebug:info(`Approving placement for {player.Name}: {data}`)
 				-- Tell client to start placement mode
 				GameEvent:FireClient(player, "StartPlacement", data)
 			else
-				warn(`[GameManager] {player.Name} cannot afford {data}`)
-				print(`[GameManager] Current resources:`, playerData.Resources)
-				print(`[GameManager] Required:`, buildingInfo.cost)
+				GameManagerDebug:warn(`{player.Name} cannot afford {data}`)
+				GameManagerDebug:info(`Current resources:`, playerData.Resources)
+				GameManagerDebug:info(`Required:`, buildingInfo.cost)
 			end
 		end
 	elseif action == "PlaceBuilding" then
-		print(`[GameManager] {player.Name} placing building:`, data)
+		GameManagerDebug:info(`{player.Name} placing building:`, data)
 
 		-- Client confirmed building placement
 		if typeof(data) == "table" and data.buildingName and data.cframe then
 			local buildingInfo = GameData.Buildings[data.buildingName]
 			if not buildingInfo then
-				warn(`[GameManager] Unknown building: {data.buildingName}`)
+				GameManagerDebug:warn(`Unknown building: {data.buildingName}`)
 				return
 			end
 
@@ -179,35 +182,41 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 
 				if building then
 					-- If it's a production building, auto-assign a worker
-					if buildingInfo.requires_worker and buildingInfo.produces_resource then
-						-- Find an idle peasant
+					if buildingInfo.requires_worker then
+						-- Find a free peasant
 						for _, unit in playerData.Units do
-							if
-								unit
-								and unit.Parent
-								and unit:GetAttribute("UnitType") == "Peasant"
-								and not unit:GetAttribute("IsWorking")
-								and not unit:GetAttribute("IsHauling")
-							then
-								WorkerManager.assignWorkerToBuilding(unit, building, player.UserId)
-								print(`[GameManager] Auto-assigned worker to {data.buildingName}`)
-								break
+							if unit and unit.Parent then
+								local unitType = unit:GetAttribute("UnitType")
+								local isWorking = unit:GetAttribute("IsWorking")
+
+								-- CHECK: Don't assign Vikings as workers!
+								local owner = unit:GetAttribute("Owner")
+								if unitType == "Peasant" and not isWorking and owner == player.UserId then
+									WorkerManager.assignWorkerToBuilding(unit, newBuilding, player.UserId)
+									print(`[GameManager] Auto-assigned worker to {buildingType}`)
+									break
+								end
 							end
 						end
 					end
 
-					-- Auto-assign a hauler if we have idle peasants
+					-- Auto-assign a hauler if we have available peasants
 					for _, unit in playerData.Units do
-						if
-							unit
-							and unit.Parent
-							and (unit:GetAttribute("UnitType") == "Peasant" or unit:GetAttribute("UnitType") == "Ox")
-							and not unit:GetAttribute("IsWorking")
-							and not unit:GetAttribute("IsHauling")
-						then
-							WorkerManager.assignHauler(unit, player.UserId)
-							print(`[GameManager] Auto-assigned hauler`)
-							break
+						if unit and unit.Parent then
+							local unitType = unit:GetAttribute("UnitType")
+							local isHauling = unit:GetAttribute("IsHauling")
+							local isWorking = unit:GetAttribute("IsWorking")
+
+							-- CHECK: Don't assign Vikings as haulers!
+							local owner = unit:GetAttribute("Owner")
+							if
+								unitType == "Peasant"
+								or unitType == "Ox" and not isHauling and not isWorking and owner == player.UserId
+							then
+								WorkerManager.assignHauler(unit, player.UserId)
+								print(`[GameManager] Auto-assigned hauler`)
+								break
+							end
 						end
 					end
 
@@ -216,20 +225,20 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 						resources = playerData.Resources,
 					})
 
-					print(`[GameManager] {player.Name} successfully placed {data.buildingName}`)
+					GameManagerDebug:info(`{player.Name} successfully placed {data.buildingName}`)
 				else
 					-- Refund if building failed to create
 					PlayerManager.addResources(player, buildingInfo.cost)
-					warn(`[GameManager] Failed to create building, refunded resources`)
+					GameManagerDebug:warn(`Failed to create building, refunded resources`)
 				end
 			else
-				warn(`[GameManager] {player.Name} cannot afford {data.buildingName} at placement time`)
+				GameManagerDebug:warn(`{player.Name} cannot afford {data.buildingName} at placement time`)
 			end
 		end
 	elseif action == "MoveUnit" then
 		-- Handle unit movement command
 		if typeof(data) == "table" and data.unitId and data.targetPosition then
-			print(`[GameManager] {player.Name} moving unit {data.unitId} to {data.targetPosition}`)
+			GameManagerDebug:info(`{player.Name} moving unit {data.unitId} to {data.targetPosition}`)
 
 			-- Find the unit
 			for _, unit in playerData.Units do
@@ -239,7 +248,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 						-- Set target position
 						unit:SetAttribute("TargetPosition", data.targetPosition)
 						unit:SetAttribute("IsMoving", true)
-						print(`[GameManager] Unit {data.unitId} target set to {data.targetPosition}`)
+						GameManagerDebug:info(`Unit {data.unitId} target set to {data.targetPosition}`)
 						break
 					end
 				end
@@ -248,7 +257,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 	elseif action == "StartTraining" then
 		-- Handle unit training request
 		if typeof(data) == "table" and data.buildingId and data.unitType then
-			print(`[GameManager] {player.Name} wants to train {data.unitType} at {data.buildingId}`)
+			GameManagerDebug:info(`{player.Name} wants to train {data.unitType} at {data.buildingId}`)
 
 			-- Find the building
 			for _, building in playerData.Buildings do
@@ -257,9 +266,9 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 					if building:GetAttribute("Owner") == player.UserId then
 						local success = TrainingManager.startTraining(building, data.unitType, player.UserId)
 						if success then
-							print(`[GameManager] Started training {data.unitType}`)
+							GameManagerDebug:info(`Started training {data.unitType}`)
 						else
-							warn(`[GameManager] Failed to start training {data.unitType}`)
+							GameManagerDebug:warn(`Failed to start training {data.unitType}`)
 						end
 						break
 					end
@@ -283,7 +292,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 	elseif action == "AttackTarget" then
 		-- Handle attack command
 		if typeof(data) == "table" and data.unitId and data.targetId then
-			print(`[GameManager] {player.Name} ordering {data.unitId} to attack {data.targetId}`)
+			GameManagerDebug:info(`{player.Name} ordering {data.unitId} to attack {data.targetId}`)
 
 			-- Find the attacker unit
 			for _, unit in playerData.Units do
@@ -296,7 +305,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 							local target = unitsFolder:FindFirstChild(data.targetId)
 							if target then
 								CombatManager.setTarget(unit, target)
-								print(`[GameManager] {data.unitId} attacking {data.targetId}`)
+								GameManagerDebug:info(`{data.unitId} attacking {data.targetId}`)
 							end
 						end
 						break
@@ -307,4 +316,4 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 	end
 end)
 
-print("[GameManager] Server ready!")
+GameManagerDebug:info("Server ready!")

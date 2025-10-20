@@ -1,11 +1,14 @@
 -- src/ui/components/Checkbox.luau
 local React = require(game.ReplicatedStorage.Packages.react)
 local UIConfig = require(script.Parent.Parent.UIConfig)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
+local channel = DebugManager.newChannel("Checkbox", "info")
 
 local Checkbox = React.Component:extend("Checkbox")
 
 function Checkbox:render()
-	print("Component Log: Checkbox.luau is rendering.")
+	channel:info("Component Log: Checkbox.luau is rendering.")
 
 	local props = {
 		Size = UDim2.fromOffset(24, 24),

@@ -67,7 +67,7 @@ function HUD:init()
 
 				-- TODO: Show notification UI
 				-- For now, just log it
-				print(`⚠️ VIKING RAID #{data.raidNumber}! {data.vikingCount} Vikings are attacking!`)
+				HUDDebug:warn(`VIKING RAID #${data.raidNumber}! {data.vikingCount} Vikings are attacking!`)
 			end
 		end
 	end)
@@ -260,7 +260,7 @@ function HUD:render()
 			BuildingMenu = React.createElement(BuildingMenu, {
 				resources = self.state.resources,
 				onBuildingSelected = function(buildingName)
-					print("[HUD] Building selected:", buildingName)
+					HUDDebug:info("Building selected for placement", { building = buildingName })
 					self:setState({
 						isPlacingBuilding = true,
 						selectedBuilding = buildingName,
@@ -282,7 +282,7 @@ function HUD:render()
 			selectedBuilding = self.state.selectedTrainingBuilding,
 			queue = self.state.trainingQueue,
 			onTrainUnit = function(unitType)
-				print(`[HUD] Training unit: {unitType}`)
+				HUDDebug:info(`Training unit: {unitType}`)
 				if self.state.selectedTrainingBuilding then
 					self.gameEvent:FireServer("StartTraining", {
 						buildingId = self.state.selectedTrainingBuilding.Name,

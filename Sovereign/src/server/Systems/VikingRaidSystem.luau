@@ -29,13 +29,12 @@ local VIKING_OWNER_ID = 1000000
 
 -- Enable Viking raids for a player
 function VikingRaidSystem.enableRaids(playerId: number, peaceTimeMinutes: number)
-	local peaceTimeSeconds = peaceTimeMinutes * 60
-
+	local peaceTimeSeconds = math.max(peaceTimeMinutes * 60, 60)
 	activeRaids[playerId] = {
 		playerId = playerId,
 		enabled = true,
 		peaceTimeSeconds = peaceTimeSeconds,
-		raidIntervalSeconds = 120, -- Raid every 2 minutes after peace time
+		raidIntervalSeconds = 180, -- Changed from 120 to 180 (3 minutes between raids)
 		nextRaidTime = tick() + peaceTimeSeconds,
 		currentRaidNumber = 0,
 	}
@@ -88,25 +87,33 @@ local function spawnRaid(config: RaidConfig)
 		VikingDebug:warn("Could not find Keep for player", { playerId = config.playerId })
 		return
 	end
-
 	-- Spawn Vikings at a random location around the player
 	local angle = math.random() * math.pi * 2
 	local distance = 80 + math.random(-20, 20) -- 60-100 studs away
 	local spawnOffset = Vector3.new(math.cos(angle) * distance, 0, math.sin(angle) * distance)
 	local spawnPosition = keepPosition + spawnOffset
 
-	-- Scale difficulty with raid number
-	local vikingCount = 3 + math.floor(raidNumber / 2) -- Start with 3, increase by 1 every 2 raids
-	local unitTypes = { "Peasant", "Spearman", "Archer" }
+	-- FIX: Set proper Y position - spawn ABOVE ground to prevent falling through
+	spawnPosition = Vector3.new(spawnPosition.X, 20, spawnPosition.Z) -- Changed from keepPosition.Y to 20
+
+	-- Scale difficulty with raid number - MORE CONSERVATIVE
+	local vikingCount = math.min(3 + math.floor((raidNumber - 1) / 3), 15) -- Start with 3, add 1 every 3 raids, max 15
+	local unitTypes = { "Viking" }
 
 	-- For early raids, use weaker units
-	if raidNumber <= 2 then
-		unitTypes = { "Peasant" }
-	elseif raidNumber <= 4 then
-		unitTypes = { "Peasant", "Spearman" }
+	if raidNumber == 1 then
+		unitTypes = { "Viking" }
+		vikingCount = 3 -- First raid is always 3 peasants
+	elseif raidNumber <= 3 then
+		unitTypes = { "Viking" }
+		vikingCount = 3 + (raidNumber - 1) -- 3, 4, 5
+	elseif raidNumber <= 5 then
+		unitTypes = { "Viking" }
+		vikingCount = 5 + (raidNumber - 3) -- 5, 6, 7
 	end
 
 	VikingDebug:info("Raid composition", {
+		raidNumber = raidNumber,
 		vikingCount = vikingCount,
 		availableTypes = unitTypes,
 	})
@@ -115,15 +122,29 @@ local function spawnRaid(config: RaidConfig)
 	local spawnedVikings = {}
 	for i = 1, vikingCount do
 		local unitType = unitTypes[math.random(1, #unitTypes)]
-		local offset = Vector3.new(math.random(-10, 10), 0, math.random(-10, 10))
+		local offset = Vector3.new(
+			math.random(-10, 10),
+			0, -- Keep this at 0, we'll set Y below
+			math.random(-10, 10)
+		)
 
-		local viking = UnitManager.createUnit(unitType, VIKING_OWNER_ID, spawnPosition + offset)
+		local vikingSpawnPos = spawnPosition + offset
+		vikingSpawnPos = Vector3.new(vikingSpawnPos.X, 20, vikingSpawnPos.Z) -- Ensure Y=20
+
+		local viking = UnitManager.createUnit(unitType, VIKING_OWNER_ID, vikingSpawnPos)
 		if viking then
 			table.insert(spawnedVikings, viking)
 
 			-- Make Vikings slightly more aggressive (optional: modify stats)
 			viking:SetAttribute("IsViking", true)
 			viking:SetAttribute("TargetPlayerId", config.playerId)
+
+			VikingDebug:info("Viking spawned", {
+				type = unitType,
+				position = viking.PrimaryPart and viking.PrimaryPart.Position or "no primary part",
+			})
+		else
+			VikingDebug:warn("Failed to spawn Viking", { unitType = unitType })
 		end
 	end
 
@@ -131,6 +152,8 @@ local function spawnRaid(config: RaidConfig)
 		count = #spawnedVikings,
 		position = spawnPosition,
 	})
+
+	config.nextRaidTime = tick() + config.raidIntervalSeconds
 
 	-- Notify player
 	local player = game.Players:GetPlayerByUserId(config.playerId)
@@ -152,11 +175,16 @@ local function spawnRaid(config: RaidConfig)
 	task.wait(1) -- Give them a moment to spawn
 	for _, viking in spawnedVikings do
 		if viking and viking.Parent then
-			local keepPosition = getPlayerKeepPosition(config.playerId)
-			if keepPosition then
+			local targetKeep = getPlayerKeepPosition(config.playerId)
+			if targetKeep then
 				-- Move towards Keep
-				viking:SetAttribute("TargetPosition", keepPosition)
+				viking:SetAttribute("TargetPosition", targetKeep)
 				viking:SetAttribute("IsMoving", true)
+
+				VikingDebug:info("Viking targeting Keep", {
+					viking = viking.Name,
+					target = targetKeep,
+				})
 			end
 		end
 	end
@@ -164,21 +192,49 @@ local function spawnRaid(config: RaidConfig)
 	-- Schedule next raid
 	config.nextRaidTime = tick() + config.raidIntervalSeconds
 end
-
 -- Update raid system
 local function updateRaids(deltaTime: number)
 	local currentTime = tick()
 
 	for playerId, config in activeRaids do
-		if config.enabled and currentTime >= config.nextRaidTime then
+		if config.enabled and config.currentRaidNumber < 20 and currentTime >= config.nextRaidTime then
 			spawnRaid(config)
+
+			-- CRITICAL: Schedule the next raid AFTER this one
+			config.nextRaidTime = currentTime + config.raidIntervalSeconds
 		end
 	end
 end
-
 -- Start update loop
 RunService.Heartbeat:Connect(function(deltaTime)
 	updateRaids(deltaTime)
+end)
+
+task.spawn(function()
+	task.wait(5) -- Wait 5 seconds after server starts
+
+	VikingDebug:info("TEST: Spawning test Viking")
+
+	local testPosition = Vector3.new(0, 15, 150) -- Simple position
+	local testViking = UnitManager.createUnit("Viking", VIKING_OWNER_ID, testPosition)
+
+	if testViking then
+		VikingDebug:info("TEST: Viking created successfully", {
+			name = testViking.Name,
+			position = testViking.PrimaryPart and testViking.PrimaryPart.Position or "no primary part",
+			parent = testViking.Parent and testViking.Parent.Name or "no parent",
+		})
+
+		-- Check if it stays
+		task.wait(2)
+		if testViking and testViking.Parent then
+			VikingDebug:info("TEST: Viking still exists after 2 seconds")
+		else
+			VikingDebug:warn("TEST: Viking disappeared!")
+		end
+	else
+		VikingDebug:warn("TEST: Failed to create test Viking")
+	end
 end)
 
 VikingDebug:info("Initialized")

@@ -8,7 +8,8 @@ local GameData = require(ReplicatedStorage.Shared.GameData)
 local PlayerManager = require(script.Parent.PlayerManager)
 
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local StorageDebug = DebugManager.createChannel("Storage", true)
+local StorageDebug = DebugManager.createChannel("Storage", false)
+local channel = DebugManager.createChannel("BuildingManager", false)
 
 local BuildingManager = {}
 
@@ -26,11 +27,11 @@ end
 function BuildingManager.createBuilding(player: Player, buildingName: string, cframe: CFrame): Instance?
 	local buildingInfo = GameData.Buildings[buildingName]
 	if not buildingInfo then
-		warn(`[BuildingManager] Unknown building: {buildingName}`)
+		channel:warn(`Unknown building: {buildingName}`)
 		return nil
 	end
 
-	print(`[BuildingManager] Creating {buildingName} for {player.Name}`)
+	channel:info(`Creating {buildingName} for {player.Name}`)
 
 	-- Create a simple part for now (we'll add models later)
 	local building = Instance.new("Part")

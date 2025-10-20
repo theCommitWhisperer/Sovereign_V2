@@ -1,6 +1,10 @@
 --!strict
 -- PlayerManager: Stores and manages player game state
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
+local channel = DebugManager.createChannel("PlayerManager", false)
+
 local PlayerManager = {}
 
 export type PlayerData = {
@@ -40,7 +44,7 @@ function PlayerManager.create(player: Player): PlayerData
 	}
 
 	PlayersData[player.UserId] = data
-	print(`[PlayerManager] Created data for {player.Name}`)
+	channel:info(`Created data for {player.Name}`)
 	return data
 end
 
@@ -62,14 +66,14 @@ function PlayerManager.remove(player: Player)
 	end
 
 	PlayersData[player.UserId] = nil
-	print(`[PlayerManager] Removed data for {player.Name}`)
+	channel:info(`Removed data for {player.Name}`)
 end
 
 function PlayerManager.addBuilding(player: Player, building: Instance)
 	local data = PlayerManager.get(player)
 	if data then
 		table.insert(data.Buildings, building)
-		print(`[PlayerManager] Added building {building.Name} for {player.Name}`)
+		channel:info(`Added building {building.Name} for {player.Name}`)
 	end
 end
 
@@ -77,7 +81,7 @@ function PlayerManager.addUnit(player: Player, unit: Instance)
 	local data = PlayerManager.get(player)
 	if data then
 		table.insert(data.Units, unit)
-		print(`[PlayerManager] Added unit {unit.Name} for {player.Name}`)
+		channel:info(`Added unit {unit.Name} for {player.Name}`)
 	end
 end
 
@@ -85,7 +89,7 @@ end
 function PlayerManager.removeUnit(player: Player, unit: Model)
 	local playerData = get(player)
 	if not playerData then
-		warn(`[PlayerManager] No player data for {player.Name}`)
+		channel:warn(`No player data for {player.Name}`)
 		return
 	end
 
@@ -93,7 +97,7 @@ function PlayerManager.removeUnit(player: Player, unit: Model)
 	for i, storedUnit in playerData.Units do
 		if storedUnit == unit then
 			table.remove(playerData.Units, i)
-			print(`[PlayerManager] Removed unit {unit.Name} from {player.Name}`)
+			channel:info(`Removed unit {unit.Name} from {player.Name}`)
 			return
 		end
 	end

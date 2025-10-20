@@ -2,6 +2,9 @@
 -- ResourceNodeManager: Spawns and manages resource nodes (trees, stone, etc.)
 
 local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
+local ResourceNodeManagerDebug = DebugManager.createChannel("ResourceNodeManager", false)
 
 local ResourceNodeManager = {}
 
@@ -73,7 +76,7 @@ end
 
 -- Spawn resource nodes around a position
 function ResourceNodeManager.spawnNodesNearPosition(centerPos: Vector3, radius: number, nodeType: string, count: number)
-	print(`[ResourceNodeManager] Spawning {count} {nodeType} nodes near {centerPos}`)
+	ResourceNodeManagerDebug:info(`Spawning {count} {nodeType} nodes near {centerPos}`)
 
 	for i = 1, count do
 		-- Random position within radius
@@ -109,7 +112,7 @@ function ResourceNodeManager.spawnNodesNearPosition(centerPos: Vector3, radius: 
 		table.insert(ActiveNodes, node)
 	end
 
-	print(`[ResourceNodeManager] Spawned {count} {nodeType} nodes`)
+	ResourceNodeManagerDebug:info(`Spawned {count} {nodeType} nodes`)
 end
 
 -- Find nearest resource node of a type
@@ -152,7 +155,7 @@ function ResourceNodeManager.gatherFromNode(node: ResourceNode, amount: number):
 
 		-- If depleted, remove it
 		if node.ResourcesRemaining <= 0 then
-			print(`[ResourceNodeManager] Node depleted: {node.Type}`)
+			ResourceNodeManagerDebug:info(`Node depleted: {node.Type}`)
 			node.Instance:Destroy()
 			-- Note: We should remove from ActiveNodes table, but we'll handle that in cleanup
 		end

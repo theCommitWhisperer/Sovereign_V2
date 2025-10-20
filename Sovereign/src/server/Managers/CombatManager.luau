@@ -70,7 +70,12 @@ function CombatManager.killUnit(unit: Model)
 		return
 	end
 
-	CombatDebug:info("Unit killed", { unit = unit.Name })
+	CombatDebug:info("Unit killed", {
+		unit = unit.Name,
+		unitType = unit:GetAttribute("UnitType"),
+		owner = unit:GetAttribute("Owner"),
+		currentHealth = unit:GetAttribute("CurrentHealth"),
+	})
 
 	-- Remove from combat states
 	if CombatStates[unit] then

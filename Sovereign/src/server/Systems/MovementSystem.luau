@@ -62,7 +62,7 @@ function MovementSystem.update(deltaTime: number)
 					local GameData = require(game.ReplicatedStorage.Shared.GameData)
 					local unitInfo = GameData.Units[unitType]
 					if unitInfo and unitInfo.movement then
-						speed = unitInfo.movement.speed_meters_per_second * 16
+						speed = unitInfo.movement.speed_meters_per_second * 16 -- Convert m/s to studs/s
 					end
 				end
 
@@ -88,6 +88,6 @@ RunService.Heartbeat:Connect(function(deltaTime)
 	MovementSystem.update(deltaTime)
 end)
 
-print("[MovementSystem] Initialized")
+MovementDebug:info("Initialized")
 
 return MovementSystem
