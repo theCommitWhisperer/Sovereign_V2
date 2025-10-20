@@ -1,104 +1,233 @@
 --!strict
--- UnitsData: Definitions for all units
-
-local UnitsData = {}
 
 export type UnitData = {
 	type: string,
 	subtype: string,
 	cost: { [string]: number },
-	training_time: number,
-	tags: { string },
-	movement: { speed_meters_per_second: number },
-	hit_points: number,
-	attack_damage: number,
-	attack_range_meters: number,
-	sight_range: number,
-	carry_capacity: number?,
+	training_time_seconds: number?, -- Make optional for units that already exist
+	health: {
+		max_health: number,
+		current_health: number,
+	},
+	movement: {
+		speed_meters_per_second: number,
+		can_swim: boolean,
+		can_climb: boolean,
+	},
+	carry_capacity: number,
+	combat: {
+		attack_damage: number,
+		attack_speed: number,
+		attack_range: number,
+		armor: number,
+	}?,
+	population_cost: number?,
 }
+
+local UnitsData: { [string]: UnitData } = {}
 
 UnitsData.King = {
 	type = "Unit",
-	subtype = "Royalty",
-	cost = {},
-	training_time = 0,
-	tags = { "military", "hero" },
-	movement = { speed_meters_per_second = 2.8 },
-	hit_points = 500,
-	attack_damage = 25,
-	attack_range_meters = 8,
-	sight_range = 80,
+	subtype = "Hero",
+	cost = { Gold = 0 },
+	training_time_seconds = 0,
+	health = {
+		max_health = 200,
+		current_health = 200,
+	},
+	movement = {
+		speed_meters_per_second = 1.5,
+		can_swim = false,
+		can_climb = false,
+	},
+	carry_capacity = 0,
+	combat = {
+		attack_damage = 25,
+		attack_speed = 1.0,
+		attack_range = 2,
+		armor = 10,
+	},
+	population_cost = 0,
 } :: UnitData
 
 UnitsData.Peasant = {
 	type = "Unit",
 	subtype = "Worker",
-	cost = { Gold = 10, population = 1 },
-	training_time = 15,
-	tags = { "civilian", "worker" },
-	movement = { speed_meters_per_second = 3.2 },
-	hit_points = 25,
-	attack_damage = 1,
-	attack_range_meters = 5,
-	sight_range = 40,
+	cost = {
+		Food = 5,
+	},
+	training_time_seconds = 5,
+	health = {
+		max_health = 25,
+		current_health = 25,
+	},
+	movement = {
+		speed_meters_per_second = 1.0,
+		can_swim = false,
+		can_climb = false,
+	},
 	carry_capacity = 10,
+	combat = {
+		attack_damage = 1,
+		attack_speed = 1.0,
+		attack_range = 1,
+		armor = 0,
+	},
+	population_cost = 1,
 } :: UnitData
 
-UnitsData.Ox = {
-	type = "Unit",
-	subtype = "Transport",
-	cost = { Gold = 20, population = 1 },
-	training_time = 20,
-	tags = { "civilian", "transport" },
-	movement = { speed_meters_per_second = 2.0 },
-	hit_points = 50,
-	attack_damage = 0,
-	attack_range_meters = 0,
-	sight_range = 30,
-	carry_capacity = 50,
-} :: UnitData
-
--- Specialized worker types (peasants become these)
 UnitsData.Woodcutter = {
 	type = "Unit",
-	subtype = "Resource Worker",
-	cost = {},
-	training_time = 0,
-	tags = { "civilian", "worker", "woodcutter" },
-	movement = { speed_meters_per_second = 3.0 },
-	hit_points = 25,
-	attack_damage = 1,
-	attack_range_meters = 5,
-	sight_range = 40,
+	subtype = "Worker",
+	cost = { Food = 0 },
+	training_time_seconds = 0,
+	health = {
+		max_health = 25,
+		current_health = 25,
+	},
+	movement = {
+		speed_meters_per_second = 1.0,
+		can_swim = false,
+		can_climb = false,
+	},
 	carry_capacity = 15,
+	combat = {
+		attack_damage = 2,
+		attack_speed = 1.0,
+		attack_range = 1,
+		armor = 0,
+	},
+	population_cost = 0,
 } :: UnitData
 
 UnitsData.Stonemason = {
 	type = "Unit",
-	subtype = "Resource Worker",
-	cost = {},
-	training_time = 0,
-	tags = { "civilian", "worker", "stonemason" },
-	movement = { speed_meters_per_second = 2.8 },
-	hit_points = 30,
-	attack_damage = 2,
-	attack_range_meters = 5,
-	sight_range = 40,
-	carry_capacity = 12,
+	subtype = "Worker",
+	cost = { Food = 0 },
+	training_time_seconds = 0,
+	health = {
+		max_health = 30,
+		current_health = 30,
+	},
+	movement = {
+		speed_meters_per_second = 0.9,
+		can_swim = false,
+		can_climb = false,
+	},
+	carry_capacity = 20,
+	combat = {
+		attack_damage = 3,
+		attack_speed = 1.2,
+		attack_range = 1,
+		armor = 1,
+	},
+	population_cost = 0,
 } :: UnitData
 
 UnitsData.Farmer = {
 	type = "Unit",
-	subtype = "Resource Worker",
-	cost = {},
-	training_time = 0,
-	tags = { "civilian", "worker", "farmer" },
-	movement = { speed_meters_per_second = 3.0 },
-	hit_points = 25,
-	attack_damage = 1,
-	attack_range_meters = 5,
-	sight_range = 40,
-	carry_capacity = 20,
+	subtype = "Worker",
+	cost = { Food = 0 },
+	training_time_seconds = 0,
+	health = {
+		max_health = 25,
+		current_health = 25,
+	},
+	movement = {
+		speed_meters_per_second = 1.0,
+		can_swim = false,
+		can_climb = false,
+	},
+	carry_capacity = 25,
+	combat = {
+		attack_damage = 1,
+		attack_speed = 1.0,
+		attack_range = 1,
+		armor = 0,
+	},
+	population_cost = 0,
+} :: UnitData
+
+UnitsData.Spearman = {
+	type = "Unit",
+	subtype = "Infantry",
+	cost = {
+		Food = 10,
+		Gold = 5,
+	},
+	training_time_seconds = 10,
+	health = {
+		max_health = 50,
+		current_health = 50,
+	},
+	movement = {
+		speed_meters_per_second = 1.2,
+		can_swim = false,
+		can_climb = false,
+	},
+	carry_capacity = 0,
+	combat = {
+		attack_damage = 10,
+		attack_speed = 1.5,
+		attack_range = 2,
+		armor = 2,
+	},
+	population_cost = 1,
+} :: UnitData
+
+UnitsData.Archer = {
+	type = "Unit",
+	subtype = "Ranged",
+	cost = {
+		Food = 15,
+		Gold = 10,
+		Wood = 5,
+	},
+	training_time_seconds = 12,
+	health = {
+		max_health = 30,
+		current_health = 30,
+	},
+	movement = {
+		speed_meters_per_second = 1.3,
+		can_swim = false,
+		can_climb = false,
+	},
+	carry_capacity = 0,
+	combat = {
+		attack_damage = 8,
+		attack_speed = 2.0,
+		attack_range = 15,
+		armor = 0,
+	},
+	population_cost = 1,
+} :: UnitData
+
+UnitsData.Knight = {
+	type = "Unit",
+	subtype = "Cavalry",
+	cost = {
+		Food = 30,
+		Gold = 40,
+	},
+	training_time_seconds = 20,
+	health = {
+		max_health = 100,
+		current_health = 100,
+	},
+	movement = {
+		speed_meters_per_second = 2.0,
+		can_swim = false,
+		can_climb = false,
+	},
+	carry_capacity = 0,
+	combat = {
+		attack_damage = 20,
+		attack_speed = 1.2,
+		attack_range = 2,
+		armor = 5,
+	},
+	population_cost = 2,
 } :: UnitData
 
 return UnitsData

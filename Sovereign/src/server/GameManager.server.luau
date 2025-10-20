@@ -16,6 +16,13 @@ local BuildingManager = require(Managers.BuildingManager)
 local UnitManager = require(Managers.UnitManager)
 local ResourceNodeManager = require(Managers.ResourceNodeManager)
 local WorkerManager = require(Managers.WorkerManager)
+local TrainingManager = require(Managers.TrainingManager)
+local CombatManager = require(Managers.CombatManager)
+
+-- Require from Systems subfolder
+local Systems = script.Parent.Systems
+local MovementSystem = require(Systems.MovementSystem)
+local VikingRaidSystem = require(Systems.VikingRaidSystem)
 
 print("[GameManager] Managers loaded successfully")
 print("[GameManager] Server starting...")
@@ -41,7 +48,6 @@ Players.PlayerRemoving:Connect(function(player)
 	PlayerManager.remove(player)
 end)
 
--- Spawn initial structures and units for a player
 local function spawnInitialSetup(player: Player, factionData: any)
 	local spawnPoint = factionData.SpawnPoint
 
@@ -54,14 +60,14 @@ local function spawnInitialSetup(player: Player, factionData: any)
 
 	-- 2. Spawn the King near the Keep
 	local kingSpawnPos = spawnPoint.Position + Vector3.new(5, 0, 5)
-	UnitManager.createUnit("King", player, kingSpawnPos)
+	UnitManager.createUnit("King", player.UserId, kingSpawnPos) -- CHANGED: player.UserId instead of player
 
 	-- 3. Spawn peasants around the Keep
 	for i = 1, factionData.StartingPeasants do
 		local angle = (math.pi * 2 * i) / factionData.StartingPeasants
 		local offset = Vector3.new(math.cos(angle) * 10, 0, math.sin(angle) * 10)
 		local peasantSpawnPos = spawnPoint.Position + offset
-		UnitManager.createUnit("Peasant", player, peasantSpawnPos)
+		UnitManager.createUnit("Peasant", player.UserId, peasantSpawnPos) -- CHANGED: player.UserId instead of player
 	end
 
 	-- 4. Spawn resource nodes around the spawn
@@ -86,11 +92,28 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 
 	if action == "StartGame" then
 		print(`[GameManager] {player.Name} starting game...`)
+		-- Get game settings from data
+		local settings = typeof(data) == "table" and data or {}
+		local vikingRaidsEnabled = settings.vikingRaids or false
+		local peaceTimeStr = settings.peaceTime or "10 minutes"
+
+		-- Parse peace time (format: "10 minutes")
+		local peaceTimeMinutes = 10 -- default
+		local minutes = peaceTimeStr:match("(%d+)")
+		if minutes then
+			peaceTimeMinutes = tonumber(minutes) or 10
+		end
+
+		print(`[GameManager] Viking Raids: {vikingRaidsEnabled}, Peace Time: {peaceTimeMinutes} minutes`)
+
+		if vikingRaidsEnabled then
+			VikingRaidSystem.enableRaids(player.UserId, peaceTimeMinutes)
+			print(`[GameManager] Viking Raids enabled for {player.Name}`)
+		end
 
 		-- Assign faction (for now, just use Kingdom)
 		local factionName = "Kingdom"
 		local factionData = GameData.Factions[factionName]
-
 		playerData.Faction = factionName
 		playerData.SpawnPoint = factionData.SpawnPoint
 		playerData.GameState = "InGame"
@@ -201,6 +224,84 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				end
 			else
 				warn(`[GameManager] {player.Name} cannot afford {data.buildingName} at placement time`)
+			end
+		end
+	elseif action == "MoveUnit" then
+		-- Handle unit movement command
+		if typeof(data) == "table" and data.unitId and data.targetPosition then
+			print(`[GameManager] {player.Name} moving unit {data.unitId} to {data.targetPosition}`)
+
+			-- Find the unit
+			for _, unit in playerData.Units do
+				if unit and unit.Parent and unit.Name == data.unitId then
+					-- Check if unit belongs to player
+					if unit:GetAttribute("Owner") == player.UserId then
+						-- Set target position
+						unit:SetAttribute("TargetPosition", data.targetPosition)
+						unit:SetAttribute("IsMoving", true)
+						print(`[GameManager] Unit {data.unitId} target set to {data.targetPosition}`)
+						break
+					end
+				end
+			end
+		end
+	elseif action == "StartTraining" then
+		-- Handle unit training request
+		if typeof(data) == "table" and data.buildingId and data.unitType then
+			print(`[GameManager] {player.Name} wants to train {data.unitType} at {data.buildingId}`)
+
+			-- Find the building
+			for _, building in playerData.Buildings do
+				if building and building.Parent and building.Name == data.buildingId then
+					-- Check if building belongs to player
+					if building:GetAttribute("Owner") == player.UserId then
+						local success = TrainingManager.startTraining(building, data.unitType, player.UserId)
+						if success then
+							print(`[GameManager] Started training {data.unitType}`)
+						else
+							warn(`[GameManager] Failed to start training {data.unitType}`)
+						end
+						break
+					end
+				end
+			end
+		end
+	elseif action == "GetTrainingQueue" then
+		-- Send training queue to client
+		if typeof(data) == "table" and data.buildingId then
+			for _, building in playerData.Buildings do
+				if building and building.Parent and building.Name == data.buildingId then
+					local queue = TrainingManager.getQueue(building)
+					GameEvent:FireClient(player, "TrainingQueueUpdate", {
+						buildingId = data.buildingId,
+						queue = queue,
+					})
+					break
+				end
+			end
+		end
+	elseif action == "AttackTarget" then
+		-- Handle attack command
+		if typeof(data) == "table" and data.unitId and data.targetId then
+			print(`[GameManager] {player.Name} ordering {data.unitId} to attack {data.targetId}`)
+
+			-- Find the attacker unit
+			for _, unit in playerData.Units do
+				if unit and unit.Parent and unit.Name == data.unitId then
+					-- Check if unit belongs to player
+					if unit:GetAttribute("Owner") == player.UserId then
+						-- Find the target
+						local unitsFolder = workspace:FindFirstChild("Units")
+						if unitsFolder then
+							local target = unitsFolder:FindFirstChild(data.targetId)
+							if target then
+								CombatManager.setTarget(unit, target)
+								print(`[GameManager] {data.unitId} attacking {data.targetId}`)
+							end
+						end
+						break
+					end
+				end
 			end
 		end
 	end

@@ -24,18 +24,21 @@ export type BuildingData = {
 BuildingsData.Keep = {
 	model_asset_name = nil,
 	type = "Building",
-	subtype = "Castle Core",
-	cost = { Wood = 100, Stone = 50 },
-	construction = { build_time_seconds = 30 },
-	size = Vector3.new(24, 30, 24),
+	subtype = "Main Building",
+	cost = { Wood = 0 },
+	construction = { build_time_seconds = 0 },
+	size = Vector3.new(20, 15, 20),
 	storage_capacity = {
-		Wood = 200,
-		Stone = 100,
-		Gold = 500,
+		Wood = 1000,
+		Stone = 1000,
+		Gold = 1000,
+		Food = 1000,
+		Iron_Bars = 500,
+		Weapons = 500,
 	},
 	components = {},
-	popularity_impact = 5,
-	deletion_confirmation_required = true,
+	can_train_units = { "Peasant" }, -- ADD THIS
+	max_queue_size = 5, -- ADD THIS - Maximum units in training queue
 } :: BuildingData
 
 BuildingsData.Storehouse = {
@@ -162,12 +165,14 @@ BuildingsData.Restaurant = {
 BuildingsData.Barracks = {
 	model_asset_name = nil,
 	type = "Building",
-	subtype = "Military Training",
-	cost = { Wood = 20, Stone = 10 },
+	subtype = "Military",
+	cost = { Wood = 30, Stone = 20 },
 	construction = { build_time_seconds = 15 },
-	size = Vector3.new(15, 10, 15),
+	size = Vector3.new(16, 12, 16),
 	storage_capacity = {},
 	components = {},
+	can_train_units = { "Spearman", "Archer", "Knight" },
+	max_queue_size = 10,
 } :: BuildingData
 
 return BuildingsData

@@ -81,6 +81,24 @@ function PlayerManager.addUnit(player: Player, unit: Instance)
 	end
 end
 
+-- Remove a unit from player's data
+function PlayerManager.removeUnit(player: Player, unit: Model)
+	local playerData = get(player)
+	if not playerData then
+		warn(`[PlayerManager] No player data for {player.Name}`)
+		return
+	end
+
+	-- Find and remove the unit
+	for i, storedUnit in playerData.Units do
+		if storedUnit == unit then
+			table.remove(playerData.Units, i)
+			print(`[PlayerManager] Removed unit {unit.Name} from {player.Name}`)
+			return
+		end
+	end
+end
+
 function PlayerManager.hasEnoughResources(player: Player, cost: { [string]: number }): boolean
 	local data = PlayerManager.get(player)
 	if not data then
