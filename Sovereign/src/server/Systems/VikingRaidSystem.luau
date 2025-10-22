@@ -210,33 +210,6 @@ RunService.Heartbeat:Connect(function(deltaTime)
 	updateRaids(deltaTime)
 end)
 
-task.spawn(function()
-	task.wait(5) -- Wait 5 seconds after server starts
-
-	VikingDebug:info("TEST: Spawning test Viking")
-
-	local testPosition = Vector3.new(0, 15, 150) -- Simple position
-	local testViking = UnitManager.createUnit("Viking", VIKING_OWNER_ID, testPosition)
-
-	if testViking then
-		VikingDebug:info("TEST: Viking created successfully", {
-			name = testViking.Name,
-			position = testViking.PrimaryPart and testViking.PrimaryPart.Position or "no primary part",
-			parent = testViking.Parent and testViking.Parent.Name or "no parent",
-		})
-
-		-- Check if it stays
-		task.wait(2)
-		if testViking and testViking.Parent then
-			VikingDebug:info("TEST: Viking still exists after 2 seconds")
-		else
-			VikingDebug:warn("TEST: Viking disappeared!")
-		end
-	else
-		VikingDebug:warn("TEST: Failed to create test Viking")
-	end
-end)
-
 VikingDebug:info("Initialized")
 
 return VikingRaidSystem
