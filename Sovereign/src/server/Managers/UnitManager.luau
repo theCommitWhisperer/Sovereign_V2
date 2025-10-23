@@ -6,9 +6,13 @@ local Workspace = game:GetService("Workspace")
 local ServerStorage = game:GetService("ServerStorage")
 
 local GameData = require(ReplicatedStorage.Shared.GameData)
-local PlayerManager = require(script.Parent.PlayerManager) -- Same folder now
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local UnitManagerDebug = DebugManager.createChannel("UnitManager", false)
+local Managers = script.Parent
+local CombatManager = require(Managers.CombatManager)
+local MoraleManager = require(Managers.MoraleManager)
+local FormationManager = require(Managers.FormationManager)
+local PlayerManager = require(Managers.PlayerManager)
 
 local UnitManager = {}
 
@@ -93,7 +97,7 @@ local function getDummyModel(): Model
 	return model
 end
 
-function UnitManager.createUnit(unitType: string, ownerId: number, position: Vector3?): Model?
+function UnitManager.createUnit(unitType: string, ownerId: number, faction: string, position: Vector3?): Model?
 	local unitInfo = GameData.Units[unitType]
 	if not unitInfo then
 		UnitManagerDebug:warn(`Unknown unit type: {unitType}`)
@@ -123,6 +127,10 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 
 	-- Clone the dummy
 	local unit = dummyModel:Clone()
+	if player then
+		CombatManager.initializeCombatUnit(unit, player)
+	end
+	MoraleManager.initializeUnit(unit, faction)
 
 	-- Generate unique ID
 	local uniqueId = tostring(math.random(1000, 9999))
