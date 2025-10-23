@@ -241,6 +241,43 @@ function HUD:render()
 			}),
 		}),
 
+		UnitControlsFrame = React.createElement("Frame", {
+			Name = "UnitControlsFrame",
+			Size = UDim2.new(0, 150, 0, 40),
+			Position = UDim2.new(1, -220, 1, -250), -- Positioned near the MiniMap
+			AnchorPoint = Vector2.new(1, 1),
+			BackgroundColor3 = Color3.fromRGB(40, 40, 45),
+			BorderColor3 = Color3.fromRGB(100, 100, 100),
+			BorderSizePixel = 2,
+			Visible = #self.state.selectedUnits > 0, -- Only visible if units are selected
+		}, {
+			Layout = React.createElement("UIListLayout", {
+				FillDirection = Enum.FillDirection.Horizontal,
+				HorizontalAlignment = Enum.HorizontalAlignment.Center,
+				VerticalAlignment = Enum.VerticalAlignment.Center,
+				Padding = UDim.new(0, 5),
+			}),
+			-- Placeholder buttons for the StanceController to hook up to
+			AggressiveStanceButton = React.createElement("TextButton", {
+				Name = "AggressiveStanceButton",
+				Size = UDim2.new(0, 40, 0, 30),
+				Text = "⚔️", -- Aggressive Stance
+				BackgroundTransparency = 0,
+			}),
+			DefensiveStanceButton = React.createElement("TextButton", {
+				Name = "DefensiveStanceButton",
+				Size = UDim2.new(0, 40, 0, 30),
+				Text = "🛡️", -- Defensive Stance
+				BackgroundTransparency = 0,
+			}),
+			HoldPositionStanceButton = React.createElement("TextButton", {
+				Name = "HoldPositionStanceButton",
+				Size = UDim2.new(0, 40, 0, 30),
+				Text = "✋", -- Hold Position Stance
+				BackgroundTransparency = 0,
+			}),
+		}),
+
 		-- Bottom Bar with Building Menu
 		BottomBar = React.createElement("Frame", {
 			Name = "BottomBar",

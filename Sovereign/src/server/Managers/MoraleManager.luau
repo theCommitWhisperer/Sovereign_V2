@@ -57,6 +57,12 @@ local UnitMoraleData: { [Model]: UnitMorale } = {}
 function MoraleManager.initializeUnit(unitModel: Model, faction: string)
 	local baseMorale = BASE_MORALE
 
+	if not faction or type(faction) ~= "string" then
+		-- Handle incorrect or missing argument gracefully
+		faction = "Kingdom"
+		MoraleDebug:warn("Morale initialized with default faction due to missing/invalid faction argument.")
+	end
+
 	-- Irish units get morale bonus
 	if faction == "Irish" or faction:lower():find("celt") then
 		baseMorale = baseMorale + IRISH_BASE_MORALE_BONUS

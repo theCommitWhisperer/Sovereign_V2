@@ -190,11 +190,19 @@ local function updateTraining(deltaTime: number)
 				if building then
 					-- Spawn the unit near the building
 					local player = game.Players:GetPlayerByUserId(currentEntry.ownerId)
-					if player then
+					local playerData = PlayerManager.get(player) -- Get player data to retrieve faction
+
+					if player and playerData then
 						local spawnPosition = building.Position
 							+ Vector3.new(math.random(-10, 10), 5, math.random(-10, 10))
 
-						UnitManager.createUnit(currentEntry.unitType, currentEntry.ownerId, spawnPosition)
+						-- FIX: Pass faction name (playerData.Faction)
+						UnitManager.createUnit(
+							currentEntry.unitType,
+							currentEntry.ownerId,
+							playerData.Faction,
+							spawnPosition
+						)
 						TrainingDebug:info(`Spawned {currentEntry.unitType} at {spawnPosition}`)
 					end
 				end

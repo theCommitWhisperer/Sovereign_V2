@@ -3,6 +3,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
 
 -- Require game data (safe - read-only configs)
 local GameData = require(ReplicatedStorage.Shared.GameData)
@@ -20,7 +21,7 @@ local UnitManager = require(Managers.UnitManager)
 local ResourceNodeManager = require(Managers.ResourceNodeManager)
 local WorkerManager = require(Managers.WorkerManager)
 local TrainingManager = require(Managers.TrainingManager)
-local CombatManager = require(Managers.CombatManager)
+local CombatManager = require(Managers.CombatManager) -- Updated CombatManager
 
 -- Require from Systems subfolder
 local Systems = script.Parent.Systems
@@ -40,6 +41,15 @@ GameEvent.Name = "GameEvent"
 GameEvent.Parent = RemoteEvents
 
 GameManagerDebug:info("RemoteEvents created")
+
+-- Helper function to find a unit model by its UnitId (which is the Model.Name in V2)
+local function findUnit(unitId: string): Model?
+	local unitsFolder = Workspace:FindFirstChild("Units")
+	if unitsFolder then
+		return unitsFolder:FindFirstChild(unitId)
+	end
+	return nil
+end
 
 -- Player joined - create their data
 Players.PlayerAdded:Connect(function(player)
@@ -63,16 +73,17 @@ local function spawnInitialSetup(player: Player, factionData: any)
 
 	-- 2. Spawn the King near the Keep
 	local kingSpawnPos = spawnPoint.Position + Vector3.new(5, 0, 5)
-	UnitManager.createUnit("King", player.UserId, kingSpawnPos) -- CHANGED: player.UserId instead of player
+	-- FIX: Added factionData.Name argument
+	UnitManager.createUnit("King", player.UserId, factionData.Name, kingSpawnPos)
 
 	-- 3. Spawn peasants around the Keep
 	for i = 1, factionData.StartingPeasants do
 		local angle = (math.pi * 2 * i) / factionData.StartingPeasants
 		local offset = Vector3.new(math.cos(angle) * 10, 0, math.sin(angle) * 10)
 		local peasantSpawnPos = spawnPoint.Position + offset
-		UnitManager.createUnit("Peasant", player.UserId, peasantSpawnPos) -- CHANGED: player.UserId instead of player
+		-- FIX: Added factionData.Name argument
+		UnitManager.createUnit("Peasant", player.UserId, factionData.Name, peasantSpawnPos)
 	end
-
 	-- 4. Spawn resource nodes around the spawn
 	ResourceNodeManager.spawnNodesNearPosition(spawnPoint.Position, 150, "Wood", 20)
 	ResourceNodeManager.spawnNodesNearPosition(spawnPoint.Position, 150, "Stone", 15)
@@ -122,7 +133,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		playerData.GameState = "InGame"
 
 		-- Set starting resources
-		for resource, amount in factionData.StartingResources do
+		for resource, amount in pairs(factionData.StartingResources) do
 			playerData.Resources[resource] = amount
 		end
 
@@ -192,8 +203,8 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 								-- CHECK: Don't assign Vikings as workers!
 								local owner = unit:GetAttribute("Owner")
 								if unitType == "Peasant" and not isWorking and owner == player.UserId then
-									WorkerManager.assignWorkerToBuilding(unit, newBuilding, player.UserId)
-									print(`[GameManager] Auto-assigned worker to {buildingType}`)
+									WorkerManager.assignWorkerToBuilding(unit, building, player.UserId)
+									print(`[GameManager] Auto-assigned worker to {buildingInfo.type}`)
 									break
 								end
 							end
@@ -240,18 +251,14 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		if typeof(data) == "table" and data.unitId and data.targetPosition then
 			GameManagerDebug:info(`{player.Name} moving unit {data.unitId} to {data.targetPosition}`)
 
-			-- Find the unit
-			for _, unit in playerData.Units do
-				if unit and unit.Parent and unit.Name == data.unitId then
-					-- Check if unit belongs to player
-					if unit:GetAttribute("Owner") == player.UserId then
-						-- Set target position
-						unit:SetAttribute("TargetPosition", data.targetPosition)
-						unit:SetAttribute("IsMoving", true)
-						GameManagerDebug:info(`Unit {data.unitId} target set to {data.targetPosition}`)
-						break
-					end
-				end
+			local unitToMove = findUnit(data.unitId)
+
+			if unitToMove and unitToMove:GetAttribute("Owner") == player.UserId then
+				-- Clear combat target and delegate movement to MovementSystem
+				unitToMove:SetAttribute("CombatTarget", nil)
+				unitToMove:SetAttribute("TargetPosition", data.targetPosition)
+				unitToMove:SetAttribute("IsMoving", true)
+				GameManagerDebug:info(`Unit {data.unitId} target set to {data.targetPosition}`)
 			end
 		end
 	elseif action == "StartTraining" then
@@ -294,22 +301,26 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		if typeof(data) == "table" and data.unitId and data.targetId then
 			GameManagerDebug:info(`{player.Name} ordering {data.unitId} to attack {data.targetId}`)
 
-			-- Find the attacker unit
-			for _, unit in playerData.Units do
-				if unit and unit.Parent and unit.Name == data.unitId then
-					-- Check if unit belongs to player
-					if unit:GetAttribute("Owner") == player.UserId then
-						-- Find the target
-						local unitsFolder = workspace:FindFirstChild("Units")
-						if unitsFolder then
-							local target = unitsFolder:FindFirstChild(data.targetId)
-							if target then
-								CombatManager.setTarget(unit, target)
-								GameManagerDebug:info(`{data.unitId} attacking {data.targetId}`)
-							end
-						end
-						break
-					end
+			local attackerUnit = findUnit(data.unitId)
+			local targetUnit = findUnit(data.targetId)
+
+			if attackerUnit and targetUnit and attackerUnit:GetAttribute("Owner") == player.UserId then
+				-- Delegate to CombatManager
+				CombatManager.setTarget(attackerUnit, targetUnit)
+				GameManagerDebug:info(`{data.unitId} manually targeting {data.targetId} via CombatManager`)
+			end
+		end
+	elseif action == "SetStance" then
+		-- Handle unit stance change
+		if typeof(data) == "table" and data.UnitIDs and data.Stance then
+			GameManagerDebug:info(`{player.Name} setting stance to {data.Stance} for {data.UnitIDs}`)
+
+			for _, unitId in ipairs(data.UnitIDs) do
+				local unitModel = findUnit(unitId)
+
+				if unitModel and unitModel:GetAttribute("Owner") == player.UserId then
+					-- Delegate to CombatManager
+					CombatManager.setStance(unitModel, data.Stance)
 				end
 			end
 		end

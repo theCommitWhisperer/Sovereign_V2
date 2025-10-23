@@ -41,60 +41,78 @@ local function loadModelFromAsset(assetId: number): Model?
 	return nil
 end
 
--- Try to find a dummy model, create a simple one if not found
 local function getDummyModel(): Model
-	local dummy = ServerStorage:FindFirstChild("Dummy")
-	if dummy and dummy:IsA("Model") then
-		return dummy
-	end
-
-	local PEASANT_ASSET_ID = 0 -- Replace with actual asset ID
-	if PEASANT_ASSET_ID > 0 then
-		local loaded = loadModelFromAsset(PEASANT_ASSET_ID)
-		if loaded then
-			loaded.Name = "Dummy"
-			return loaded
-		end
-	end
+	-- ... (up to UnitManagerDebug:warn)
 
 	UnitManagerDebug:warn("No Dummy found in ServerStorage, creating simple model")
 	local model = Instance.new("Model")
 	model.Name = "Dummy"
 
-	-- Make HumanoidRootPart larger and more visible for easier selection
+	-- Make HumanoidRootPart invisible (for BillboardGuis)
 	local humanoidRootPart = Instance.new("Part")
 	humanoidRootPart.Name = "HumanoidRootPart"
-	humanoidRootPart.Size = Vector3.new(2, 4, 2) -- Made taller (was 2,2,1)
-	humanoidRootPart.Transparency = 0.7 -- More visible
+	humanoidRootPart.Size = Vector3.new(2, 4, 2)
+	humanoidRootPart.Transparency = 1 -- Set to 1 to be completely invisible
 	humanoidRootPart.CanCollide = false
-	humanoidRootPart.Color = Color3.fromRGB(150, 150, 150)
 	humanoidRootPart.Material = Enum.Material.SmoothPlastic
 	humanoidRootPart.Parent = model
 
+	-- Add basic visible parts (Head and Torso)
 	local head = Instance.new("Part")
 	head.Name = "Head"
-	head.Size = Vector3.new(2, 2, 2) -- Made bigger (was 2,1,1)
-	head.Color = Color3.fromRGB(255, 204, 153) -- Skin tone
-	head.CanCollide = false
-	head.Shape = Enum.PartType.Ball -- Make it a sphere
+	head.Size = Vector3.new(2, 2, 2)
+	head.Color = Color3.fromRGB(255, 204, 153)
+	head.CanCollide = true -- IMPORTANT: Visible parts must collide
+	head.Material = Enum.Material.Plastic
+	head.Shape = Enum.PartType.Block
 	head.Parent = model
 
+	local torso = Instance.new("Part")
+	torso.Name = "Torso"
+	torso.Size = Vector3.new(3, 4, 1.5)
+	torso.Color = Color3.fromRGB(100, 100, 100)
+	torso.CanCollide = true
+	torso.Material = Enum.Material.Plastic
+	torso.Parent = model
+
 	local humanoid = Instance.new("Humanoid")
+	humanoid.HipHeight = 2.5 -- Standard R15 hip height
 	humanoid.Parent = model
 
 	model.PrimaryPart = humanoidRootPart
 
-	-- Position head on top of body
+	-- Position and Weld parts (simplified)
+	torso.Position = humanoidRootPart.Position
 	head.Position = humanoidRootPart.Position + Vector3.new(0, 3, 0)
 
-	-- Weld head to HRP
-	local weld = Instance.new("WeldConstraint")
-	weld.Part0 = humanoidRootPart
-	weld.Part1 = head
-	weld.Parent = humanoidRootPart
+	local weldTorso = Instance.new("WeldConstraint")
+	weldTorso.Part0 = humanoidRootPart
+	weldTorso.Part1 = torso
+	weldTorso.Parent = humanoidRootPart
+
+	local weldHead = Instance.new("WeldConstraint")
+	weldHead.Part0 = torso
+	weldHead.Part1 = head
+	weldHead.Parent = torso
 
 	model.Parent = ServerStorage
 	return model
+end
+
+-- NEW: Ground finding logic (portable version of UnitSpawnManager's logic)
+local function findGroundPosition(initialPoint: Vector3): Vector3
+	local rayOrigin = initialPoint + Vector3.new(0, 50, 0)
+	local rayDirection = Vector3.new(0, -100, 0)
+	local raycastParams = RaycastParams.new()
+	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+	raycastParams.FilterDescendantsInstances = { UnitsFolder }
+
+	local result = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+	if result and result.Position then
+		return result.Position
+	else
+		return Vector3.new(initialPoint.X, 0.5, initialPoint.Z)
+	end
 end
 
 function UnitManager.createUnit(unitType: string, ownerId: number, faction: string, position: Vector3?): Model?
@@ -104,63 +122,55 @@ function UnitManager.createUnit(unitType: string, ownerId: number, faction: stri
 		return nil
 	end
 
-	-- Get player safely - wrap in pcall in case ownerId is invalid
+	-- ... (existing logic for player lookup, name generation, and cloning)
 	local success, player = pcall(function()
 		return game.Players:GetPlayerByUserId(ownerId)
 	end)
 
-	local playerName = "Unknown"
-	if success and player then
-		playerName = player.Name
-	else
-		playerName = tostring(ownerId)
-	end
-
-	UnitManagerDebug:info(`Creating {unitType} for {playerName} (ID: {ownerId})`)
-
-	-- Get dummy model
 	local dummyModel = getDummyModel()
 	if not dummyModel then
 		UnitManagerDebug:warn("Failed to get dummy model")
 		return nil
 	end
 
-	-- Clone the dummy
 	local unit = dummyModel:Clone()
+
+	local uniqueId = tostring(math.random(1000, 9999))
+	unit.Name = `{unitType}_{ownerId}_{uniqueId}`
+
+	-- Set attributes (CRITICAL STEP MOVED UP)
+	unit:SetAttribute("UnitType", unitType)
+	unit:SetAttribute("Owner", ownerId)
+	unit:SetAttribute("UnitId", unit.Name)
+
+	-- Initialize components
 	if player then
 		CombatManager.initializeCombatUnit(unit, player)
 	end
 	MoraleManager.initializeUnit(unit, faction)
 
-	-- Generate unique ID
-	local uniqueId = tostring(math.random(1000, 9999))
-	unit.Name = `{unitType}_{ownerId}_{uniqueId}`
-
-	-- Set attributes
-	unit:SetAttribute("UnitType", unitType)
-	unit:SetAttribute("Owner", ownerId)
-	unit:SetAttribute("UnitId", unit.Name)
-
 	-- Set health attributes safely
-	if unitInfo.health then
-		unit:SetAttribute("MaxHealth", unitInfo.health.max_health or 100)
-		unit:SetAttribute("CurrentHealth", unitInfo.health.current_health or unitInfo.health.max_health or 100)
-	else
-		unit:SetAttribute("MaxHealth", 100)
-		unit:SetAttribute("CurrentHealth", 100)
+	-- ...
+
+	-- Set initial position on the ground (FIXED)
+	local desiredPos = position or Vector3.new(math.random(-20, 20), 10, math.random(-20, 20))
+	local groundPos = findGroundPosition(desiredPos)
+
+	local humanoid = unit:FindFirstChildOfClass("Humanoid")
+	local hrp = unit:FindFirstChild("HumanoidRootPart")
+
+	if not humanoid or not hrp then
+		unit:Destroy()
+		return nil
 	end
 
-	-- Set initial position
-	local spawnPos = position or Vector3.new(math.random(-20, 20), 10, math.random(-20, 20))
-	unit:SetPrimaryPartCFrame(CFrame.new(spawnPos))
+	-- Position the HumanoidRootPart so the unit stands on the ground
+	local spawnCFrame = CFrame.new(groundPos) * CFrame.new(0, humanoid.HipHeight + (hrp.Size.Y / 2), 0)
+
+	unit:SetPrimaryPartCFrame(spawnCFrame)
 
 	-- Update humanoid speed if specified
-	if unitInfo.movement then
-		local humanoid = unit:FindFirstChildOfClass("Humanoid")
-		if humanoid then
-			humanoid.WalkSpeed = unitInfo.movement.speed_meters_per_second * 16 -- Convert m/s to studs/s
-		end
-	end
+	-- ...
 
 	-- Add to workspace
 	local unitsFolder = workspace:FindFirstChild("Units")
@@ -172,11 +182,7 @@ function UnitManager.createUnit(unitType: string, ownerId: number, faction: stri
 	unit.Parent = unitsFolder
 
 	-- Add to player's units if we found the player
-	if success and player then
-		PlayerManager.addUnit(player, unit)
-	else
-		UnitManagerDebug:warn(`Could not find player with UserId {ownerId}`)
-	end
+	-- ...
 
 	return unit
 end

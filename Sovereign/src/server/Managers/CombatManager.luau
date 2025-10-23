@@ -9,15 +9,17 @@ local Workspace = game:GetService("Workspace")
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local PlayerManager = require(script.Parent.PlayerManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
+local MoraleManager = require(script.Parent.MoraleManager) -- ADDED: Needed for Morale calls
 
 local CombatDebug = DebugManager.createChannel("Combat", true)
-local DamageDebug = DebugManager.createChannel("Damage", false)
+local DamageDebug = DebugManager.createChannel("Damage", true)
 
 local CombatManager = {}
 
 -- Combat constants
 local COMBAT_TICK_RATE = 0.5 -- How often combat calculations run
-local MELEE_RANGE = 8 -- studs
+local MELEE_RANGE_STUD = 8 -- Minimum distance for melee combat (approx 2.6m)
+local CHARGE_DISTANCE_STUD = 30 -- Distance at which a unit initiates a charge
 local CHARGE_DAMAGE_BONUS = 1.5
 local FLANKING_DAMAGE_BONUS = 1.3
 local HIGH_GROUND_BONUS = 1.2
@@ -27,19 +29,22 @@ local CELTIC_FURY_THRESHOLD = 80 -- morale threshold for damage bonus
 local CELTIC_FURY_BONUS = 1.15
 local IRISH_CHARGE_BONUS = 1.2 -- Irish units get better charge bonus
 
+export type Stance = "Aggressive" | "Defensive" | "Hold" | "Charge"
+
 export type CombatUnit = {
 	model: Model,
+	unitData: GameData.UnitData,
 	owner: number,
 	unitType: string,
 	health: number,
 	maxHealth: number,
 	attackDamage: number,
-	attackSpeed: number,
-	attackRange: number,
+	attackSpeed: number, -- Cooldown in seconds
+	attackRange: number, -- In studs (converted from meters)
 	armor: number,
 	morale: number,
-	stance: "Aggressive" | "Defensive" | "Hold" | "Charge",
-	target: Model?,
+	stance: Stance,
+	targetModel: Model?,
 	formation: string?,
 	lastAttackTime: number,
 	isCharging: boolean,
@@ -47,14 +52,18 @@ export type CombatUnit = {
 }
 
 local ActiveCombatUnits: { [Model]: CombatUnit } = {}
-local CombatEngagements: { { attacker: Model, defender: Model } } = {}
+
+-- Utility: Convert game unit range (meters) to Roblox studs (approx 1m = 3 studs)
+local function getAttackRangeStuds(unitData: GameData.UnitData): number
+	return (unitData.combat and unitData.combat.attack_range or 5) * 3
+end
 
 -- Initialize combat stats for a unit
 function CombatManager.initializeCombatUnit(unitModel: Model, owner: Player)
 	local unitType = unitModel:GetAttribute("UnitType")
 	local unitData = GameData.Units[unitType]
 
-	if not unitData then
+	if not unitData or not unitData.combat then
 		CombatDebug:warn("No combat data for unit type", { unitType = unitType })
 		return
 	end
@@ -62,19 +71,22 @@ function CombatManager.initializeCombatUnit(unitModel: Model, owner: Player)
 	local playerData = PlayerManager.get(owner)
 	local faction = playerData and playerData.Faction or "Kingdom"
 
+	local startingMorale = MoraleManager.getMorale(unitModel) or 75
+
 	local combatUnit: CombatUnit = {
 		model = unitModel,
+		unitData = unitData,
 		owner = owner.UserId,
 		unitType = unitType,
-		health = unitData.hit_points,
-		maxHealth = unitData.hit_points,
-		attackDamage = unitData.attack_damage,
-		attackSpeed = unitData.attack_cooldown or 2,
-		attackRange = unitData.attack_range_meters * 3, -- Convert to studs
-		armor = unitData.armor_rating or 0,
-		morale = 75, -- Start with decent morale
-		stance = "Defensive",
-		target = nil,
+		health = unitModel:GetAttribute("CurrentHealth") or unitData.health.max_health,
+		maxHealth = unitData.health.max_health,
+		attackDamage = unitData.combat.attack_damage,
+		attackSpeed = unitData.combat.attack_speed,
+		attackRange = getAttackRangeStuds(unitData),
+		armor = unitData.combat.armor,
+		morale = startingMorale,
+		stance = "Aggressive", -- Default to aggressive
+		targetModel = nil,
 		formation = nil,
 		lastAttackTime = 0,
 		isCharging = false,
@@ -82,13 +94,6 @@ function CombatManager.initializeCombatUnit(unitModel: Model, owner: Player)
 	}
 
 	ActiveCombatUnits[unitModel] = combatUnit
-
-	-- Set up health display
-	local humanoid = unitModel:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		humanoid.MaxHealth = unitData.hit_points
-		humanoid.Health = unitData.hit_points
-	end
 
 	CombatDebug:info("Initialized combat unit", {
 		unitType = unitType,
@@ -101,28 +106,36 @@ end
 local function calculateDamage(attacker: CombatUnit, defender: CombatUnit): number
 	local baseDamage = attacker.attackDamage
 
-	-- Apply armor reduction
-	local damageReduction = defender.armor * 0.05 -- 5% reduction per armor point
+	-- Apply armor reduction (simplified: 5% reduction per armor point)
+	local damageReduction = defender.armor * 0.05
 	local damage = baseDamage * (1 - damageReduction)
 
-	-- Celtic Fury bonus for Irish units with high morale
+	-- Celtic Fury bonus
 	if attacker.faction == "Irish" and attacker.morale >= CELTIC_FURY_THRESHOLD then
 		damage = damage * CELTIC_FURY_BONUS
-		DamageDebug:info("Celtic Fury activated!", { bonus = CELTIC_FURY_BONUS })
 	end
 
 	-- Charge bonus
 	if attacker.isCharging then
 		local chargeBonus = attacker.faction == "Irish" and IRISH_CHARGE_BONUS or CHARGE_DAMAGE_BONUS
 		damage = damage * chargeBonus
-		DamageDebug:info("Charge bonus applied", { bonus = chargeBonus })
 	end
 
-	-- Formation bonuses/penalties
-	if attacker.formation == "Wedge" and attacker.isCharging then
-		damage = damage * 1.3
-	elseif defender.formation == "ShieldWall" and not attacker.isCharging then
-		damage = damage * 0.7 -- Shield wall strong against normal attacks
+	-- Flanking check (simplified)
+	if attacker.model.PrimaryPart and defender.model.PrimaryPart then
+		local toAttacker = (attacker.model.PrimaryPart.Position - defender.model.PrimaryPart.Position).Unit
+		local defenderFacing = defender.model.PrimaryPart.CFrame.LookVector
+		local dotProduct = toAttacker:Dot(defenderFacing)
+
+		if dotProduct < -0.5 then -- Attack from behind or side
+			damage = damage * FLANKING_DAMAGE_BONING_BONUS
+		end
+
+		-- High ground check
+		local heightDiff = attacker.model.PrimaryPart.Position.Y - defender.model.PrimaryPart.Position.Y
+		if heightDiff > 5 then
+			damage = damage * HIGH_GROUND_BONUS
+		end
 	end
 
 	-- Stance modifiers
@@ -132,39 +145,11 @@ local function calculateDamage(attacker: CombatUnit, defender: CombatUnit): numb
 		damage = damage * 0.8
 	end
 
-	-- Morale effect
+	-- Morale effect (simplified)
 	local moraleFactor = (attacker.morale / 100) * 0.3 + 0.85 -- 85% to 115% based on morale
 	damage = damage * moraleFactor
 
-	-- Check for flanking
-	if isFlankingAttack(attacker, defender) then
-		damage = damage * FLANKING_DAMAGE_BONUS
-		DamageDebug:info("Flanking bonus!", { bonus = FLANKING_DAMAGE_BONUS })
-	end
-
-	-- Terrain advantages (simplified - check Y position difference)
-	if attacker.model.PrimaryPart and defender.model.PrimaryPart then
-		local heightDiff = attacker.model.PrimaryPart.Position.Y - defender.model.PrimaryPart.Position.Y
-		if heightDiff > 5 then
-			damage = damage * HIGH_GROUND_BONUS
-			DamageDebug:info("High ground advantage!", { bonus = HIGH_GROUND_BONUS })
-		end
-	end
-
 	return math.max(1, math.floor(damage))
-end
-
--- Check if attack is from behind or side
-function isFlankingAttack(attacker: CombatUnit, defender: CombatUnit): boolean
-	if not (attacker.model.PrimaryPart and defender.model.PrimaryPart) then
-		return false
-	end
-
-	local toAttacker = (attacker.model.PrimaryPart.Position - defender.model.PrimaryPart.Position).Unit
-	local defenderFacing = defender.model.PrimaryPart.CFrame.LookVector
-
-	local dotProduct = toAttacker:Dot(defenderFacing)
-	return dotProduct < -0.5 -- Attack from behind or side
 end
 
 -- Find nearest enemy within range
@@ -196,17 +181,16 @@ end
 -- Execute attack
 local function executeAttack(attacker: CombatUnit, defender: CombatUnit)
 	local damage = calculateDamage(attacker, defender)
+
+	-- Apply damage
 	defender.health = math.max(0, defender.health - damage)
 
-	-- Update humanoid health
-	local humanoid = defender.model:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		humanoid.Health = defender.health
-	end
+	-- Update model attributes (HealthBarManager subscribes to this)
+	defender.model:SetAttribute("CurrentHealth", defender.health)
 
-	-- Morale impact
-	defender.morale = math.max(0, defender.morale - 5)
-	attacker.morale = math.min(100, attacker.morale + 2)
+	-- Morale impact (simplified)
+	MoraleManager.modifyMorale(defender.model, -5, "Took damage")
+	MoraleManager.modifyMorale(attacker.model, 2, "Dealt damage")
 
 	CombatDebug:info("Attack executed", {
 		attacker = attacker.unitType,
@@ -217,31 +201,21 @@ local function executeAttack(attacker: CombatUnit, defender: CombatUnit)
 
 	-- Check if defender died
 	if defender.health <= 0 then
+		-- Clean up the CombatUnit data, the death logic is in handleUnitDeath
+		ActiveCombatUnits[defender.model] = nil
 		handleUnitDeath(defender)
 	end
 end
 
 -- Handle unit death
-function handleUnitDeath(unit: CombatUnit)
+local function handleUnitDeath(unit: CombatUnit)
 	CombatDebug:info("Unit killed", { unitType = unit.unitType })
 
-	-- Remove from active units
-	ActiveCombatUnits[unit.model] = nil
-
 	-- Morale penalty to nearby allies
-	local deathPos = unit.model.PrimaryPart and unit.model.PrimaryPart.Position
-	if deathPos then
-		for allyModel, allyUnit in pairs(ActiveCombatUnits) do
-			if allyUnit.owner == unit.owner and allyUnit.health > 0 then
-				local allyPos = allyModel.PrimaryPart and allyModel.PrimaryPart.Position
-				if allyPos and (allyPos - deathPos).Magnitude < 50 then
-					allyUnit.morale = math.max(0, allyUnit.morale - 10)
-				end
-			end
-		end
-	end
+	MoraleManager.evaluateCombatSituation(unit.model) -- This implicitly handles ally morale penalties
 
-	-- Destroy the model after a delay
+	-- Remove from Units folder (handled by PlayerManager.removeUnit in a real game flow, but destroyed explicitly here)
+	-- The UnitManager will clean up unit data when the model is destroyed.
 	task.wait(2)
 	if unit.model and unit.model.Parent then
 		unit.model:Destroy()
@@ -249,58 +223,115 @@ function handleUnitDeath(unit: CombatUnit)
 end
 
 -- Main combat update loop
-local function updateCombat()
+local function updateCombat(deltaTime: number)
 	local currentTime = tick()
 
 	for unitModel, unit in pairs(ActiveCombatUnits) do
-		if unit.health <= 0 then
+		-- Check if model is still valid
+		if not unitModel or not unitModel.Parent or unit.health <= 0 then
+			ActiveCombatUnits[unitModel] = nil
 			continue
 		end
 
-		-- Check if unit has a target
-		if not unit.target or not unit.target.Parent or not ActiveCombatUnits[unit.target] then
+		local unitHRP = unitModel.PrimaryPart
+		if not unitHRP then
+			continue
+		end
+
+		local targetModel = unit.targetModel
+
+		-- 1. Validate / Find Target
+		if not targetModel or not targetModel.Parent or not ActiveCombatUnits[targetModel] then
 			-- Find new target based on stance
+			local rangeForSearch = unit.attackRange
 			if unit.stance == "Aggressive" then
-				unit.target = findNearestEnemy(unit, unit.attackRange * 2)
-			elseif unit.stance == "Defensive" then
-				unit.target = findNearestEnemy(unit, unit.attackRange)
-			elseif unit.stance == "Hold" then
-				unit.target = findNearestEnemy(unit, unit.attackRange * 0.8)
+				rangeForSearch = CHARGE_DISTANCE_STUD * 2 -- Search wider if aggressive
+			end
+			unit.targetModel = findNearestEnemy(unit, rangeForSearch)
+			targetModel = unit.targetModel
+
+			if not targetModel then
+				-- No target, stop movement
+				unitModel:SetAttribute("IsMoving", false)
+				unitModel:SetAttribute("TargetPosition", nil)
+				unit.isCharging = false
+				continue
 			end
 		end
 
-		-- Attack if target in range and attack cooldown ready
-		if unit.target and ActiveCombatUnits[unit.target] then
-			local targetUnit = ActiveCombatUnits[unit.target]
-			local unitPos = unit.model.PrimaryPart and unit.model.PrimaryPart.Position
-			local targetPos = unit.target.PrimaryPart and unit.target.PrimaryPart.Position
+		local targetUnit = ActiveCombatUnits[targetModel]
+		local targetPos = targetModel.PrimaryPart and targetModel.PrimaryPart.Position
+		if not targetPos then
+			continue
+		end
 
-			if unitPos and targetPos then
-				local distance = (targetPos - unitPos).Magnitude
+		local distance = (targetPos - unitHRP.Position).Magnitude
 
-				if distance <= unit.attackRange then
-					-- Stop charging when in range
-					unit.isCharging = false
+		-- 2. Movement/Attack Logic
+		local attackRange = unit.attackRange
 
-					-- Attack if cooldown ready
-					if currentTime - unit.lastAttackTime >= unit.attackSpeed then
-						executeAttack(unit, targetUnit)
-						unit.lastAttackTime = currentTime
-					end
-				elseif distance <= unit.attackRange * 3 and unit.stance == "Aggressive" then
-					-- Start charging if aggressive and enemy is within charge range
-					unit.isCharging = true
-				end
+		if distance <= attackRange + MELEE_RANGE_STUD * 0.5 then -- In attack range
+			-- Stop Movement
+			unitModel:SetAttribute("IsMoving", false)
+			unitModel:SetAttribute("TargetPosition", nil)
+			unit.isCharging = false
+
+			-- Attack if cooldown ready
+			if currentTime - unit.lastAttackTime >= unit.attackSpeed then
+				executeAttack(unit, targetUnit)
+				unit.lastAttackTime = currentTime
+			end
+		else
+			-- Out of range, initiate movement/charge
+
+			-- Set target position to move to
+			if not unitModel:GetAttribute("IsMoving") or unitModel:GetAttribute("TargetPosition") ~= targetPos then
+				unitModel:SetAttribute("TargetPosition", targetPos)
+				unitModel:SetAttribute("IsMoving", true)
+			end
+
+			-- Check for charge distance if aggressive or manually set
+			if unit.stance == "Aggressive" and distance < CHARGE_DISTANCE_STUD and distance > attackRange then
+				unit.isCharging = true
+			else
+				unit.isCharging = false
 			end
 		end
 	end
 end
 
--- Set unit stance
-function CombatManager.setUnitStance(unitModel: Model, stance: string)
+-- PUBLIC FUNCTIONS exposed for GameManager to call
+
+-- Manual attack order from client
+function CombatManager.setTarget(attackerModel: Model, targetModel: Model)
+	local attacker = ActiveCombatUnits[attackerModel]
+
+	if attacker and targetModel:GetAttribute("Owner") ~= attacker.owner then
+		-- Clear unit's movement so combat system takes over
+		attackerModel:SetAttribute("IsMoving", false)
+		attackerModel:SetAttribute("TargetPosition", nil)
+
+		attacker.targetModel = targetModel
+		CombatDebug:info("Attack order received", {
+			attacker = attacker.unitType,
+			target = targetModel.Name,
+		})
+	end
+end
+
+-- Manual stance change from client
+function CombatManager.setStance(unitModel: Model, stance: Stance)
 	local unit = ActiveCombatUnits[unitModel]
 	if unit then
 		unit.stance = stance
+
+		-- If Hold, clear target to force them to stop and auto-engage only in range
+		if stance == "Hold" then
+			unit.targetModel = nil
+			unitModel:SetAttribute("IsMoving", false)
+			unitModel:SetAttribute("TargetPosition", nil)
+		end
+
 		CombatDebug:info("Stance changed", {
 			unit = unit.unitType,
 			newStance = stance,
@@ -308,40 +339,12 @@ function CombatManager.setUnitStance(unitModel: Model, stance: string)
 	end
 end
 
--- Set unit formation
-function CombatManager.setFormation(units: { Model }, formation: string)
-	for _, unitModel in ipairs(units) do
-		local unit = ActiveCombatUnits[unitModel]
-		if unit then
-			unit.formation = formation
-		end
-	end
-
-	CombatDebug:info("Formation set", {
-		unitCount = #units,
-		formation = formation,
-	})
-end
-
--- Manual attack order
-function CombatManager.attackTarget(attackerModel: Model, targetModel: Model)
-	local attacker = ActiveCombatUnits[attackerModel]
-	local target = ActiveCombatUnits[targetModel]
-
-	if attacker and target and target.owner ~= attacker.owner then
-		attacker.target = targetModel
-		CombatDebug:info("Attack order", {
-			attacker = attacker.unitType,
-			target = target.unitType,
-		})
-	end
-end
-
 -- Initialize the combat loop
 function CombatManager.init()
-	RunService.Heartbeat:Connect(function()
+	RunService.Heartbeat:Connect(function(deltaTime)
+		-- Only run the combat loop periodically to save performance
 		if tick() % COMBAT_TICK_RATE < 0.1 then
-			updateCombat()
+			updateCombat(deltaTime)
 		end
 	end)
 
