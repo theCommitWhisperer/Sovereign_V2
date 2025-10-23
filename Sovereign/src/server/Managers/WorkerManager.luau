@@ -8,10 +8,9 @@ local BuildingManager = require(script.Parent.BuildingManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
 local WorkerManager = {}
-
 -- Create debug channels
-local WorkerDebug = DebugManager.createChannel("Worker", true) -- Workers gathering (disabled by default)
-local HaulerDebug = DebugManager.createChannel("Hauler", true) -- Haulers transporting (enabled)
+local WorkerDebug = DebugManager.createChannel("Worker", false) -- Workers gathering (disabled by default)
+local HaulerDebug = DebugManager.createChannel("Hauler", false) -- Haulers transporting (enabled)
 local MovementDebug = DebugManager.createChannel("Movement", false) -- Movement (disabled, very spammy)
 
 -- Job type mapping
@@ -237,7 +236,7 @@ end
 -- Simple pathfinding - use 2D distance to avoid Y-axis issues
 local function moveTowards(unit: Model, targetPos: Vector3, speed: number): boolean
 	if not unit.PrimaryPart then
-		MovementDebug:warn("Unit has no PrimaryPart!")
+		WorkerDebug:warn("Unit has no PrimaryPart!", { unitName = unit.Name })
 		return true
 	end
 
@@ -351,7 +350,7 @@ end
 -- Update hauler tasks
 local function updateHaulerTasks(deltaTime: number)
 	for i, task in HaulerTasks do
-		if not task.hauler or not task.hauler.Parent then
+		if not task.hauler or not task.hauler.Parent then --[[ ROBLOX CHECK: CHECK_NOT_NIL, task.hauler might be nil, so this check is necessary to prevent potential errors. ]]
 			HaulerDebug:warn(`Removing invalid hauler task {i}`)
 			continue
 		end

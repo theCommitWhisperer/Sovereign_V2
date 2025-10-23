@@ -1,16 +1,21 @@
 -- src/ui/screens/MainMenu/MainMenu.luau
 
 local React = require(game.ReplicatedStorage.Packages.react)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
 local UIConfig = require(script.Parent.Parent.Parent.UIConfig)
 
 -- Corrected paths to the 'components' directory
 local Title = require(script.Parent.Parent.Parent.components.Title)
 local Button = require(script.Parent.Parent.Parent.components.Button)
 
+local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
+local MainMenuDebug = DebugManager.createChannel("MainMenu", false)
+
 local MainMenu = React.Component:extend("MainMenu")
 
 function MainMenu:render()
-	print("MainMenu.luau: render() called. UI should be visible.")
+	MainMenuDebug:info("render() called. UI should be visible.")
 	return React.createElement("ScreenGui", {
 		Name = "MainMenuGui",
 		ClipToDeviceSafeArea = true,

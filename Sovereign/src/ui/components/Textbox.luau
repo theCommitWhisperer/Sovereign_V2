@@ -1,11 +1,14 @@
 -- src/ui/components/Textbox.luau
 local React = require(game.ReplicatedStorage.Packages.react)
 local UIConfig = require(script.Parent.Parent.UIConfig)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
+local channel = DebugManager.newChannel("Textbox", "info")
 
 local Textbox = React.Component:extend("Textbox")
 
 function Textbox:render()
-	print("Component Log: Textbox.luau is rendering.")
+	channel:info("Component Log: Textbox.luau is rendering.")
 
 	local props = {
 		Size = UDim2.new(1, 0, 1, 0),
