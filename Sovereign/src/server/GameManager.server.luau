@@ -297,6 +297,43 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				end
 			end
 		end
+	elseif action == "DeleteBuilding" then
+		-- Handle building deletion request
+		if typeof(data) == "table" and data.buildingId then
+			GameManagerDebug:info(`{player.Name} wants to delete building: {data.buildingId}`)
+
+			-- Find the building
+			for i, building in playerData.Buildings do
+				if building and building.Parent and building.Name == data.buildingId then
+					-- Check if building belongs to player
+					if building:GetAttribute("Owner") == player.UserId then
+						local buildingType = building:GetAttribute("BuildingType")
+
+						-- Protect critical buildings from deletion
+						if buildingType == "Keep" then
+							GameManagerDebug:warn(`{player.Name} tried to delete Keep - protected building!`)
+							break
+						end
+
+						GameManagerDebug:info(`Deleting building {building.Name} (type: {buildingType}) for {player.Name}`)
+
+						-- Unassign any workers/haulers from this building
+						WorkerManager.unassignWorkersFromBuilding(building)
+
+						-- Remove from player's building list
+						table.remove(playerData.Buildings, i)
+
+						-- Destroy the building model
+						building:Destroy()
+
+						GameManagerDebug:info(`Successfully deleted building {data.buildingId}`)
+						break
+					else
+						GameManagerDebug:warn(`{player.Name} tried to delete building they don't own`)
+					end
+				end
+			end
+		end
 	elseif action == "AttackTarget" then
 		-- Handle attack command
 		if typeof(data) == "table" and data.unitId and data.targetId then

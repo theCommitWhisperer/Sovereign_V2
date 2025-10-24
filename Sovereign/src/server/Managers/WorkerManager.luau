@@ -9,8 +9,8 @@ local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
 local WorkerManager = {}
 -- Create debug channels
-local WorkerDebug = DebugManager.createChannel("Worker", false) -- Workers gathering (disabled by default)
-local HaulerDebug = DebugManager.createChannel("Hauler", false) -- Haulers transporting (enabled)
+local WorkerDebug = DebugManager.createChannel("Worker", true) -- Workers gathering (disabled by default)
+local HaulerDebug = DebugManager.createChannel("Hauler", true) -- Haulers transporting (enabled)
 local MovementDebug = DebugManager.createChannel("Movement", false) -- Movement (disabled, very spammy)
 
 -- Job type mapping
@@ -480,6 +480,61 @@ local function updateHaulerTasks(deltaTime: number)
 				task.sourceBuilding = nil
 				task.targetStorage = nil
 			end
+		end
+	end
+end
+
+-- Unassign all workers from a building (called when building is deleted)
+function WorkerManager.unassignWorkersFromBuilding(building: Instance)
+	-- Remove all worker tasks associated with this building
+	for i = #WorkerTasks, 1, -1 do
+		local task = WorkerTasks[i]
+		if task.workplace == building then
+			WorkerDebug:info(`Unassigning worker from deleted building`, {
+				workerName = task.worker.Name,
+				buildingType = task.workplaceType,
+			})
+
+			-- Clear worker attributes
+			task.worker:SetAttribute("IsWorking", false)
+			task.worker:SetAttribute("AssignedTo", nil)
+			task.worker:SetAttribute("TargetPosition", nil)
+			task.worker:SetAttribute("IsMoving", false)
+
+			-- Remove task
+			table.remove(WorkerTasks, i)
+		end
+	end
+
+	-- Remove all hauler tasks associated with this building
+	local buildingOwnerId = building:GetAttribute("Owner")
+	WorkerDebug:info(`Checking ${#HaulerTasks} hauler tasks for deletion cleanup`)
+
+	for i = #HaulerTasks, 1, -1 do
+		local task = HaulerTasks[i]
+
+		-- Check if hauler is working with this building (either as source or target)
+		-- OR if hauler belongs to the same owner and is idle (hasn't found buildings yet)
+		local isRelatedToBuilding = task.sourceBuilding == building
+			or task.targetStorage == building
+			or (task.ownerId == buildingOwnerId and task.state == "Idle")
+
+		if isRelatedToBuilding then
+			WorkerDebug:info(`Unassigning hauler from deleted building`, {
+				haulerName = task.hauler.Name,
+				haulerState = task.state,
+				wasSource = task.sourceBuilding == building,
+				wasTarget = task.targetStorage == building,
+				wasIdle = task.state == "Idle",
+			})
+
+			-- Clear hauler attributes
+			task.hauler:SetAttribute("IsHauling", false)
+			task.hauler:SetAttribute("TargetPosition", nil)
+			task.hauler:SetAttribute("IsMoving", false)
+
+			-- Remove task
+			table.remove(HaulerTasks, i)
 		end
 	end
 end

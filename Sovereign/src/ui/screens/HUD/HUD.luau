@@ -12,6 +12,9 @@ local BuildingMenu = require(script.Parent.BuildingMenu)
 local SelectionPanel = require(script.Parent.SelectionPanel)
 local TrainingPanel = require(script.Parent.TrainingPanel)
 local UnitSelectionPanel = require(script.Parent.UnitSelectionPanel)
+local Policies = require(script.Parent.Parent.Policies.Policies)
+local Menu = require(script.Parent.Parent.Menu.Menu)
+local Stats = require(script.Parent.Parent.Stats.Stats)
 
 local player = Players.LocalPlayer
 
@@ -34,6 +37,17 @@ function HUD:init()
 		selectedUnits = {},
 		selectedTrainingBuilding = nil,
 		trainingQueue = {},
+		-- New state for UI
+		showMenuModal = false,
+		showStatsModal = false,
+		showPoliciesModal = false,
+		selectedCategory = "Castle", -- Castle, Military, Housing, Food, Industry
+		armySize = 0,
+		honor = 0,
+		glory = 0,
+		population = 0,
+		happiness = 50, -- 0-100, affects revolt meter
+		isDeleteMode = false, -- Delete mode for removing buildings/units
 	})
 
 	-- Get game event reference
@@ -171,32 +185,48 @@ function HUD:setupBuildingSelection()
 					})
 
 					if buildingType and owner == player.UserId then
-						-- Check if building can train units
-						local GameData = require(game.ReplicatedStorage.Shared.GameData)
-						local buildingInfo = GameData.Buildings[buildingType]
-
-						HUDDebug:info("Building info check", {
-							exists = buildingInfo ~= nil,
-							canTrain = buildingInfo and buildingInfo.can_train_units ~= nil,
-						})
-
-						if buildingInfo and buildingInfo.can_train_units then
-							HUDDebug:info("Selected training building", {
+						-- If delete mode is active, delete the building
+						if self.state.isDeleteMode then
+							HUDDebug:info("Delete mode: Deleting building", {
 								buildingType = buildingType,
-								trainableUnits = buildingInfo.can_train_units,
+								buildingName = building.Name,
 							})
 
-							self:setState({
-								selectedTrainingBuilding = building,
-								trainingQueue = {},
-							})
-
-							-- Request current queue
-							self.gameEvent:FireServer("GetTrainingQueue", {
+							-- Send delete request to server
+							self.gameEvent:FireServer("DeleteBuilding", {
 								buildingId = building.Name,
 							})
+
+							-- Turn off delete mode after deletion
+							self:setState({ isDeleteMode = false })
 						else
-							HUDDebug:info("Building cannot train units")
+							-- Normal mode: Check if building can train units
+							local GameData = require(game.ReplicatedStorage.Shared.GameData)
+							local buildingInfo = GameData.Buildings[buildingType]
+
+							HUDDebug:info("Building info check", {
+								exists = buildingInfo ~= nil,
+								canTrain = buildingInfo and buildingInfo.can_train_units ~= nil,
+							})
+
+							if buildingInfo and buildingInfo.can_train_units then
+								HUDDebug:info("Selected training building", {
+									buildingType = buildingType,
+									trainableUnits = buildingInfo.can_train_units,
+								})
+
+								self:setState({
+									selectedTrainingBuilding = building,
+									trainingQueue = {},
+								})
+
+								-- Request current queue
+								self.gameEvent:FireServer("GetTrainingQueue", {
+									buildingId = building.Name,
+								})
+							else
+								HUDDebug:info("Building cannot train units")
+							end
 						end
 					else
 						HUDDebug:warn("Building check failed", {
@@ -220,10 +250,89 @@ function HUD:willUnmount()
 	end
 end
 
+-- Helper function to create stat boxes for top bar
+function HUD:createStatBox(label: string, value: any, icon: string)
+	return React.createElement("Frame", {
+		Size = UDim2.new(0, UIConfig.HUD.StatBoxWidth, 1, 0),
+		BackgroundColor3 = UIConfig.HUD.StatBoxBackground,
+		BorderSizePixel = 1,
+		BorderColor3 = UIConfig.HUD.StatBoxBorder,
+	}, {
+		Layout = React.createElement("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			HorizontalAlignment = Enum.HorizontalAlignment.Center,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			Padding = UDim.new(0, 4),
+		}),
+
+		Icon = React.createElement("TextLabel", {
+			Size = UDim2.new(0, 16, 0, 16),
+			BackgroundTransparency = 1,
+			Text = icon,
+			TextSize = 14,
+		}),
+
+		Value = React.createElement("TextLabel", {
+			Size = UDim2.new(1, -20, 1, 0),
+			BackgroundTransparency = 1,
+			Text = tostring(value),
+			Font = Enum.Font.GothamBold,
+			TextSize = 13,
+			TextColor3 = UIConfig.HUD.StatTextColor,
+			TextXAlignment = Enum.TextXAlignment.Left,
+		}),
+	})
+end
+
+-- Helper function to create category buttons for bottom bar (icon only)
+function HUD:createCategoryButton(category: string, icon: string)
+	local isSelected = self.state.selectedCategory == category
+
+	-- Set layout order based on category
+	local layoutOrder = 1
+	if category == "Castle" then
+		layoutOrder = 1
+	elseif category == "Military" then
+		layoutOrder = 2
+	elseif category == "Housing" then
+		layoutOrder = 3
+	elseif category == "Food" then
+		layoutOrder = 4
+	elseif category == "Industry" then
+		layoutOrder = 5
+	end
+
+	return React.createElement("TextButton", {
+		Size = UDim2.new(1, 0, 0, UIConfig.HUD.CategoryButtonHeight),
+		BackgroundColor3 = isSelected and UIConfig.HUD.CategoryButtonSelected or UIConfig.HUD.CategoryButtonBackground,
+		BorderSizePixel = 1,
+		BorderColor3 = UIConfig.HUD.CategoryButtonBorder,
+		Text = icon, -- Icon only, no text
+		Font = Enum.Font.GothamBold,
+		TextSize = 20, -- Larger icon
+		TextColor3 = UIConfig.HUD.PanelTextColor,
+		LayoutOrder = layoutOrder,
+		[React.Event.MouseButton1Click] = function()
+			self:setState({ selectedCategory = category })
+		end,
+	})
+end
+
 function HUD:render()
 	HUDDebug:info("Rendering", { resources = self.state.resources })
 
 	local hasUnitsSelected = #self.state.selectedUnits > 0
+	local hasTrainingBuildingSelected = self.state.selectedTrainingBuilding ~= nil
+	local showBuildingsInContent = not hasUnitsSelected and not hasTrainingBuildingSelected
+
+	-- Category icons
+	local CATEGORY_ICONS = {
+		Castle = "🏰",
+		Military = "⚔️",
+		Housing = "🏠",
+		Food = "🌾",
+		Industry = "🔨",
+	}
 
 	return React.createElement("ScreenGui", {
 		Name = "HUDGui",
@@ -231,7 +340,7 @@ function HUD:render()
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 		IgnoreGuiInset = true,
 	}, {
-		-- Top Bar (Resources on left, MENU | STATS on right)
+		-- ===== TOP BAR =====
 		TopBar = React.createElement("Frame", {
 			Name = "TopBar",
 			Size = UDim2.new(1, 0, 0, UIConfig.HUD.TopBarHeight),
@@ -241,72 +350,135 @@ function HUD:render()
 			BorderColor3 = UIConfig.HUD.TopBarBorder,
 			ZIndex = 10,
 		}, {
-			-- Resource display on left side
-			ResourceContainer = React.createElement("Frame", {
-				Size = UDim2.new(0, 650, 1, -8),
-				Position = UDim2.new(0, 10, 0, 4),
-				BackgroundTransparency = 1,
-			}, {
-				ResourceDisplay = React.createElement(ResourceDisplay, {
-					resources = self.state.resources,
-				}),
-			}),
-
-			-- MENU | STATS buttons on right
+			-- MENU button (far left)
 			MenuButton = React.createElement("TextButton", {
-				Size = UDim2.new(0, 60, 1, -8),
-				Position = UDim2.new(1, -130, 0, 4),
-				BackgroundColor3 = UIConfig.HUD.CategoryButtonBackground,
+				Size = UDim2.new(0, UIConfig.HUD.TopButtonWidth, 0, UIConfig.HUD.TopButtonHeight),
+				Position = UDim2.new(0, 5, 0, 5),
+				BackgroundColor3 = UIConfig.HUD.TopButtonBackground,
 				BorderSizePixel = 1,
-				BorderColor3 = UIConfig.HUD.CategoryButtonBorder,
+				BorderColor3 = UIConfig.HUD.TopButtonBorder,
 				Text = "MENU",
 				Font = Enum.Font.GothamBold,
-				TextSize = 12,
+				TextSize = 14,
 				TextColor3 = UIConfig.HUD.PanelTextColor,
+				[React.Event.MouseButton1Click] = function()
+					self:setState({ showMenuModal = not self.state.showMenuModal })
+				end,
 			}),
 
+			-- STATS button (next to MENU)
 			StatsButton = React.createElement("TextButton", {
-				Size = UDim2.new(0, 60, 1, -8),
-				Position = UDim2.new(1, -65, 0, 4),
-				BackgroundColor3 = UIConfig.HUD.CategoryButtonBackground,
+				Size = UDim2.new(0, UIConfig.HUD.TopButtonWidth, 0, UIConfig.HUD.TopButtonHeight),
+				Position = UDim2.new(0, UIConfig.HUD.TopButtonWidth + 10, 0, 5),
+				BackgroundColor3 = UIConfig.HUD.TopButtonBackground,
 				BorderSizePixel = 1,
-				BorderColor3 = UIConfig.HUD.CategoryButtonBorder,
+				BorderColor3 = UIConfig.HUD.TopButtonBorder,
 				Text = "STATS",
 				Font = Enum.Font.GothamBold,
-				TextSize = 12,
+				TextSize = 14,
 				TextColor3 = UIConfig.HUD.PanelTextColor,
+				[React.Event.MouseButton1Click] = function()
+					self:setState({ showStatsModal = not self.state.showStatsModal })
+				end,
+			}),
+
+			-- Center stats container (Army, Honor, Glory, Date, Gold, Food, Population)
+			CenterStats = React.createElement("Frame", {
+				Size = UDim2.new(0, 600, 1, -10),
+				Position = UDim2.new(0.5, -300, 0, 5),
+				BackgroundTransparency = 1,
+			}, {
+				Layout = React.createElement("UIListLayout", {
+					FillDirection = Enum.FillDirection.Horizontal,
+					HorizontalAlignment = Enum.HorizontalAlignment.Center,
+					VerticalAlignment = Enum.VerticalAlignment.Center,
+					Padding = UDim.new(0, 8),
+				}),
+
+				-- Army Size
+				ArmyBox = self:createStatBox("Army", self.state.armySize, "👥"),
+				-- Honor
+				HonorBox = self:createStatBox("Honor", self.state.honor, "🎖️"),
+				-- Glory
+				GloryBox = self:createStatBox("Glory", self.state.glory, "⭐"),
+				-- Date (placeholder)
+				DateBox = self:createStatBox("Date", "Y1 M1", "📅"),
+				-- Gold
+				GoldBox = self:createStatBox("Gold", self.state.resources.Gold, "💰"),
+				-- Food
+				FoodBox = self:createStatBox("Food", self.state.resources.Food, "🌾"),
+				-- Population
+				PopBox = self:createStatBox("Pop", self.state.population, "👤"),
 			}),
 		}),
 
-		-- Left Sidebar (ERASER POLICIES at top, then MINIMAP, then categories)
-		LeftSidebar = React.createElement("Frame", {
-			Name = "LeftSidebar",
-			Size = UDim2.new(0, UIConfig.HUD.LeftSidebarWidth, 1, -(UIConfig.HUD.TopBarHeight + UIConfig.HUD.BottomBarHeight)),
-			Position = UDim2.new(0, 0, 0, UIConfig.HUD.TopBarHeight),
-			BackgroundColor3 = UIConfig.HUD.LeftSidebarBackground,
+		-- ===== BOTTOM BAR ===== (Delete/Policies | Minimap | 5 Categories | Content Area)
+		BottomBar = React.createElement("Frame", {
+			Name = "BottomBar",
+			Size = UDim2.new(1, 0, 0, UIConfig.HUD.BottomBarHeight),
+			Position = UDim2.new(0, 0, 1, 0), -- Flush to bottom
+			AnchorPoint = Vector2.new(0, 1),
+			BackgroundColor3 = UIConfig.HUD.BottomBarBackground,
 			BorderSizePixel = 1,
-			BorderColor3 = UIConfig.HUD.LeftSidebarBorder,
+			BorderColor3 = UIConfig.HUD.BottomBarBorder,
 			ZIndex = 10,
 		}, {
-			-- "ERASER POLICIES" label at TOP
-			PoliciesLabel = React.createElement("TextLabel", {
-				Size = UDim2.new(1, -10, 0, 25),
-				Position = UDim2.new(0, 5, 0, 5),
+			-- Delete/Policies buttons (stacked on far left)
+			UtilityButtons = React.createElement("Frame", {
+				Size = UDim2.new(0, UIConfig.HUD.UtilityButtonWidth, 0, UIConfig.HUD.BottomBarHeight),
+				Position = UDim2.new(0, 5, 0, 0),
 				BackgroundTransparency = 1,
-				Text = "ERASER POLICIES",
-				Font = Enum.Font.GothamBold,
-				TextSize = 11,
-				TextColor3 = UIConfig.HUD.PanelHeaderColor,
-				TextXAlignment = Enum.TextXAlignment.Center,
+			}, {
+				Padding = React.createElement("UIPadding", {
+					PaddingTop = UDim.new(0, 15),
+					PaddingBottom = UDim.new(0, 15),
+				}),
+
+				Layout = React.createElement("UIListLayout", {
+					FillDirection = Enum.FillDirection.Vertical,
+					Padding = UDim.new(0, 5),
+					HorizontalAlignment = Enum.HorizontalAlignment.Center,
+					VerticalAlignment = Enum.VerticalAlignment.Top,
+				}),
+
+				DeleteButton = React.createElement("TextButton", {
+					Size = UDim2.new(1, 0, 0, UIConfig.HUD.UtilityButtonHeight),
+					BackgroundColor3 = self.state.isDeleteMode and UIConfig.HUD.CategoryButtonSelected
+						or UIConfig.HUD.UtilityButtonBackground,
+					BorderSizePixel = 1,
+					BorderColor3 = UIConfig.HUD.UtilityButtonBorder,
+					Text = "🗑️", -- Icon only
+					Font = Enum.Font.GothamBold,
+					TextSize = 18,
+					TextColor3 = UIConfig.HUD.PanelTextColor,
+					[React.Event.MouseButton1Click] = function()
+						self:setState({ isDeleteMode = not self.state.isDeleteMode })
+						HUDDebug:info("Delete mode toggled", { isDeleteMode = not self.state.isDeleteMode })
+					end,
+				}),
+
+				PoliciesButton = React.createElement("TextButton", {
+					Size = UDim2.new(1, 0, 0, UIConfig.HUD.UtilityButtonHeight),
+					BackgroundColor3 = UIConfig.HUD.UtilityButtonBackground,
+					BorderSizePixel = 1,
+					BorderColor3 = UIConfig.HUD.UtilityButtonBorder,
+					Text = "📜", -- Icon only
+					Font = Enum.Font.GothamBold,
+					TextSize = 18,
+					TextColor3 = UIConfig.HUD.PanelTextColor,
+					[React.Event.MouseButton1Click] = function()
+						self:setState({ showPoliciesModal = not self.state.showPoliciesModal })
+					end,
+				}),
 			}),
 
-			-- Minimap BELOW label
+			-- Minimap (next to utility buttons)
 			MiniMapFrame = React.createElement("Frame", {
 				Name = "MiniMapFrame",
-				Size = UDim2.new(1, -10, 0, UIConfig.HUD.MinimapSize),
-				Position = UDim2.new(0, 5, 0, 35),
-				BackgroundColor3 = UIConfig.HUD.PanelBackground,
-				BorderColor3 = UIConfig.HUD.PanelBorder,
+				Size = UDim2.new(0, UIConfig.HUD.MinimapSize, 0, UIConfig.HUD.MinimapSize),
+				Position = UDim2.new(0, UIConfig.HUD.UtilityButtonWidth + 10, 0, 10), -- 10px from top
+				BackgroundColor3 = UIConfig.HUD.MinimapBackground,
+				BorderColor3 = UIConfig.HUD.MinimapBorder,
 				BorderSizePixel = 1,
 			}, {
 				Label = React.createElement("TextLabel", {
@@ -314,92 +486,171 @@ function HUD:render()
 					BackgroundTransparency = 1,
 					Text = "MINIMAP",
 					Font = Enum.Font.GothamBold,
-					TextSize = 14,
+					TextSize = 16,
 					TextColor3 = UIConfig.HUD.PanelTextColor,
 				}),
 			}),
 
-			-- Category buttons BELOW minimap (Food, Housing, Military, Resources, Storage)
-			CategorySection = React.createElement("Frame", {
-				Size = UDim2.new(1, -10, 1, -(UIConfig.HUD.MinimapSize + 45)),
-				Position = UDim2.new(0, 5, 0, UIConfig.HUD.MinimapSize + 40),
+			-- 5 Category buttons (stacked vertically, next to minimap) - Icon only with padding
+			CategoryButtons = React.createElement("Frame", {
+				Size = UDim2.new(0, UIConfig.HUD.CategoryButtonWidth, 0, UIConfig.HUD.BottomBarHeight),
+				Position = UDim2.new(0, UIConfig.HUD.UtilityButtonWidth + UIConfig.HUD.MinimapSize + 15, 0, 0),
 				BackgroundTransparency = 1,
 			}, {
-				Layout = React.createElement("UIListLayout", {
-					FillDirection = Enum.FillDirection.Vertical,
-					HorizontalAlignment = Enum.HorizontalAlignment.Center,
-					VerticalAlignment = Enum.VerticalAlignment.Top,
-					Padding = UDim.new(0, 5),
+				UIPadding = React.createElement("UIPadding", {
+					PaddingTop = UDim.new(0, 10),
+					PaddingBottom = UDim.new(0, 10),
 				}),
 
-				-- Category tabs will be added by BuildingMenu component
-			}),
-		}),
+				Layout = React.createElement("UIListLayout", {
+					FillDirection = Enum.FillDirection.Vertical,
+					Padding = UDim.new(0, 6),
+					HorizontalAlignment = Enum.HorizontalAlignment.Center,
+					VerticalAlignment = Enum.VerticalAlignment.Top,
+				}),
 
-		-- Bottom Bar (Stronghold-style - shows EITHER building menu OR unit selection)
-		BottomBar = React.createElement("Frame", {
-			Name = "BottomBar",
-			Size = UDim2.new(1, 0, 0, UIConfig.HUD.BottomBarHeight),
-			Position = UDim2.new(0, 0, 1, 0),
-			AnchorPoint = Vector2.new(0, 1),
-			BackgroundColor3 = UIConfig.HUD.BottomBarBackground,
-			BorderSizePixel = 2,
-			BorderColor3 = UIConfig.HUD.BottomBarBorder,
-			ZIndex = 10,
-		}, {
-			-- Content container with padding
-			ContentContainer = React.createElement("Frame", {
-				Size = UDim2.new(1, -30, 1, -20),
-				Position = UDim2.new(0, 15, 0, 10),
-				BackgroundTransparency = 1,
+				-- Castle button (🏰)
+				CastleButton = self:createCategoryButton("Castle", "🏰"),
+				-- Military button (⚔️)
+				MilitaryButton = self:createCategoryButton("Military", "⚔️"),
+				-- Housing button (🏠)
+				HousingButton = self:createCategoryButton("Housing", "🏠"),
+				-- Food button (🌾)
+				FoodButton = self:createCategoryButton("Food", "🌾"),
+				-- Industry button (🔨)
+				IndustryButton = self:createCategoryButton("Industry", "🔨"),
+			}),
+
+			-- Content Area (shows buildings OR selected units)
+			ContentArea = React.createElement("Frame", {
+				Size = UDim2.new(
+					1,
+					-(
+							UIConfig.HUD.UtilityButtonWidth
+							+ UIConfig.HUD.MinimapSize
+							+ UIConfig.HUD.CategoryButtonWidth
+							+ 30
+						),
+					1,
+					-10
+				),
+				Position = UDim2.new(
+					0,
+					UIConfig.HUD.UtilityButtonWidth + UIConfig.HUD.MinimapSize + UIConfig.HUD.CategoryButtonWidth + 20,
+					0,
+					5
+				),
+				BackgroundColor3 = UIConfig.HUD.ContentAreaBackground,
+				BorderSizePixel = 1,
+				BorderColor3 = UIConfig.HUD.ContentAreaBorder,
 			}, {
-				-- Show unit selection panel when units are selected, otherwise building menu
-				Content = hasUnitsSelected and React.createElement(UnitSelectionPanel, {
+				-- Content priority: Training Panel > Unit Selection > Building Menu
+				Content = hasTrainingBuildingSelected and React.createElement(TrainingPanel, {
+					selectedBuilding = self.state.selectedTrainingBuilding,
+					queue = self.state.trainingQueue,
+					onTrainUnit = function(unitType)
+						HUDDebug:info(`Training unit: {unitType}`)
+						if self.state.selectedTrainingBuilding then
+							self.gameEvent:FireServer("StartTraining", {
+								buildingId = self.state.selectedTrainingBuilding.Name,
+								unitType = unitType,
+							})
+						end
+					end,
+					onClose = function()
+						self:setState({ selectedTrainingBuilding = nil })
+					end,
+				}) or hasUnitsSelected and React.createElement(UnitSelectionPanel, {
 					selectedUnits = self.state.selectedUnits,
 					onFormationSelected = function(formationType)
 						HUDDebug:info(`Formation selected: {formationType}`)
-						-- TODO: Implement formation logic
 					end,
 				}) or React.createElement(BuildingMenu, {
 					resources = self.state.resources,
+					selectedCategory = self.state.selectedCategory,
 					onBuildingSelected = function(buildingName)
 						HUDDebug:info("Building selected for placement", { building = buildingName })
 						self:setState({
 							isPlacingBuilding = true,
 							selectedBuilding = buildingName,
 						})
-
-						-- Request placement from server
 						self.gameEvent:FireServer("StartPlacement", buildingName)
 					end,
 				}),
 			}),
 		}),
 
-		-- Training Panel (overlay when building is selected)
-		TrainingPanel = self.state.selectedTrainingBuilding and React.createElement("Frame", {
-			Name = "TrainingPanelContainer",
-			Size = UDim2.new(0, 350, 0, 500),
-			Position = UDim2.new(0.5, 0, 0.5, 0),
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			BackgroundColor3 = UIConfig.HUD.PanelBackground,
-			BorderSizePixel = 3,
-			BorderColor3 = UIConfig.HUD.PanelBorder,
-			ZIndex = 15, -- Above everything
+		-- Happiness/Revolt Meter (right side, above bottom bar)
+		HappinessMeter = React.createElement("Frame", {
+			Name = "HappinessMeter",
+			Size = UDim2.new(0, UIConfig.HUD.MeterWidth, 0, UIConfig.HUD.MeterHeight),
+			Position = UDim2.new(
+				1,
+				-(UIConfig.HUD.MeterWidth + 10),
+				1,
+				-(UIConfig.HUD.BottomBarHeight + UIConfig.HUD.MeterHeight + 10)
+			),
+			BackgroundColor3 = UIConfig.HUD.MeterBackground,
+			BorderSizePixel = 1,
+			BorderColor3 = UIConfig.HUD.MeterBorder,
+			ZIndex = 9,
 		}, {
-			TrainingPanel = React.createElement(TrainingPanel, {
-				selectedBuilding = self.state.selectedTrainingBuilding,
-				queue = self.state.trainingQueue,
-				onTrainUnit = function(unitType)
-					HUDDebug:info(`Training unit: {unitType}`)
-					if self.state.selectedTrainingBuilding then
-						self.gameEvent:FireServer("StartTraining", {
-							buildingId = self.state.selectedTrainingBuilding.Name,
-							unitType = unitType,
-						})
-					end
-				end,
+			-- Label
+			Label = React.createElement("TextLabel", {
+				Size = UDim2.new(1, 0, 0, 25),
+				BackgroundTransparency = 1,
+				Text = "😊/😡",
+				Font = Enum.Font.GothamBold,
+				TextSize = 16,
+				TextColor3 = UIConfig.HUD.PanelTextColor,
 			}),
+
+			-- Happiness bar (green, fills from bottom)
+			HappyBar = React.createElement("Frame", {
+				Size = UDim2.new(1, -10, self.state.happiness / 100, -30),
+				Position = UDim2.new(0, 5, 1, -5),
+				AnchorPoint = Vector2.new(0, 1),
+				BackgroundColor3 = UIConfig.HUD.MeterHappyColor,
+				BorderSizePixel = 0,
+			}),
+
+			-- Revolt indicator (red, fills from top when happiness < 50)
+			RevoltBar = React.createElement("Frame", {
+				Size = UDim2.new(1, -10, math.max(0, (50 - self.state.happiness) / 100), -30),
+				Position = UDim2.new(0, 5, 0, 30),
+				BackgroundColor3 = UIConfig.HUD.MeterRevoltColor,
+				BorderSizePixel = 0,
+			}),
+		}),
+
+		-- Policies Modal (conditionally rendered)
+		PoliciesModal = self.state.showPoliciesModal and React.createElement(Policies, {
+			visible = self.state.showPoliciesModal,
+			onClose = function()
+				self:setState({ showPoliciesModal = false })
+			end,
+		}) or nil,
+
+		-- Menu Modal (conditionally rendered)
+		MenuModal = self.state.showMenuModal and React.createElement(Menu, {
+			visible = self.state.showMenuModal,
+			onClose = function()
+				self:setState({ showMenuModal = false })
+			end,
+		}) or nil,
+
+		-- Stats Modal (conditionally rendered)
+		StatsModal = self.state.showStatsModal and React.createElement(Stats, {
+			visible = self.state.showStatsModal,
+			onClose = function()
+				self:setState({ showStatsModal = false })
+			end,
+			-- Pass stats data
+			population = self.state.population,
+			armySize = self.state.armySize,
+			honor = self.state.honor,
+			glory = self.state.glory,
+			happiness = self.state.happiness,
 		}) or nil,
 	})
 end

@@ -23,61 +23,94 @@ local UIConfig = {
 		Title = UDim2.new(1, 0, 0, 100),
 	},
 	HUD = {
-		-- Stronghold-style layout (matching IMG_6014.jpg)
-		-- Top Bar
-		TopBarHeight = 40,
-		TopBarBackground = Color3.fromRGB(100, 90, 70), -- Darker brown
-		TopBarBorder = Color3.fromRGB(60, 50, 35),
+		-- NEW LAYOUT: Top bar with buttons + stats, Bottom bar with controls + content area
+		-- Color Scheme: Tundora (#4C3E3E), Don Juan (#5A4E4E), Opium (#8A6A6A), Tan (#C7A67A), Whiskey (#D1945C)
 
-		-- Left Sidebar (vertical panel on left)
-		LeftSidebarWidth = 160,
-		LeftSidebarBackground = Color3.fromRGB(100, 80, 60),
-		LeftSidebarBorder = Color3.fromRGB(60, 45, 30),
+		-- Top Bar: MENU | STATS (left), Army/Honor/Glory/Date/Gold/Food/Pop (center)
+		TopBarHeight = 45,
+		TopBarBackground = Color3.fromRGB(90, 78, 78), -- Don Juan
+		TopBarBorder = Color3.fromRGB(76, 62, 62), -- Tundora
 
-		-- Bottom Bar (horizontal panel at bottom)
-		BottomBarHeight = 150,
-		BottomBarBackground = Color3.fromRGB(100, 80, 60),
-		BottomBarBorder = Color3.fromRGB(60, 45, 30),
+		-- Bottom Bar: Delete/Policies (stacked) | Minimap | 5 Categories (stacked) | Content Area
+		BottomBarHeight = 210,
+		BottomBarBackground = Color3.fromRGB(90, 78, 78), -- Don Juan
+		BottomBarBorder = Color3.fromRGB(76, 62, 62), -- Tundora
 
-		-- Resource Display (compact, top bar left side)
-		ResourceIconSize = 18,
-		ResourceTextColor = Color3.fromRGB(255, 255, 255),
-		ResourceLabelColor = Color3.fromRGB(230, 230, 230),
-		ResourceBackgroundColor = Color3.fromRGB(70, 60, 45),
-		ResourceBorderColor = Color3.fromRGB(50, 40, 25),
+		-- Top Bar Buttons (MENU, STATS)
+		TopButtonWidth = 70,
+		TopButtonHeight = 35,
+		TopButtonBackground = Color3.fromRGB(138, 106, 106), -- Opium
+		TopButtonBorder = Color3.fromRGB(76, 62, 62), -- Tundora
 
-		-- Building Menu Buttons (in bottom bar)
-		BuildingButtonSize = 65,
-		BuildingButtonBackground = Color3.fromRGB(80, 65, 50),
-		BuildingButtonHover = Color3.fromRGB(100, 85, 70),
-		BuildingButtonAffordable = Color3.fromRGB(70, 90, 70),
-		BuildingButtonUnaffordable = Color3.fromRGB(90, 50, 50),
-		BuildingButtonBorder = Color3.fromRGB(50, 40, 25),
+		-- Top Bar Stats Display (center)
+		StatBoxWidth = 80,
+		StatBoxBackground = Color3.fromRGB(76, 62, 62), -- Tundora
+		StatBoxBorder = Color3.fromRGB(90, 78, 78), -- Don Juan
+		StatTextColor = Color3.fromRGB(199, 166, 122), -- Tan
+		StatLabelColor = Color3.fromRGB(209, 148, 92), -- Whiskey
 
-		-- Category Buttons (in left sidebar below minimap)
-		CategoryButtonWidth = 140,
-		CategoryButtonHeight = 50,
-		CategoryButtonBackground = Color3.fromRGB(70, 60, 45),
-		CategoryButtonSelected = Color3.fromRGB(100, 85, 65),
-		CategoryButtonBorder = Color3.fromRGB(50, 40, 25),
+		-- Bottom Bar: Delete/Policies Buttons (stacked, left side)
+		UtilityButtonWidth = 50,
+		UtilityButtonHeight = 35,
+		UtilityButtonBackground = Color3.fromRGB(138, 106, 106), -- Opium
+		UtilityButtonBorder = Color3.fromRGB(76, 62, 62), -- Tundora
 
-		-- Panels
-		PanelBackground = Color3.fromRGB(90, 75, 55),
-		PanelBorder = Color3.fromRGB(60, 45, 30),
-		PanelHeaderColor = Color3.fromRGB(255, 230, 180), -- Cream
-		PanelTextColor = Color3.fromRGB(255, 255, 230),
+		-- Minimap (in bottom bar, next to utility buttons)
+		MinimapSize = 170,
+		MinimapBackground = Color3.fromRGB(76, 62, 62), -- Tundora
+		MinimapBorder = Color3.fromRGB(90, 78, 78), -- Don Juan
 
-		-- Minimap (in left sidebar, below "ERASER POLICIES")
-		MinimapSize = 140,
+		-- Category Buttons (5 stacked: Castle, Sword, House, Food, Hammer) - Icon only
+		CategoryButtonWidth = 50,
+		CategoryButtonHeight = 32,
+		CategoryButtonBackground = Color3.fromRGB(138, 106, 106), -- Opium
+		CategoryButtonSelected = Color3.fromRGB(209, 148, 92), -- Whiskey
+		CategoryButtonBorder = Color3.fromRGB(76, 62, 62), -- Tundora
 
-		-- Unit Selection (in bottom bar when units selected)
-		UnitPortraitSize = 60,
-		UnitPortraitSpacing = 5,
+		-- Content Area (shows buildings or selected units or training)
+		ContentAreaBackground = Color3.fromRGB(90, 78, 78), -- Don Juan
+		ContentAreaBorder = Color3.fromRGB(76, 62, 62), -- Tundora
 
-		-- Formation Controls
-		FormationButtonSize = 45,
-		FormationButtonBackground = Color3.fromRGB(80, 65, 50),
-		FormationButtonBorder = Color3.fromRGB(50, 40, 25),
+		-- Building Buttons (in content area)
+		BuildingButtonSize = 70,
+		BuildingButtonBackground = Color3.fromRGB(138, 106, 106), -- Opium
+		BuildingButtonHover = Color3.fromRGB(199, 166, 122), -- Tan
+		BuildingButtonAffordable = Color3.fromRGB(100, 138, 106), -- Green tint
+		BuildingButtonUnaffordable = Color3.fromRGB(138, 86, 86), -- Red tint
+		BuildingButtonBorder = Color3.fromRGB(76, 62, 62), -- Tundora
+
+		-- Unit Portraits (in content area when units selected)
+		UnitPortraitSize = 65,
+		UnitPortraitSpacing = 8,
+		UnitPortraitBackground = Color3.fromRGB(76, 62, 62), -- Tundora
+		UnitPortraitBorder = Color3.fromRGB(138, 106, 106), -- Opium
+
+		-- Training Panel (in content area when training building selected)
+		TrainingUnitButtonBackground = Color3.fromRGB(138, 106, 106), -- Opium
+		TrainingUnitButtonHover = Color3.fromRGB(199, 166, 122), -- Tan
+		TrainingUnitButtonBorder = Color3.fromRGB(76, 62, 62), -- Tundora
+		TrainingQueueBackground = Color3.fromRGB(76, 62, 62), -- Tundora
+		TrainingQueueBorder = Color3.fromRGB(90, 78, 78), -- Don Juan
+		TrainingProgressBar = Color3.fromRGB(209, 148, 92), -- Whiskey
+
+		-- Happiness/Revolt Meter (right side, above bottom bar)
+		MeterWidth = 80,
+		MeterHeight = 200,
+		MeterBackground = Color3.fromRGB(76, 62, 62), -- Tundora
+		MeterBorder = Color3.fromRGB(90, 78, 78), -- Don Juan
+		MeterHappyColor = Color3.fromRGB(100, 200, 100),
+		MeterRevoltColor = Color3.fromRGB(200, 100, 100),
+
+		-- General Colors
+		PanelBackground = Color3.fromRGB(90, 78, 78), -- Don Juan
+		PanelBorder = Color3.fromRGB(76, 62, 62), -- Tundora
+		PanelHeaderColor = Color3.fromRGB(209, 148, 92), -- Whiskey
+		PanelTextColor = Color3.fromRGB(199, 166, 122), -- Tan
+
+		-- Formation/Stance Controls
+		FormationButtonSize = 50,
+		FormationButtonBackground = Color3.fromRGB(138, 106, 106), -- Opium
+		FormationButtonBorder = Color3.fromRGB(76, 62, 62), -- Tundora
 	},
 	LobbyPage = {
 		-- Panel Styling
