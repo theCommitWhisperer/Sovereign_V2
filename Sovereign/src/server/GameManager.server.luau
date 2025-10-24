@@ -9,7 +9,7 @@ local Workspace = game:GetService("Workspace")
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local GameManagerDebug = DebugManager.createChannel("GameManager", false) -- Corrected to be off by default
+local GameManagerDebug = DebugManager.createChannel("GameManager", true) -- Corrected to be off by default
 
 GameManagerDebug:info("Loading server-side managers...")
 
@@ -22,6 +22,8 @@ local ResourceNodeManager = require(Managers.ResourceNodeManager)
 local WorkerManager = require(Managers.WorkerManager)
 local TrainingManager = require(Managers.TrainingManager)
 local CombatManager = require(Managers.CombatManager) -- Updated CombatManager
+
+CombatManager.init()
 
 -- Require from Systems subfolder
 local Systems = script.Parent.Systems
@@ -73,16 +75,14 @@ local function spawnInitialSetup(player: Player, factionData: any)
 
 	-- 2. Spawn the King near the Keep
 	local kingSpawnPos = spawnPoint.Position + Vector3.new(5, 0, 5)
-	-- FIX: Added factionData.Name argument
-	UnitManager.createUnit("King", player.UserId, factionData.Name, kingSpawnPos)
+	UnitManager.createUnit("King", player.UserId, kingSpawnPos, factionData.Name) -- Pass faction
 
 	-- 3. Spawn peasants around the Keep
 	for i = 1, factionData.StartingPeasants do
 		local angle = (math.pi * 2 * i) / factionData.StartingPeasants
 		local offset = Vector3.new(math.cos(angle) * 10, 0, math.sin(angle) * 10)
 		local peasantSpawnPos = spawnPoint.Position + offset
-		-- FIX: Added factionData.Name argument
-		UnitManager.createUnit("Peasant", player.UserId, factionData.Name, peasantSpawnPos)
+		UnitManager.createUnit("Peasant", player.UserId, peasantSpawnPos, factionData.Name) -- Pass faction
 	end
 	-- 4. Spawn resource nodes around the spawn
 	ResourceNodeManager.spawnNodesNearPosition(spawnPoint.Position, 150, "Wood", 20)
@@ -90,7 +90,7 @@ local function spawnInitialSetup(player: Player, factionData: any)
 	ResourceNodeManager.spawnNodesNearPosition(spawnPoint.Position, 100, "Food", 10)
 
 	GameManagerDebug:info(
-		`Spawned Keep, King, {factionData.StartingPeasants} peasants, and resource nodes for {player.Name}`
+		`Spawned Keep, King, {factionData.StartingPeasants} peasants, and resource nodes for {player.Name} + factionData {factionData.Name}`
 	)
 end
 
@@ -121,8 +121,9 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		GameManagerDebug:info(`Viking Raids: {vikingRaidsEnabled}, Peace Time: {peaceTimeMinutes} minutes`)
 
 		if vikingRaidsEnabled then
+			-- Set peace time to 0 for instant testing
 			VikingRaidSystem.enableRaids(player.UserId, peaceTimeMinutes)
-			GameManagerDebug:info(`Viking Raids enabled for {player.Name}`)
+			GameManagerDebug:info(`Viking Raids enabled for {player.Name} (instant spawn for testing)`)
 		end
 
 		-- Assign faction (for now, just use Kingdom)
@@ -301,13 +302,25 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		if typeof(data) == "table" and data.unitId and data.targetId then
 			GameManagerDebug:info(`{player.Name} ordering {data.unitId} to attack {data.targetId}`)
 
-			local attackerUnit = findUnit(data.unitId)
-			local targetUnit = findUnit(data.targetId)
-
-			if attackerUnit and targetUnit and attackerUnit:GetAttribute("Owner") == player.UserId then
-				-- Delegate to CombatManager
-				CombatManager.setTarget(attackerUnit, targetUnit)
-				GameManagerDebug:info(`{data.unitId} manually targeting {data.targetId} via CombatManager`)
+			-- Find the attacker unit
+			for _, unit in playerData.Units do
+				if unit and unit.Parent and unit.Name == data.unitId then
+					-- Check if unit belongs to player
+					if unit:GetAttribute("Owner") == player.UserId then
+						-- Find the target
+						local unitsFolder = workspace:FindFirstChild("Units")
+						if unitsFolder then
+							local target = unitsFolder:FindFirstChild(data.targetId)
+							if target then
+								CombatManager.setTarget(unit, target) -- Changed from attackTarget
+								GameManagerDebug:info(`{data.unitId} attacking {data.targetId}`)
+							else
+								GameManagerDebug:warn(`Target {data.targetId} not found`)
+							end
+						end
+						break
+					end
+				end
 			end
 		end
 	elseif action == "SetStance" then

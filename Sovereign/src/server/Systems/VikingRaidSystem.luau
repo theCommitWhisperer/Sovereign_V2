@@ -33,7 +33,7 @@ function VikingRaidSystem.enableRaids(playerId: number, peaceTimeMinutes: number
 	activeRaids[playerId] = {
 		playerId = playerId,
 		enabled = true,
-		peaceTimeSeconds = peaceTimeSeconds,
+		peaceTimeSeconds = 30,
 		raidIntervalSeconds = 180, -- Changed from 120 to 180 (3 minutes between raids)
 		nextRaidTime = tick() + peaceTimeSeconds,
 		currentRaidNumber = 0,
@@ -126,9 +126,8 @@ local function spawnRaid(config: RaidConfig)
 
 		local vikingSpawnPos = spawnPosition + offset
 		vikingSpawnPos = Vector3.new(vikingSpawnPos.X, 20, vikingSpawnPos.Z)
-
+		local viking = UnitManager.createUnit(unitType, VIKING_OWNER_ID, vikingSpawnPos, "Viking") -- Pass "Viking" faction
 		-- FIX: Pass the Viking Faction explicitly ("Viking")
-		local viking = UnitManager.createUnit(unitType, VIKING_OWNER_ID, "Viking", vikingSpawnPos)
 		if viking then
 			table.insert(spawnedVikings, viking)
 

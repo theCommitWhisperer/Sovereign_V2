@@ -11,6 +11,7 @@ local ResourceDisplay = require(script.Parent.ResourceDisplay)
 local BuildingMenu = require(script.Parent.BuildingMenu)
 local SelectionPanel = require(script.Parent.SelectionPanel)
 local TrainingPanel = require(script.Parent.TrainingPanel)
+local UnitSelectionPanel = require(script.Parent.UnitSelectionPanel)
 
 local player = Players.LocalPlayer
 
@@ -222,132 +223,184 @@ end
 function HUD:render()
 	HUDDebug:info("Rendering", { resources = self.state.resources })
 
+	local hasUnitsSelected = #self.state.selectedUnits > 0
+
 	return React.createElement("ScreenGui", {
 		Name = "HUDGui",
 		ResetOnSpawn = false,
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 		IgnoreGuiInset = true,
 	}, {
-		-- Top Bar for Resources
+		-- Top Bar (Resources on left, MENU | STATS on right)
 		TopBar = React.createElement("Frame", {
 			Name = "TopBar",
-			Size = UDim2.new(1, 0, 0, 60),
+			Size = UDim2.new(1, 0, 0, UIConfig.HUD.TopBarHeight),
 			Position = UDim2.fromScale(0, 0),
-			BackgroundColor3 = Color3.fromRGB(40, 40, 45),
-			BorderSizePixel = 0,
+			BackgroundColor3 = UIConfig.HUD.TopBarBackground,
+			BorderSizePixel = 1,
+			BorderColor3 = UIConfig.HUD.TopBarBorder,
+			ZIndex = 10,
 		}, {
-			ResourceDisplay = React.createElement(ResourceDisplay, {
-				resources = self.state.resources,
+			-- Resource display on left side
+			ResourceContainer = React.createElement("Frame", {
+				Size = UDim2.new(0, 650, 1, -8),
+				Position = UDim2.new(0, 10, 0, 4),
+				BackgroundTransparency = 1,
+			}, {
+				ResourceDisplay = React.createElement(ResourceDisplay, {
+					resources = self.state.resources,
+				}),
+			}),
+
+			-- MENU | STATS buttons on right
+			MenuButton = React.createElement("TextButton", {
+				Size = UDim2.new(0, 60, 1, -8),
+				Position = UDim2.new(1, -130, 0, 4),
+				BackgroundColor3 = UIConfig.HUD.CategoryButtonBackground,
+				BorderSizePixel = 1,
+				BorderColor3 = UIConfig.HUD.CategoryButtonBorder,
+				Text = "MENU",
+				Font = Enum.Font.GothamBold,
+				TextSize = 12,
+				TextColor3 = UIConfig.HUD.PanelTextColor,
+			}),
+
+			StatsButton = React.createElement("TextButton", {
+				Size = UDim2.new(0, 60, 1, -8),
+				Position = UDim2.new(1, -65, 0, 4),
+				BackgroundColor3 = UIConfig.HUD.CategoryButtonBackground,
+				BorderSizePixel = 1,
+				BorderColor3 = UIConfig.HUD.CategoryButtonBorder,
+				Text = "STATS",
+				Font = Enum.Font.GothamBold,
+				TextSize = 12,
+				TextColor3 = UIConfig.HUD.PanelTextColor,
 			}),
 		}),
 
-		UnitControlsFrame = React.createElement("Frame", {
-			Name = "UnitControlsFrame",
-			Size = UDim2.new(0, 150, 0, 40),
-			Position = UDim2.new(1, -220, 1, -250), -- Positioned near the MiniMap
-			AnchorPoint = Vector2.new(1, 1),
-			BackgroundColor3 = Color3.fromRGB(40, 40, 45),
-			BorderColor3 = Color3.fromRGB(100, 100, 100),
-			BorderSizePixel = 2,
-			Visible = #self.state.selectedUnits > 0, -- Only visible if units are selected
+		-- Left Sidebar (ERASER POLICIES at top, then MINIMAP, then categories)
+		LeftSidebar = React.createElement("Frame", {
+			Name = "LeftSidebar",
+			Size = UDim2.new(0, UIConfig.HUD.LeftSidebarWidth, 1, -(UIConfig.HUD.TopBarHeight + UIConfig.HUD.BottomBarHeight)),
+			Position = UDim2.new(0, 0, 0, UIConfig.HUD.TopBarHeight),
+			BackgroundColor3 = UIConfig.HUD.LeftSidebarBackground,
+			BorderSizePixel = 1,
+			BorderColor3 = UIConfig.HUD.LeftSidebarBorder,
+			ZIndex = 10,
 		}, {
-			Layout = React.createElement("UIListLayout", {
-				FillDirection = Enum.FillDirection.Horizontal,
-				HorizontalAlignment = Enum.HorizontalAlignment.Center,
-				VerticalAlignment = Enum.VerticalAlignment.Center,
-				Padding = UDim.new(0, 5),
+			-- "ERASER POLICIES" label at TOP
+			PoliciesLabel = React.createElement("TextLabel", {
+				Size = UDim2.new(1, -10, 0, 25),
+				Position = UDim2.new(0, 5, 0, 5),
+				BackgroundTransparency = 1,
+				Text = "ERASER POLICIES",
+				Font = Enum.Font.GothamBold,
+				TextSize = 11,
+				TextColor3 = UIConfig.HUD.PanelHeaderColor,
+				TextXAlignment = Enum.TextXAlignment.Center,
 			}),
-			-- Placeholder buttons for the StanceController to hook up to
-			AggressiveStanceButton = React.createElement("TextButton", {
-				Name = "AggressiveStanceButton",
-				Size = UDim2.new(0, 40, 0, 30),
-				Text = "⚔️", -- Aggressive Stance
-				BackgroundTransparency = 0,
+
+			-- Minimap BELOW label
+			MiniMapFrame = React.createElement("Frame", {
+				Name = "MiniMapFrame",
+				Size = UDim2.new(1, -10, 0, UIConfig.HUD.MinimapSize),
+				Position = UDim2.new(0, 5, 0, 35),
+				BackgroundColor3 = UIConfig.HUD.PanelBackground,
+				BorderColor3 = UIConfig.HUD.PanelBorder,
+				BorderSizePixel = 1,
+			}, {
+				Label = React.createElement("TextLabel", {
+					Size = UDim2.fromScale(1, 1),
+					BackgroundTransparency = 1,
+					Text = "MINIMAP",
+					Font = Enum.Font.GothamBold,
+					TextSize = 14,
+					TextColor3 = UIConfig.HUD.PanelTextColor,
+				}),
 			}),
-			DefensiveStanceButton = React.createElement("TextButton", {
-				Name = "DefensiveStanceButton",
-				Size = UDim2.new(0, 40, 0, 30),
-				Text = "🛡️", -- Defensive Stance
-				BackgroundTransparency = 0,
-			}),
-			HoldPositionStanceButton = React.createElement("TextButton", {
-				Name = "HoldPositionStanceButton",
-				Size = UDim2.new(0, 40, 0, 30),
-				Text = "✋", -- Hold Position Stance
-				BackgroundTransparency = 0,
+
+			-- Category buttons BELOW minimap (Food, Housing, Military, Resources, Storage)
+			CategorySection = React.createElement("Frame", {
+				Size = UDim2.new(1, -10, 1, -(UIConfig.HUD.MinimapSize + 45)),
+				Position = UDim2.new(0, 5, 0, UIConfig.HUD.MinimapSize + 40),
+				BackgroundTransparency = 1,
+			}, {
+				Layout = React.createElement("UIListLayout", {
+					FillDirection = Enum.FillDirection.Vertical,
+					HorizontalAlignment = Enum.HorizontalAlignment.Center,
+					VerticalAlignment = Enum.VerticalAlignment.Top,
+					Padding = UDim.new(0, 5),
+				}),
+
+				-- Category tabs will be added by BuildingMenu component
 			}),
 		}),
 
-		-- Bottom Bar with Building Menu
+		-- Bottom Bar (Stronghold-style - shows EITHER building menu OR unit selection)
 		BottomBar = React.createElement("Frame", {
 			Name = "BottomBar",
-			Size = UDim2.new(1, 0, 0, 200),
+			Size = UDim2.new(1, 0, 0, UIConfig.HUD.BottomBarHeight),
 			Position = UDim2.new(0, 0, 1, 0),
 			AnchorPoint = Vector2.new(0, 1),
-			BackgroundColor3 = Color3.fromRGB(40, 40, 45),
-			BorderSizePixel = 0,
+			BackgroundColor3 = UIConfig.HUD.BottomBarBackground,
+			BorderSizePixel = 2,
+			BorderColor3 = UIConfig.HUD.BottomBarBorder,
+			ZIndex = 10,
 		}, {
-			Padding = React.createElement("UIPadding", {
-				PaddingTop = UDim.new(0, 10),
-				PaddingBottom = UDim.new(0, 10),
-				PaddingLeft = UDim.new(0, 10),
-				PaddingRight = UDim.new(0, 10),
+			-- Content container with padding
+			ContentContainer = React.createElement("Frame", {
+				Size = UDim2.new(1, -30, 1, -20),
+				Position = UDim2.new(0, 15, 0, 10),
+				BackgroundTransparency = 1,
+			}, {
+				-- Show unit selection panel when units are selected, otherwise building menu
+				Content = hasUnitsSelected and React.createElement(UnitSelectionPanel, {
+					selectedUnits = self.state.selectedUnits,
+					onFormationSelected = function(formationType)
+						HUDDebug:info(`Formation selected: {formationType}`)
+						-- TODO: Implement formation logic
+					end,
+				}) or React.createElement(BuildingMenu, {
+					resources = self.state.resources,
+					onBuildingSelected = function(buildingName)
+						HUDDebug:info("Building selected for placement", { building = buildingName })
+						self:setState({
+							isPlacingBuilding = true,
+							selectedBuilding = buildingName,
+						})
+
+						-- Request placement from server
+						self.gameEvent:FireServer("StartPlacement", buildingName)
+					end,
+				}),
 			}),
+		}),
 
-			BuildingMenu = React.createElement(BuildingMenu, {
-				resources = self.state.resources,
-				onBuildingSelected = function(buildingName)
-					HUDDebug:info("Building selected for placement", { building = buildingName })
-					self:setState({
-						isPlacingBuilding = true,
-						selectedBuilding = buildingName,
-					})
-
-					-- Request placement from server
-					self.gameEvent:FireServer("StartPlacement", buildingName)
+		-- Training Panel (overlay when building is selected)
+		TrainingPanel = self.state.selectedTrainingBuilding and React.createElement("Frame", {
+			Name = "TrainingPanelContainer",
+			Size = UDim2.new(0, 350, 0, 500),
+			Position = UDim2.new(0.5, 0, 0.5, 0),
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			BackgroundColor3 = UIConfig.HUD.PanelBackground,
+			BorderSizePixel = 3,
+			BorderColor3 = UIConfig.HUD.PanelBorder,
+			ZIndex = 15, -- Above everything
+		}, {
+			TrainingPanel = React.createElement(TrainingPanel, {
+				selectedBuilding = self.state.selectedTrainingBuilding,
+				queue = self.state.trainingQueue,
+				onTrainUnit = function(unitType)
+					HUDDebug:info(`Training unit: {unitType}`)
+					if self.state.selectedTrainingBuilding then
+						self.gameEvent:FireServer("StartTraining", {
+							buildingId = self.state.selectedTrainingBuilding.Name,
+							unitType = unitType,
+						})
+					end
 				end,
 			}),
-		}),
-
-		-- Selection Panel (bottom left)
-		SelectionPanel = React.createElement(SelectionPanel, {
-			selectedUnits = self.state.selectedUnits,
-		}),
-
-		-- Training Panel (left side)
-		TrainingPanel = React.createElement(TrainingPanel, {
-			selectedBuilding = self.state.selectedTrainingBuilding,
-			queue = self.state.trainingQueue,
-			onTrainUnit = function(unitType)
-				HUDDebug:info(`Training unit: {unitType}`)
-				if self.state.selectedTrainingBuilding then
-					self.gameEvent:FireServer("StartTraining", {
-						buildingId = self.state.selectedTrainingBuilding.Name,
-						unitType = unitType,
-					})
-				end
-			end,
-		}),
-
-		-- Mini-map Placeholder (bottom right)
-		MiniMapFrame = React.createElement("Frame", {
-			Name = "MiniMapFrame",
-			Size = UDim2.new(0, 200, 0, 200),
-			Position = UDim2.new(1, -10, 1, -210),
-			AnchorPoint = Vector2.new(1, 1),
-			BackgroundColor3 = Color3.fromRGB(30, 30, 35),
-			BorderColor3 = Color3.fromRGB(100, 100, 100),
-			BorderSizePixel = 2,
-		}, {
-			Label = React.createElement("TextLabel", {
-				Size = UDim2.fromScale(1, 1),
-				BackgroundTransparency = 1,
-				Text = "Mini Map\n(Coming Soon)",
-				Font = Enum.Font.Gotham,
-				TextSize = 16,
-				TextColor3 = Color3.fromRGB(150, 150, 150),
-			}),
-		}),
+		}) or nil,
 	})
 end
 

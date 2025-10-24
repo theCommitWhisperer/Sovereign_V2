@@ -7,7 +7,7 @@ local ServerStorage = game:GetService("ServerStorage")
 
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local UnitManagerDebug = DebugManager.createChannel("UnitManager", false)
+local UnitManagerDebug = DebugManager.createChannel("UnitManager", true)
 local Managers = script.Parent
 local CombatManager = require(Managers.CombatManager)
 local MoraleManager = require(Managers.MoraleManager)
@@ -115,64 +115,105 @@ local function findGroundPosition(initialPoint: Vector3): Vector3
 	end
 end
 
-function UnitManager.createUnit(unitType: string, ownerId: number, faction: string, position: Vector3?): Model?
+function UnitManager.createUnit(unitType: string, ownerId: number, position: Vector3?, explicitFaction: string?): Model?
 	local unitInfo = GameData.Units[unitType]
 	if not unitInfo then
 		UnitManagerDebug:warn(`Unknown unit type: {unitType}`)
 		return nil
 	end
 
-	-- ... (existing logic for player lookup, name generation, and cloning)
-	local success, player = pcall(function()
-		return game.Players:GetPlayerByUserId(ownerId)
-	end)
+	-- Determine faction (priority: explicit > unitData > player > default)
+	local faction = explicitFaction -- Use provided faction first
 
+	if not faction then
+		-- Special case: Vikings
+		if unitType == "Viking" then
+			faction = "Viking"
+		elseif unitInfo.faction then
+			-- Use faction from unit data if specified
+			faction = unitInfo.faction
+		else
+			-- Try to get faction from player
+			local success, player = pcall(function()
+				return game.Players:GetPlayerByUserId(ownerId)
+			end)
+
+			if success and player then
+				local playerData = PlayerManager.get(player)
+				if playerData and playerData.Faction then
+					faction = playerData.Faction
+				end
+			end
+		end
+	end
+
+	faction = faction or "Kingdom"
+
+	-- Determine player name first
+	local playerName = "Unknown"
+	if ownerId == 1000000 then
+		playerName = "Vikings"
+	else
+		local success, player = pcall(function()
+			return game.Players:GetPlayerByUserId(ownerId)
+		end)
+		if success and player then
+			playerName = player.Name
+		else
+			playerName = tostring(ownerId)
+		end
+	end
+
+	-- DEBUG: Always print what faction we're using
+	UnitManagerDebug:info(`Creating unit`, {
+		unitType = unitType,
+		owner = playerName,
+		ownerId = ownerId,
+		faction = faction,
+		explicitFaction = explicitFaction,
+	})
+
+	-- Get dummy model
 	local dummyModel = getDummyModel()
 	if not dummyModel then
 		UnitManagerDebug:warn("Failed to get dummy model")
 		return nil
 	end
 
+	-- Clone the dummy
 	local unit = dummyModel:Clone()
 
+	-- Generate unique ID
 	local uniqueId = tostring(math.random(1000, 9999))
 	unit.Name = `{unitType}_{ownerId}_{uniqueId}`
 
-	-- Set attributes (CRITICAL STEP MOVED UP)
+	-- Set health attributes first
+	if unitInfo.health then
+		unit:SetAttribute("MaxHealth", unitInfo.health.max_health or 100)
+		unit:SetAttribute("CurrentHealth", unitInfo.health.max_health or 100)
+	else
+		unit:SetAttribute("MaxHealth", 100)
+		unit:SetAttribute("CurrentHealth", 100)
+	end
+
+	-- Set unit attributes BEFORE parenting
 	unit:SetAttribute("UnitType", unitType)
 	unit:SetAttribute("Owner", ownerId)
 	unit:SetAttribute("UnitId", unit.Name)
 
-	-- Initialize components
-	if player then
-		CombatManager.initializeCombatUnit(unit, player)
-	end
-	MoraleManager.initializeUnit(unit, faction)
-
-	-- Set health attributes safely
-	-- ...
-
-	-- Set initial position on the ground (FIXED)
-	local desiredPos = position or Vector3.new(math.random(-20, 20), 10, math.random(-20, 20))
-	local groundPos = findGroundPosition(desiredPos)
-
-	local humanoid = unit:FindFirstChildOfClass("Humanoid")
-	local hrp = unit:FindFirstChild("HumanoidRootPart")
-
-	if not humanoid or not hrp then
-		unit:Destroy()
-		return nil
-	end
-
-	-- Position the HumanoidRootPart so the unit stands on the ground
-	local spawnCFrame = CFrame.new(groundPos) * CFrame.new(0, humanoid.HipHeight + (hrp.Size.Y / 2), 0)
-
-	unit:SetPrimaryPartCFrame(spawnCFrame)
+	-- Set initial position
+	local spawnPos = position or Vector3.new(math.random(-20, 20), 10, math.random(-20, 20))
+	unit:SetPrimaryPartCFrame(CFrame.new(spawnPos))
 
 	-- Update humanoid speed if specified
-	-- ...
+	if unitInfo.movement then
+		local humanoid = unit:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid.WalkSpeed = unitInfo.movement.speed_meters_per_second * 16
+		end
+	end
 
-	-- Add to workspace
+	-- PARENT TO WORKSPACE FIRST (attributes work better when parented)
 	local unitsFolder = workspace:FindFirstChild("Units")
 	if not unitsFolder then
 		unitsFolder = Instance.new("Folder")
@@ -181,8 +222,72 @@ function UnitManager.createUnit(unitType: string, ownerId: number, faction: stri
 	end
 	unit.Parent = unitsFolder
 
+	-- NOW initialize systems that read attributes
+	-- DEBUG: Print faction before passing to MoraleManager
+	print(`[UnitManager DEBUG] About to init morale. Faction = {faction}, Type = {type(faction)}`)
+
+	-- Initialize morale
+	MoraleManager.initializeUnit(unit, faction)
+
+	-- Create a fake player object for CombatManager if needed
+	local playerForCombat = nil
+	if ownerId ~= 1000000 then
+		local success, player = pcall(function()
+			return game.Players:GetPlayerByUserId(ownerId)
+		end)
+		if success and player then
+			playerForCombat = player
+		end
+	end
+
+	-- Initialize combat for ALL units (including Vikings)
+	if playerForCombat then
+		CombatManager.initializeCombatUnit(unit, playerForCombat)
+	else
+		-- For Vikings/AI, we need to initialize combat differently
+		-- Create a temporary table that mimics a player
+		local fakePlayer = {
+			Name = playerName,
+			UserId = ownerId,
+		}
+		-- Call a version that doesn't need PlayerManager
+		local unitData = GameData.Units[unitType]
+
+		if unitData.combat then
+			local combatUnit = {
+				model = unit,
+				unitData = unitData,
+				owner = ownerId,
+				unitType = unitType,
+				health = unitData.health.max_health,
+				maxHealth = unitData.health.max_health,
+				attackDamage = unitData.combat.attack_damage,
+				attackSpeed = unitData.combat.attack_speed,
+				attackRange = unitData.combat.attack_range * 3,
+				armor = unitData.combat.armor,
+				morale = 75,
+				stance = "Aggressive",
+				targetModel = nil,
+				formation = nil,
+				lastAttackTime = 0,
+				isCharging = false,
+				faction = faction,
+				-- Irish special abilities
+				celticFuryActive = false,
+				lastWarCryTime = 0,
+				inShieldWall = false,
+				shieldWallAllies = {},
+			}
+
+			-- Manually add to ActiveCombatUnits
+			CombatManager.registerCombatUnit(unit, combatUnit)
+		end
+	end
+
 	-- Add to player's units if we found the player
-	-- ...
+	if playerForCombat then
+		PlayerManager.addUnit(playerForCombat, unit)
+	end
 
 	return unit
 end

@@ -190,20 +190,22 @@ local function updateTraining(deltaTime: number)
 				if building then
 					-- Spawn the unit near the building
 					local player = game.Players:GetPlayerByUserId(currentEntry.ownerId)
-					local playerData = PlayerManager.get(player) -- Get player data to retrieve faction
-
-					if player and playerData then
+					if player then
 						local spawnPosition = building.Position
 							+ Vector3.new(math.random(-10, 10), 5, math.random(-10, 10))
 
-						-- FIX: Pass faction name (playerData.Faction)
-						UnitManager.createUnit(
-							currentEntry.unitType,
-							currentEntry.ownerId,
-							playerData.Faction,
-							spawnPosition
-						)
-						TrainingDebug:info(`Spawned {currentEntry.unitType} at {spawnPosition}`)
+						-- Get the player's faction
+						local PlayerManager = require(script.Parent.PlayerManager)
+						local playerData = PlayerManager.get(player)
+						local faction = playerData and playerData.Faction or "Kingdom"
+
+						TrainingDebug:info(`About to spawn trained unit`, {
+							unitType = currentEntry.unitType,
+							faction = faction,
+							hasFaction = faction ~= nil,
+						})
+
+						UnitManager.createUnit(currentEntry.unitType, currentEntry.ownerId, spawnPosition, faction)
 					end
 				end
 

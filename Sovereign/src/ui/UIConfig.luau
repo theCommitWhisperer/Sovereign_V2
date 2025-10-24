@@ -22,6 +22,63 @@ local UIConfig = {
 		Button = UDim2.new(0, 200, 0, 50),
 		Title = UDim2.new(1, 0, 0, 100),
 	},
+	HUD = {
+		-- Stronghold-style layout (matching IMG_6014.jpg)
+		-- Top Bar
+		TopBarHeight = 40,
+		TopBarBackground = Color3.fromRGB(100, 90, 70), -- Darker brown
+		TopBarBorder = Color3.fromRGB(60, 50, 35),
+
+		-- Left Sidebar (vertical panel on left)
+		LeftSidebarWidth = 160,
+		LeftSidebarBackground = Color3.fromRGB(100, 80, 60),
+		LeftSidebarBorder = Color3.fromRGB(60, 45, 30),
+
+		-- Bottom Bar (horizontal panel at bottom)
+		BottomBarHeight = 150,
+		BottomBarBackground = Color3.fromRGB(100, 80, 60),
+		BottomBarBorder = Color3.fromRGB(60, 45, 30),
+
+		-- Resource Display (compact, top bar left side)
+		ResourceIconSize = 18,
+		ResourceTextColor = Color3.fromRGB(255, 255, 255),
+		ResourceLabelColor = Color3.fromRGB(230, 230, 230),
+		ResourceBackgroundColor = Color3.fromRGB(70, 60, 45),
+		ResourceBorderColor = Color3.fromRGB(50, 40, 25),
+
+		-- Building Menu Buttons (in bottom bar)
+		BuildingButtonSize = 65,
+		BuildingButtonBackground = Color3.fromRGB(80, 65, 50),
+		BuildingButtonHover = Color3.fromRGB(100, 85, 70),
+		BuildingButtonAffordable = Color3.fromRGB(70, 90, 70),
+		BuildingButtonUnaffordable = Color3.fromRGB(90, 50, 50),
+		BuildingButtonBorder = Color3.fromRGB(50, 40, 25),
+
+		-- Category Buttons (in left sidebar below minimap)
+		CategoryButtonWidth = 140,
+		CategoryButtonHeight = 50,
+		CategoryButtonBackground = Color3.fromRGB(70, 60, 45),
+		CategoryButtonSelected = Color3.fromRGB(100, 85, 65),
+		CategoryButtonBorder = Color3.fromRGB(50, 40, 25),
+
+		-- Panels
+		PanelBackground = Color3.fromRGB(90, 75, 55),
+		PanelBorder = Color3.fromRGB(60, 45, 30),
+		PanelHeaderColor = Color3.fromRGB(255, 230, 180), -- Cream
+		PanelTextColor = Color3.fromRGB(255, 255, 230),
+
+		-- Minimap (in left sidebar, below "ERASER POLICIES")
+		MinimapSize = 140,
+
+		-- Unit Selection (in bottom bar when units selected)
+		UnitPortraitSize = 60,
+		UnitPortraitSpacing = 5,
+
+		-- Formation Controls
+		FormationButtonSize = 45,
+		FormationButtonBackground = Color3.fromRGB(80, 65, 50),
+		FormationButtonBorder = Color3.fromRGB(50, 40, 25),
+	},
 	LobbyPage = {
 		-- Panel Styling
 		PanelBackgroundColor = Color3.fromRGB(0, 0, 0),

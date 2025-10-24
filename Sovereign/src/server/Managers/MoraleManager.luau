@@ -53,18 +53,20 @@ export type UnitMorale = {
 
 local UnitMoraleData: { [Model]: UnitMorale } = {}
 
--- Initialize morale for a unit
 function MoraleManager.initializeUnit(unitModel: Model, faction: string)
-	local baseMorale = BASE_MORALE
-
-	if not faction or type(faction) ~= "string" then
-		-- Handle incorrect or missing argument gracefully
+	-- CRITICAL: Safeguard against nil faction
+	if not faction then
+		MoraleDebug:warn("Faction is nil! Using default Kingdom", {
+			unitName = unitModel.Name,
+			unitType = unitModel:GetAttribute("UnitType"),
+		})
 		faction = "Kingdom"
-		MoraleDebug:warn("Morale initialized with default faction due to missing/invalid faction argument.")
 	end
 
-	-- Irish units get morale bonus
-	if faction == "Irish" or faction:lower():find("celt") then
+	local baseMorale = BASE_MORALE
+
+	-- Irish units get morale bonus - now safe from nil
+	if faction == "Irish" or string.lower(faction):find("celt") then
 		baseMorale = baseMorale + IRISH_BASE_MORALE_BONUS
 	end
 
@@ -75,7 +77,7 @@ function MoraleManager.initializeUnit(unitModel: Model, faction: string)
 		baseMorale = baseMorale + 10
 	elseif unitType == "Bard" then
 		baseMorale = MAX_MORALE -- Bards never flee
-	elseif unitType == "King" or unitType:find("Hero") then
+	elseif unitType == "King" or unitType and unitType:find("Hero") then
 		baseMorale = 95 -- Heroes rarely flee
 	end
 
@@ -143,30 +145,41 @@ end
 
 -- Update morale bar visual
 local function updateMoraleIndicator(unitModel: Model, moraleData: UnitMorale)
-	local billboard = unitModel:FindFirstDescendant("MoraleIndicator")
+	-- Look for MoraleIndicator in the primary part (where we created it)
+	local primaryPart = unitModel.PrimaryPart
+	if not primaryPart then
+		return
+	end
+
+	local billboard = primaryPart:FindFirstChild("MoraleIndicator")
 	if not billboard then
 		return
 	end
 
-	local bar = billboard:FindFirstChild("MoraleBar", true)
-	if not bar or not bar:IsA("Frame") then
+	local bar = billboard:FindFirstChild("Frame")
+	if not bar then
+		return
+	end
+
+	local moraleBar = bar:FindFirstChild("MoraleBar")
+	if not moraleBar or not moraleBar:IsA("Frame") then
 		return
 	end
 
 	local percentage = moraleData.current / moraleData.max
-	bar.Size = UDim2.new(percentage, 0, 1, 0)
+	moraleBar.Size = UDim2.new(percentage, 0, 1, 0)
 
 	-- Color based on state
 	if moraleData.state == "Fleeing" then
-		bar.BackgroundColor3 = Color3.fromRGB(255, 50, 50) -- Red
+		moraleBar.BackgroundColor3 = Color3.fromRGB(255, 50, 50) -- Red
 	elseif moraleData.state == "Shaken" then
-		bar.BackgroundColor3 = Color3.fromRGB(255, 150, 50) -- Orange
+		moraleBar.BackgroundColor3 = Color3.fromRGB(255, 150, 50) -- Orange
 	elseif moraleData.state == "Steady" then
-		bar.BackgroundColor3 = Color3.fromRGB(200, 200, 100) -- Yellow
+		moraleBar.BackgroundColor3 = Color3.fromRGB(200, 200, 100) -- Yellow
 	elseif moraleData.state == "Confident" then
-		bar.BackgroundColor3 = Color3.fromRGB(100, 200, 100) -- Green
+		moraleBar.BackgroundColor3 = Color3.fromRGB(100, 200, 100) -- Green
 	else -- Inspired
-		bar.BackgroundColor3 = Color3.fromRGB(50, 255, 50) -- Bright green
+		moraleBar.BackgroundColor3 = Color3.fromRGB(50, 255, 50) -- Bright green
 	end
 end
 
