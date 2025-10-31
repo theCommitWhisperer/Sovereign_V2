@@ -4,6 +4,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
+local StarterPlayer = game:GetService("StarterPlayer")
 
 -- Require game data (safe - read-only configs)
 local GameData = require(ReplicatedStorage.Shared.GameData)
@@ -12,6 +13,10 @@ local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local GameManagerDebug = DebugManager.createChannel("GameManager", true) -- Corrected to be off by default
 
 GameManagerDebug:info("Loading server-side managers...")
+
+-- Disable automatic character spawning - players will spawn when they start the game
+Players.CharacterAutoLoads = false
+GameManagerDebug:info("CharacterAutoLoads disabled - players will spawn on game start")
 
 -- Require from Managers subfolder (secure - server-only logic)
 local Managers = script.Parent.Managers
@@ -22,13 +27,68 @@ local ResourceNodeManager = require(Managers.ResourceNodeManager)
 local WorkerManager = require(Managers.WorkerManager)
 local TrainingManager = require(Managers.TrainingManager)
 local CombatManager = require(Managers.CombatManager) -- Updated CombatManager
+local HappinessManager = require(Managers.HappinessManager)
+local TaxManager = require(Managers.TaxManager)
+local RevoltManager = require(Managers.RevoltManager)
+local FactionManager = require(Managers.FactionManager)
+local PopulationManager = require(Managers.PopulationManager)
+local ConsumptionManager = require(Managers.ConsumptionManager)
+local MaintenanceManager = require(Managers.MaintenanceManager)
+local EventManager = require(Managers.EventManager)
+local SeasonManager = require(Managers.SeasonManager)
+local WeatherManager = require(Managers.WeatherManager)
+local TradeManager = require(Managers.TradeManager)
+local CaravanManager = require(Managers.CaravanManager)
+local EconomyDashboardManager = require(Managers.EconomyDashboardManager)
+local VictoryConditionManager = require(Managers.VictoryConditionManager)
+local NotificationManager = require(Managers.NotificationManager)
+local TestCommandManager = require(Managers.TestCommandManager)
+local SpawnManager = require(Managers.SpawnManager)
+local MapManager = require(Managers.MapManager)
 
 CombatManager.init()
+HappinessManager.init()
+TaxManager.init()
+RevoltManager.init()
+FactionManager.init()
+PopulationManager.init()
+ConsumptionManager.init()
+MaintenanceManager.init()
+EventManager.init()
+SeasonManager.init()
+WeatherManager.init()
+TradeManager.init()
+CaravanManager.init()
+EconomyDashboardManager.init()
+VictoryConditionManager.init()
+NotificationManager.init()
 
 -- Require from Systems subfolder
 local Systems = script.Parent.Systems
 local MovementSystem = require(Systems.MovementSystem)
 local VikingRaidSystem = require(Systems.VikingRaidSystem)
+local PopulationSystem = require(Systems.PopulationSystem)
+local ConsumptionSystem = require(Systems.ConsumptionSystem)
+local MaintenanceSystem = require(Systems.MaintenanceSystem)
+local EventSystem = require(Systems.EventSystem)
+local SeasonSystem = require(Systems.SeasonSystem)
+local WeatherSystem = require(Systems.WeatherSystem)
+local TradeSystem = require(Systems.TradeSystem)
+local CaravanSystem = require(Systems.CaravanSystem)
+local DashboardSystem = require(Systems.DashboardSystem)
+local VictorySystem = require(Systems.VictorySystem)
+
+-- Initialize systems
+PopulationSystem.init()
+ConsumptionSystem.init()
+MaintenanceSystem.init()
+EventSystem.init()
+SeasonSystem.init()
+WeatherSystem.init()
+TradeSystem.init()
+CaravanSystem.init()
+DashboardSystem.init()
+VictorySystem.init()
 
 GameManagerDebug:info("Managers loaded successfully")
 GameManagerDebug:info("Server starting...")
@@ -42,7 +102,15 @@ local GameEvent = Instance.new("RemoteEvent")
 GameEvent.Name = "GameEvent"
 GameEvent.Parent = RemoteEvents
 
+local GetStatsEvent = Instance.new("RemoteEvent")
+GetStatsEvent.Name = "GetStats"
+GetStatsEvent.Parent = RemoteEvents
+
 GameManagerDebug:info("RemoteEvents created")
+
+-- Initialize TestCommandManager after RemoteEvents are created
+TestCommandManager.init()
+GameManagerDebug:info("TestCommandManager initialized")
 
 -- Helper function to find a unit model by its UnitId (which is the Model.Name in V2)
 local function findUnit(unitId: string): Model?
@@ -56,15 +124,17 @@ end
 -- Player joined - create their data
 Players.PlayerAdded:Connect(function(player)
 	PlayerManager.create(player)
+	GameManagerDebug:info(`{player.Name} joined - character will spawn when game starts`)
 end)
 
 -- Player left - clean up
 Players.PlayerRemoving:Connect(function(player)
+	SpawnManager.removePlayer(player.UserId)
 	PlayerManager.remove(player)
 end)
 
-local function spawnInitialSetup(player: Player, factionData: any)
-	local spawnPoint = factionData.SpawnPoint
+local function spawnInitialSetup(player: Player, factionData: any, spawnPointOverride: CFrame?)
+	local spawnPoint = spawnPointOverride or factionData.SpawnPoint
 
 	-- 1. Spawn the Keep
 	local keep = BuildingManager.createBuilding(player, "Keep", spawnPoint)
@@ -88,6 +158,7 @@ local function spawnInitialSetup(player: Player, factionData: any)
 	ResourceNodeManager.spawnNodesNearPosition(spawnPoint.Position, 150, "Wood", 20)
 	ResourceNodeManager.spawnNodesNearPosition(spawnPoint.Position, 150, "Stone", 15)
 	ResourceNodeManager.spawnNodesNearPosition(spawnPoint.Position, 100, "Food", 10)
+	ResourceNodeManager.spawnNodesNearPosition(spawnPoint.Position, 120, "Iron_Ore", 8)
 
 	GameManagerDebug:info(
 		`Spawned Keep, King, {factionData.StartingPeasants} peasants, and resource nodes for {player.Name} + factionData {factionData.Name}`
@@ -104,12 +175,60 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		return
 	end
 
+	if action == "GetStats" then
+		local economySnapshot = EconomyDashboardManager.getSnapshot(player)
+		local combatUnits = CombatManager.getActiveCombatUnits()
+		local combatStats = {
+			totalUnits = 0,
+			totalHealth = 0,
+			toalMaxHealth = 0,
+			totalDamage = 0,
+			totalArmor = 0,
+			totalMorale = 0,
+		}
+
+		for _, unit in pairs(combatUnits) do
+			if unit.owner == player.UserId then
+				combatStats.totalUnits = combatStats.totalUnits + 1
+				combatStats.totalHealth = combatStats.totalHealth + unit.health
+				combatStats.toalMaxHealth = combatStats.toalMaxHealth + unit.maxHealth
+				combatStats.totalDamage = combatStats.totalDamage + unit.attackDamage
+				combatStats.totalArmor = combatStats.totalArmor + unit.armor
+				combatStats.totalMorale = combatStats.totalMorale + unit.morale
+			end
+		end
+
+		GetStatsEvent:FireClient(player, {
+			economy = economySnapshot,
+			combat = combatStats,
+		})
+		return
+	end
+
 	if action == "StartGame" then
+		-- Prevent multiple game starts
+		if playerData.GameState == "InGame" then
+			GameManagerDebug:warn(`{player.Name} already in game, ignoring duplicate StartGame event`)
+			return
+		end
+
 		GameManagerDebug:info(`{player.Name} starting game...`)
 		-- Get game settings from data
 		local settings = typeof(data) == "table" and data or {}
 		local vikingRaidsEnabled = settings.vikingRaids or false
 		local peaceTimeStr = settings.peaceTime or "10 minutes"
+		local selectedMap = settings.map or "ClassicPlains"
+
+		-- Set the active map and configure SpawnManager
+		if not MapManager.setMap(selectedMap) then
+			GameManagerDebug:warn(`Invalid map selected: {selectedMap}, using default`)
+			selectedMap = "ClassicPlains"
+			MapManager.setMap(selectedMap)
+		end
+
+		local mapConfig = MapManager.getCurrentMap()
+		SpawnManager.setMapConfig(mapConfig)
+		GameManagerDebug:info(`Map loaded: {mapConfig.Name} ({mapConfig.Size}x{mapConfig.Size})`)
 
 		-- Parse peace time (format: "10 minutes")
 		local peaceTimeMinutes = 0 -- default
@@ -121,36 +240,61 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		GameManagerDebug:info(`Viking Raids: {vikingRaidsEnabled}, Peace Time: {peaceTimeMinutes} minutes`)
 
 		if vikingRaidsEnabled then
-			-- Set peace time to 0 for instant testing
+			-- Enable Viking Raids for this player
 			VikingRaidSystem.enableRaids(player.UserId, peaceTimeMinutes)
-			GameManagerDebug:info(`Viking Raids enabled for {player.Name} (instant spawn for testing)`)
+			GameManagerDebug:info(`Viking Raids enabled for {player.Name} (peace time: {peaceTimeMinutes} minutes)`)
 		end
 
-		-- Assign faction (for now, just use Kingdom)
-		local factionName = "Kingdom"
+		-- Assign player to a quadrant using SpawnManager
+		local quadrant = SpawnManager.assignPlayerToQuadrant(player.UserId)
+
+		-- Map quadrants to factions
+		local quadrantToFaction = {
+			[1] = "Kingdom", -- Northwest
+			[2] = "Empire", -- Northeast
+			[3] = "Tribes", -- Southwest
+			[4] = "IronLegion", -- Southeast
+		}
+
+		local factionName = quadrantToFaction[quadrant] or "Kingdom"
 		local factionData = GameData.Factions[factionName]
+
+		-- Override spawn point with quadrant-specific spawn
+		local quadrantSpawn = SpawnManager.getPlayerSpawnPoint(player.UserId)
+
 		playerData.Faction = factionName
-		playerData.SpawnPoint = factionData.SpawnPoint
+		playerData.SpawnPoint = quadrantSpawn
 		playerData.GameState = "InGame"
+
+		GameManagerDebug:info(`Assigned {player.Name} to Quadrant {quadrant} ({factionName})`)
 
 		-- Set starting resources
 		for resource, amount in pairs(factionData.StartingResources) do
 			playerData.Resources[resource] = amount
 		end
 
-		-- Spawn initial setup
-		spawnInitialSetup(player, factionData)
+		-- Spawn initial setup with quadrant spawn point
+		spawnInitialSetup(player, factionData, quadrantSpawn)
 
-		-- Teleport existing character instead of loading a new one
-		if player.Character and player.Character.PrimaryPart then
-			player.Character:SetPrimaryPartCFrame(factionData.SpawnPoint * CFrame.new(0, 3, 0))
-		end
+		-- Load character now (Players.CharacterAutoLoads is false)
+		player:LoadCharacter()
+		GameManagerDebug:info(`Loading character for {player.Name}`)
+
+		-- Wait for character and teleport to quadrant spawn
+		local character = player.Character or player.CharacterAdded:Wait()
+		local humanoidRootPart = character:WaitForChild("HumanoidRootPart") :: BasePart
+		humanoidRootPart.CFrame = quadrantSpawn * CFrame.new(0, 3, 0)
+		GameManagerDebug:info(`Character spawned and teleported {player.Name} to quadrant {quadrant}`)
 
 		-- Notify client
 		GameEvent:FireClient(player, "GameStarted", {
 			faction = factionName,
 			resources = playerData.Resources,
 		})
+
+		-- Send immediate economy dashboard update
+		task.wait(0.1) -- Brief delay to ensure all data is initialized
+		EconomyDashboardManager.sendUpdate(player)
 
 		GameManagerDebug:info(`{player.Name} spawned as Kingdom`)
 	elseif action == "StartPlacement" then
@@ -315,7 +459,9 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 							break
 						end
 
-						GameManagerDebug:info(`Deleting building {building.Name} (type: {buildingType}) for {player.Name}`)
+						GameManagerDebug:info(
+							`Deleting building {building.Name} (type: {buildingType}) for {player.Name}`
+						)
 
 						-- Unassign any workers/haulers from this building
 						WorkerManager.unassignWorkersFromBuilding(building)
@@ -374,6 +520,47 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				end
 			end
 		end
+	elseif action == "LeaveGame" then
+		-- Handle player leaving game and returning to main menu
+		GameManagerDebug:info(`{player.Name} leaving game and returning to main menu`)
+
+		-- Clean up all player buildings
+		for i = #playerData.Buildings, 1, -1 do
+			local building = playerData.Buildings[i]
+			if building and building.Parent then
+				-- Unassign workers first
+				WorkerManager.unassignWorkersFromBuilding(building)
+				building:Destroy()
+			end
+			table.remove(playerData.Buildings, i)
+		end
+
+		-- Clean up all player units
+		for i = #playerData.Units, 1, -1 do
+			local unit = playerData.Units[i]
+			if unit and unit.Parent then
+				unit:Destroy()
+			end
+			table.remove(playerData.Units, i)
+		end
+
+		-- Disable Viking raids if active
+		VikingRaidSystem.disableRaids(player.UserId)
+
+		-- Reset player data
+		playerData.GameState = "Menu"
+		playerData.Faction = nil
+		playerData.SpawnPoint = nil
+
+		-- Reset resources to 0
+		for resource, _ in pairs(playerData.Resources) do
+			playerData.Resources[resource] = 0
+		end
+
+		GameManagerDebug:info(`{player.Name} successfully left game - all data cleaned up`)
+
+		-- Notify client that cleanup is complete
+		GameEvent:FireClient(player, "GameLeft", {})
 	end
 end)
 

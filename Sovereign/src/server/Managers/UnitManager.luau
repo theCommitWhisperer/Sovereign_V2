@@ -287,9 +287,27 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 	-- Add to player's units if we found the player
 	if playerForCombat then
 		PlayerManager.addUnit(playerForCombat, unit)
+		PlayerManager.updatePlayerStats(playerForCombat)
 	end
 
 	return unit
+end
+
+function UnitManager.destroyRandomUnit(player: Player)
+	local playerData = PlayerManager.get(player)
+	if not playerData or #playerData.Units == 0 then
+		return
+	end
+
+	local randomIndex = math.random(1, #playerData.Units)
+	local unitToDestroy = playerData.Units[randomIndex]
+
+	if unitToDestroy then
+		PlayerManager.removeUnit(player, unitToDestroy)
+		PlayerManager.updatePlayerStats(player)
+		unitToDestroy:Destroy()
+		UnitManagerDebug:info(`Destroyed random unit for {player.Name} due to desertion.`)
+	end
 end
 
 return UnitManager

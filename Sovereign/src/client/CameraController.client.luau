@@ -19,14 +19,14 @@ local gameEvent = RemoteEvents:WaitForChild("GameEvent")
 
 local cameraEnabled = false
 
--- Camera settings
-local CAMERA_HEIGHT = 50
-local CAMERA_ANGLE = 60 -- degrees from horizontal
+-- Camera settings (adjusted for 1000x1000 map)
+local CAMERA_HEIGHT = 50 -- Start at medium height
+local CAMERA_ANGLE = 70 -- More top-down view for better overview
 local CAMERA_DISTANCE = 40
-local PAN_SPEED = 0.5
-local ZOOM_SPEED = 5
-local MIN_HEIGHT = 20
-local MAX_HEIGHT = 100
+local PAN_SPEED = 1.0 -- Faster panning for larger map
+local ZOOM_SPEED = 10 -- Faster zoom
+local MIN_HEIGHT = 30 -- Minimum zoom for detail work
+local MAX_HEIGHT = 400 -- Maximum zoom to see entire map
 
 -- Camera state
 local cameraTarget = Vector3.new(0, 0, 0)
@@ -122,7 +122,9 @@ RunService.RenderStepped:Connect(function(deltaTime)
 	end
 
 	if moveDirection.Magnitude > 0 then
-		cameraTarget = cameraTarget + (moveDirection.Unit * deltaTime * 50)
+		-- Scale movement speed based on zoom level (faster when zoomed out)
+		local moveSpeed = 50 + (currentHeight - MIN_HEIGHT) * 2
+		cameraTarget = cameraTarget + (moveDirection.Unit * deltaTime * moveSpeed)
 	end
 
 	-- Calculate camera position based on angle and height

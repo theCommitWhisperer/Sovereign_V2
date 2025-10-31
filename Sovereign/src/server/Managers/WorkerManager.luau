@@ -5,6 +5,8 @@ local GameData = require(ReplicatedStorage.Shared.GameData)
 local ResourceNodeManager = require(script.Parent.ResourceNodeManager)
 local PlayerManager = require(script.Parent.PlayerManager)
 local BuildingManager = require(script.Parent.BuildingManager)
+local ProductionChainManager = require(script.Parent.ProductionChainManager)
+local WeatherManager = require(script.Parent.WeatherManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
 local WorkerManager = {}
@@ -18,6 +20,13 @@ local JOB_TRANSFORMATIONS = {
 	Woodcutters_Post = "Woodcutter",
 	Stone_Quarry = "Stonemason",
 	Farm = "Farmer",
+	Iron_Mine = "Miner",
+	Smithy = "Blacksmith",
+	Weaponsmith = "Weaponsmith",
+	Bakery = "Baker",
+	Brewery = "Brewer",
+	Market = "Merchant",
+	Trading_Post = "Trader",
 }
 
 export type WorkerTask = {
@@ -44,6 +53,15 @@ export type HaulerTask = {
 
 local WorkerTasks: { WorkerTask } = {}
 local HaulerTasks: { HaulerTask } = {}
+local productionModifiers: { [number]: number } = {}
+
+function WorkerManager.setProductionModifier(player: Player, modifier: number)
+	if not player then
+		return
+	end
+	productionModifiers[player.UserId] = modifier
+	WorkerDebug:info(`Set production modifier for {player.Name} to {modifier}`)
+end
 
 -- Transform a peasant into a specialized worker
 local function transformWorker(worker: Model, jobType: string)
@@ -287,44 +305,93 @@ local function updateWorkerTasks(deltaTime: number)
 				task.state = "Gathering"
 			end
 		elseif task.state == "Gathering" then
-			-- Find and gather from resource node
-			if not task.targetNode then
-				task.targetNode = ResourceNodeManager.findNearestNode(task.workplace.Position, task.resourceType)
-				if task.targetNode then
-					WorkerDebug:info(`{task.jobType} found {task.resourceType} node`, {
-						position = task.targetNode.Position,
-					})
-				else
-					WorkerDebug:warn(`No {task.resourceType} nodes found!`)
-				end
-			end
+			-- Check if this is a production chain building (consumes resources to produce)
+			local isProductionChain = ProductionChainManager.isProductionChainBuilding(task.workplaceType)
 
-			if task.targetNode then
-				local arrived = moveTowards(task.worker, task.targetNode.Position, 0.5)
-				if arrived then
-					-- Gather resources
-					local gatherRate = buildingInfo.production_rate or 1
-					local gathered = ResourceNodeManager.gatherFromNode(task.targetNode, gatherRate * deltaTime * 2)
-					task.resourcesCarrying = task.resourcesCarrying + gathered
+			if isProductionChain then
+				-- Production chain building: produce from stored input resources
+				-- Worker stays at workplace and "crafts" the resource
+				local canProduce = ProductionChainManager.canProduce(task.workplace)
 
-					-- If full or node depleted, return
-					if task.resourcesCarrying >= carryCapacity then
-						task.state = "ReturningToWorkplace"
-						task.targetNode = nil
-						WorkerDebug:info(`{task.jobType} full, returning`, {
-							carrying = task.resourcesCarrying,
-							resourceType = task.resourceType,
-						})
-					elseif gathered == 0 then
-						-- Node depleted, find another
-						task.targetNode = nil
-						WorkerDebug:info("Node depleted, looking for another")
+				if canProduce then
+					-- Produce resources at the workplace
+					local modifier = productionModifiers[task.ownerId] or 1
+					local productionRate = (buildingInfo.production_rate or 1) * modifier
+					local produced = productionRate * deltaTime * 2
+
+					-- Consume input resources
+					if ProductionChainManager.consumeInputs(task.workplace) then
+						task.resourcesCarrying = task.resourcesCarrying + produced
+
+						-- If full, deposit
+						if task.resourcesCarrying >= carryCapacity then
+							task.state = "ReturningToWorkplace"
+							WorkerDebug:info(`{task.jobType} produced {task.resourcesCarrying} {task.resourceType}`, {
+								carrying = task.resourcesCarrying,
+							})
+						end
+					else
+						-- Cannot produce, wait for input resources
+						WorkerDebug:warn(`{task.jobType} waiting for input resources`)
 					end
+				else
+					-- Not enough input resources, wait
+					WorkerDebug:warn(`{task.workplaceType} lacks input resources for production`)
 				end
 			else
-				-- No nodes available, return to workplace
-				WorkerDebug:warn(`No nodes available for {task.resourceType}`)
-				task.state = "ReturningToWorkplace"
+				-- Traditional resource gathering from nodes
+				if not task.targetNode then
+					task.targetNode = ResourceNodeManager.findNearestNode(task.workplace.Position, task.resourceType)
+					if task.targetNode then
+						WorkerDebug:info(`{task.jobType} found {task.resourceType} node`, {
+							position = task.targetNode.Position,
+						})
+					else
+						WorkerDebug:warn(`No {task.resourceType} nodes found!`)
+					end
+				end
+
+				if task.targetNode then
+					local arrived = moveTowards(task.worker, task.targetNode.Position, 0.5)
+					if arrived then
+						-- Gather resources
+						local modifier = productionModifiers[task.ownerId] or 1
+						local baseRate = buildingInfo.production_rate or 1
+
+						-- Apply weather/seasonal effects
+						local weatherModifier = 1.0
+						local player = game.Players:GetPlayerByUserId(task.ownerId)
+						if player then
+							if task.workplaceType == "Farm" then
+								weatherModifier = WeatherManager.getFarmProductionMultiplier(player)
+							elseif task.workplaceType == "Iron_Mine" then
+								weatherModifier = WeatherManager.getMiningProductionMultiplier(player)
+							end
+						end
+
+						local gatherRate = baseRate * modifier * weatherModifier
+						local gathered = ResourceNodeManager.gatherFromNode(task.targetNode, gatherRate * deltaTime * 2)
+						task.resourcesCarrying = task.resourcesCarrying + gathered
+
+						-- If full or node depleted, return
+						if task.resourcesCarrying >= carryCapacity then
+							task.state = "ReturningToWorkplace"
+							task.targetNode = nil
+							WorkerDebug:info(`{task.jobType} full, returning`, {
+								carrying = task.resourcesCarrying,
+								resourceType = task.resourceType,
+							})
+						elseif gathered == 0 then
+							-- Node depleted, find another
+							task.targetNode = nil
+							WorkerDebug:info("Node depleted, looking for another")
+						end
+					end
+				else
+					-- No nodes available, return to workplace
+					WorkerDebug:warn(`No nodes available for {task.resourceType}`)
+					task.state = "ReturningToWorkplace"
+				end
 			end
 		elseif task.state == "ReturningToWorkplace" then
 			-- Return resources to workplace

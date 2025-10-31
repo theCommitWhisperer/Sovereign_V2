@@ -48,11 +48,20 @@ function HUD:init()
 		population = 0,
 		happiness = 50, -- 0-100, affects revolt meter
 		isDeleteMode = false, -- Delete mode for removing buildings/units
+		showExpandedMeters = false, -- Show expanded meter panel
+		commandText = "", -- For admin command input
+		economySnapshot = nil, -- Economy dashboard data
+		stats = nil, -- Stats for the stats modal
 	})
 
 	-- Get game event reference
 	local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
 	self.gameEvent = RemoteEvents:WaitForChild("GameEvent")
+	self.getStatsEvent = RemoteEvents:WaitForChild("GetStats")
+
+	self.statsConnection = self.getStatsEvent.OnClientEvent:Connect(function(stats)
+		self:setState({ stats = stats })
+	end)
 
 	self.connection = self.gameEvent.OnClientEvent:Connect(function(action, data)
 		if action == "GameStarted" and data.resources then
@@ -71,6 +80,42 @@ function HUD:init()
 					queueLength = #data.queue,
 				})
 				self:setState({ trainingQueue = data.queue })
+			end
+        elseif action == "UpdateHappiness" and data.happiness then
+            HUDDebug:info("Happiness updated", { happiness = data.happiness })
+            self:setState({ happiness = data.happiness })
+        elseif action == "UpdatePopulation" and data.current then
+            HUDDebug:info("Population updated", { population = data.current })
+            self:setState({ population = data.current })
+		elseif action == "EconomyNotification" then
+			-- Economy notification (from NotificationManager)
+			if data.title and data.message then
+				local typePrefix = ""
+				if data.type == "critical" then
+					typePrefix = "🔴 CRITICAL: "
+				elseif data.type == "alert" then
+					typePrefix = "🟠 ALERT: "
+				elseif data.type == "warning" then
+					typePrefix = "🟡 WARNING: "
+				elseif data.type == "success" then
+					typePrefix = "🟢 SUCCESS: "
+				else
+					typePrefix = "ℹ️ INFO: "
+				end
+
+				HUDDebug:info(`{typePrefix}{data.title}`, { message = data.message })
+				-- TODO: Show notification UI banner
+				-- For now, just log it
+			end
+		elseif action == "EconomyDashboardUpdate" then
+			-- Economy dashboard snapshot
+			if data.snapshot then
+				HUDDebug:info("Economy dashboard updated", {
+					season = data.snapshot.season,
+					weather = data.snapshot.weather,
+					economyHealth = data.snapshot.economyHealth,
+				})
+				self:setState({ economySnapshot = data.snapshot })
 			end
 		elseif action == "VikingRaid" then
 			-- Viking raid notification
@@ -284,6 +329,85 @@ function HUD:createStatBox(label: string, value: any, icon: string)
 	})
 end
 
+-- Helper function to create expanded meter in the meter panel
+function HUD:createExpandedMeter(label: string, icon: string, value: number, maxValue: number, layoutOrder: number)
+	local percentage = math.clamp(value / maxValue, 0, 1)
+
+	return React.createElement("Frame", {
+		Size = UDim2.new(1, 0, 0, 28),
+		BackgroundTransparency = 1,
+		LayoutOrder = layoutOrder,
+	}, {
+		-- Icon
+		Icon = React.createElement("TextLabel", {
+			Size = UDim2.fromOffset(28, 28),
+			Position = UDim2.fromOffset(0, 0),
+			BackgroundTransparency = 1,
+			Text = icon,
+			Font = Enum.Font.GothamBold,
+			TextSize = 18,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			TextYAlignment = Enum.TextYAlignment.Center,
+		}),
+
+		-- Bar container
+		BarContainer = React.createElement("Frame", {
+			Size = UDim2.new(1, -65, 0, 20),
+			Position = UDim2.fromOffset(32, 4),
+			BackgroundColor3 = Color3.fromRGB(40, 40, 40),
+			BorderSizePixel = 1,
+			BorderColor3 = UIConfig.HUD.MeterBorder,
+		}, {
+			-- Fill bar
+			FillBar = React.createElement("Frame", {
+				Size = UDim2.fromScale(percentage, 1),
+				BackgroundColor3 = UIConfig.HUD.CategoryButtonSelected, -- Whiskey color
+				BorderSizePixel = 0,
+			}),
+		}),
+
+		-- Value text
+		ValueText = React.createElement("TextLabel", {
+			Size = UDim2.fromOffset(30, 28),
+			Position = UDim2.new(1, -30, 0, 0),
+			BackgroundTransparency = 1,
+			Text = tostring(value),
+			Font = Enum.Font.GothamBold,
+			TextSize = 12,
+			TextColor3 = UIConfig.HUD.PanelTextColor,
+			TextXAlignment = Enum.TextXAlignment.Right,
+			TextYAlignment = Enum.TextYAlignment.Center,
+		}),
+	})
+end
+
+-- Helper functions for season and weather icons
+function HUD:getSeasonIcon(season: string?): string
+	if season == "Spring" then
+		return "🌸"
+	elseif season == "Summer" then
+		return "☀️"
+	elseif season == "Autumn" then
+		return "🍂"
+	elseif season == "Winter" then
+		return "❄️"
+	end
+	return "🌸" -- Default to Spring
+end
+
+function HUD:getWeatherIcon(weather: string?): string
+	if weather == "Clear" then
+		return "☀️"
+	elseif weather == "Rain" then
+		return "🌧️"
+	elseif weather == "Storm" then
+		return "⛈️"
+	elseif weather == "Drought" then
+		return "🌵"
+	end
+	return "☀️" -- Default to Clear
+end
+
 -- Helper function to create category buttons for bottom bar (icon only)
 function HUD:createCategoryButton(category: string, icon: string)
 	local isSelected = self.state.selectedCategory == category
@@ -378,7 +502,43 @@ function HUD:render()
 				TextSize = 14,
 				TextColor3 = UIConfig.HUD.PanelTextColor,
 				[React.Event.MouseButton1Click] = function()
+					self.getStatsEvent:FireServer("GetStats")
 					self:setState({ showStatsModal = not self.state.showStatsModal })
+				end,
+			}),
+
+			-- Command Input TextBox (below MENU/STATS buttons)
+			CommandInput = React.createElement("TextBox", {
+				Size = UDim2.new(0, UIConfig.HUD.TopButtonWidth * 2 + 5, 0, 25),
+				Position = UDim2.new(0, 5, 0, UIConfig.HUD.TopButtonHeight + 10),
+				BackgroundColor3 = Color3.fromRGB(30, 30, 30),
+				BorderSizePixel = 1,
+				BorderColor3 = UIConfig.HUD.TopButtonBorder,
+				PlaceholderText = "Admin command (/help)",
+				PlaceholderColor3 = Color3.fromRGB(120, 120, 120),
+				Text = self.state.commandText,
+				Font = Enum.Font.Code,
+				TextSize = 12,
+				TextColor3 = Color3.fromRGB(0, 255, 0),
+				TextXAlignment = Enum.TextXAlignment.Left,
+				ClearTextOnFocus = false,
+				[React.Change.Text] = function(rbx)
+					self:setState({ commandText = rbx.Text })
+				end,
+				[React.Event.FocusLost] = function(rbx, enterPressed)
+					if enterPressed and self.state.commandText ~= "" then
+						-- Send command to server
+						local commandText = self.state.commandText
+						if commandText:sub(1, 1) == "/" then
+							commandText = commandText:sub(2) -- Remove leading /
+						end
+
+						HUDDebug:info("Sending admin command", { command = commandText })
+						self.gameEvent:FireServer("TestCommand", commandText)
+
+						-- Clear the text box
+						self:setState({ commandText = "" })
+					end
 				end,
 			}),
 
@@ -409,6 +569,18 @@ function HUD:render()
 				FoodBox = self:createStatBox("Food", self.state.resources.Food, "🌾"),
 				-- Population
 				PopBox = self:createStatBox("Pop", self.state.population, "👤"),
+				-- Season (if available)
+				SeasonBox = self.state.economySnapshot and self:createStatBox(
+					"",
+					self.state.economySnapshot.season or "Spring",
+					self:getSeasonIcon(self.state.economySnapshot.season)
+				) or nil,
+				-- Weather (if available)
+				WeatherBox = self.state.economySnapshot and self:createStatBox(
+					"",
+					self.state.economySnapshot.weather or "Clear",
+					self:getWeatherIcon(self.state.economySnapshot.weather)
+				) or nil,
 			}),
 		}),
 
@@ -580,47 +752,160 @@ function HUD:render()
 			}),
 		}),
 
-		-- Happiness/Revolt Meter (right side, above bottom bar)
-		HappinessMeter = React.createElement("Frame", {
-			Name = "HappinessMeter",
-			Size = UDim2.new(0, UIConfig.HUD.MeterWidth, 0, UIConfig.HUD.MeterHeight),
+		-- Happiness/Revolt Meter Panel (right side, top of bottom bar)
+		MeterPanel = React.createElement("Frame", {
+			Name = "MeterPanel",
+			Size = UDim2.new(0, 280, 0, self.state.showExpandedMeters and 280 or 50),
 			Position = UDim2.new(
 				1,
-				-(UIConfig.HUD.MeterWidth + 10),
+				-290,
 				1,
-				-(UIConfig.HUD.BottomBarHeight + UIConfig.HUD.MeterHeight + 10)
+				-UIConfig.HUD.BottomBarHeight - (self.state.showExpandedMeters and 280 or 60)
 			),
-			BackgroundColor3 = UIConfig.HUD.MeterBackground,
-			BorderSizePixel = 1,
-			BorderColor3 = UIConfig.HUD.MeterBorder,
-			ZIndex = 9,
+			BackgroundTransparency = 1,
+			ZIndex = 10,
 		}, {
-			-- Label
-			Label = React.createElement("TextLabel", {
-				Size = UDim2.new(1, 0, 0, 25),
-				BackgroundTransparency = 1,
-				Text = "😊/😡",
+			-- Expand/Collapse button (arrow at top, narrower)
+			ExpandButton = React.createElement("TextButton", {
+				Size = UDim2.new(0, 80, 0, 20),
+				Position = UDim2.new(0.5, -40, 0, 0),
+				BackgroundColor3 = UIConfig.HUD.UtilityButtonBackground,
+				BorderSizePixel = 1,
+				BorderColor3 = UIConfig.HUD.MeterBorder,
+				Text = self.state.showExpandedMeters and "▼" or "▲",
 				Font = Enum.Font.GothamBold,
-				TextSize = 16,
+				TextSize = 14,
 				TextColor3 = UIConfig.HUD.PanelTextColor,
+				[React.Event.MouseButton1Click] = function()
+					self:setState({ showExpandedMeters = not self.state.showExpandedMeters })
+				end,
 			}),
 
-			-- Happiness bar (green, fills from bottom)
-			HappyBar = React.createElement("Frame", {
-				Size = UDim2.new(1, -10, self.state.happiness / 100, -30),
-				Position = UDim2.new(0, 5, 1, -5),
-				AnchorPoint = Vector2.new(0, 1),
-				BackgroundColor3 = UIConfig.HUD.MeterHappyColor,
-				BorderSizePixel = 0,
+			-- Main meter background
+			MeterBackground = React.createElement("Frame", {
+				Size = UDim2.new(1, 0, 1, -10),
+				Position = UDim2.fromOffset(0, 20),
+				BackgroundColor3 = UIConfig.HUD.MeterBackground,
+				BorderSizePixel = 2,
+				BorderColor3 = UIConfig.HUD.MeterBorder,
+			}, {
+				-- Main happiness meter
+				HappinessMeter = React.createElement("Frame", {
+					Size = UDim2.new(1, -20, 0, 30), -- Use a fixed pixel height (35px) instead of scaling
+					Position = UDim2.fromOffset(10, 5),
+					BackgroundTransparency = 1,
+				}, {
+					-- Happy emoji (left)
+					HappyEmoji = React.createElement("TextLabel", {
+						Size = UDim2.new(0, 35, 0, 35),
+						Position = UDim2.fromOffset(0, 0),
+						BackgroundTransparency = 1,
+						Text = "😊",
+						Font = Enum.Font.GothamBold,
+						TextSize = 24,
+						TextXAlignment = Enum.TextXAlignment.Center,
+						TextYAlignment = Enum.TextYAlignment.Center,
+					}),
+
+					-- Bar container
+					BarContainer = React.createElement("Frame", {
+						Size = UDim2.new(1, -80, 1, -6),
+						Position = UDim2.fromOffset(40, 3),
+						BackgroundColor3 = Color3.fromRGB(40, 40, 40),
+						BorderSizePixel = 1,
+						BorderColor3 = UIConfig.HUD.MeterBorder,
+					}, {
+						-- Happiness bar (green, fills from left)
+						HappyBar = React.createElement("Frame", {
+							Size = UDim2.new(self.state.happiness / 100, 0, 1, 0),
+							Position = UDim2.fromOffset(0, 0),
+							BackgroundColor3 = UIConfig.HUD.MeterHappyColor,
+							BorderSizePixel = 0,
+						}),
+
+						-- Revolt indicator (red, fills from right when happiness < 50)
+						RevoltBar = React.createElement("Frame", {
+							Size = UDim2.new(math.max(0, (50 - self.state.happiness) / 100), 0, 1, 0),
+							Position = UDim2.new(1, 0, 0, 0),
+							AnchorPoint = Vector2.new(1, 0),
+							BackgroundColor3 = UIConfig.HUD.MeterRevoltColor,
+							BorderSizePixel = 0,
+						}),
+					}),
+
+					-- Mad emoji (right)
+					MadEmoji = React.createElement("TextLabel", {
+						Size = UDim2.new(0, 35, 0, 35),
+						Position = UDim2.new(1, -35, 0, 0),
+						BackgroundTransparency = 1,
+						Text = "😡",
+						Font = Enum.Font.GothamBold,
+						TextSize = 24,
+						TextXAlignment = Enum.TextXAlignment.Center,
+						TextYAlignment = Enum.TextYAlignment.Center,
+					}),
+				}),
 			}),
 
-			-- Revolt indicator (red, fills from top when happiness < 50)
-			RevoltBar = React.createElement("Frame", {
-				Size = UDim2.new(1, -10, math.max(0, (50 - self.state.happiness) / 100), -30),
-				Position = UDim2.new(0, 5, 0, 30),
-				BackgroundColor3 = UIConfig.HUD.MeterRevoltColor,
-				BorderSizePixel = 0,
-			}),
+			-- Expanded meters (conditionally rendered)
+			ExpandedMeters = self.state.showExpandedMeters
+					and React.createElement("Frame", {
+						Size = UDim2.new(1, 0, 1, -65),
+						Position = UDim2.fromOffset(0, 65),
+						BackgroundColor3 = UIConfig.HUD.MeterBackground,
+						BorderSizePixel = 2,
+						BorderColor3 = UIConfig.HUD.MeterBorder,
+					}, {
+						ContentFrame = React.createElement("Frame", {
+							Size = UDim2.new(1, -20, 1, -10),
+							Position = UDim2.fromOffset(10, 5),
+							BackgroundTransparency = 1,
+						}, {
+							Layout = React.createElement("UIListLayout", {
+								FillDirection = Enum.FillDirection.Vertical,
+								Padding = UDim.new(0, 6),
+								SortOrder = Enum.SortOrder.LayoutOrder,
+							}),
+
+							-- Food meter
+							FoodMeter = self:createExpandedMeter("Food", "🌾", self.state.resources.Food, 500, 1),
+							-- Gold meter
+							GoldMeter = self:createExpandedMeter("Gold", "💰", self.state.resources.Gold, 1000, 2),
+							-- Population / Housing meter
+							PopulationMeter = self.state.economySnapshot and self:createExpandedMeter(
+								"Population",
+								"👥",
+								self.state.economySnapshot.population or 0,
+								self.state.economySnapshot.housingCapacity or 10,
+								3
+							) or self:createExpandedMeter("Population", "👥", self.state.population, 100, 3),
+							-- Economy Health meter
+							EconomyHealthMeter = self.state.economySnapshot and self:createExpandedMeter(
+								"Economy",
+								"🏰",
+								self.state.economySnapshot.economyHealth or 50,
+								100,
+								4
+							) or nil,
+							-- Food Consumption Rate meter (visual indicator)
+							FoodConsumptionMeter = self.state.economySnapshot and self:createExpandedMeter(
+								"Consumption",
+								"🍴",
+								math.min(self.state.economySnapshot.foodConsumptionRate or 0, 10),
+								10,
+								5
+							) or nil,
+							-- Tax Rate meter
+							TaxRateMeter = self.state.economySnapshot and self:createExpandedMeter(
+								"Tax Rate",
+								"💸",
+								self.state.economySnapshot.taxRate or 0,
+								100,
+								6
+							) or nil,
+						}),
+					})
+				or nil,
 		}),
 
 		-- Policies Modal (conditionally rendered)
@@ -637,21 +922,27 @@ function HUD:render()
 			onClose = function()
 				self:setState({ showMenuModal = false })
 			end,
+			navigate = self.props.navigate,
 		}) or nil,
 
 		-- Stats Modal (conditionally rendered)
-		StatsModal = self.state.showStatsModal and React.createElement(Stats, {
-			visible = self.state.showStatsModal,
-			onClose = function()
-				self:setState({ showStatsModal = false })
-			end,
-			-- Pass stats data
-			population = self.state.population,
-			armySize = self.state.armySize,
-			honor = self.state.honor,
-			glory = self.state.glory,
-			happiness = self.state.happiness,
-		}) or nil,
+		StatsModal = self.state.showStatsModal
+				and React.createElement(Stats, {
+					visible = self.state.showStatsModal,
+					onClose = function()
+						self:setState({ showStatsModal = false })
+					end,
+					-- Pass stats data
+					stats = self.state.stats,
+					population = self.state.population,
+					armySize = self.state.armySize,
+					honor = self.state.honor,
+					glory = self.state.glory,
+					happiness = self.state.happiness,
+					-- Pass economy data
+					economySnapshot = self.state.economySnapshot,
+				})
+			or nil,
 	})
 end
 

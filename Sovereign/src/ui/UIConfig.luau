@@ -93,9 +93,9 @@ local UIConfig = {
 		TrainingQueueBorder = Color3.fromRGB(90, 78, 78), -- Don Juan
 		TrainingProgressBar = Color3.fromRGB(209, 148, 92), -- Whiskey
 
-		-- Happiness/Revolt Meter (right side, above bottom bar)
-		MeterWidth = 80,
-		MeterHeight = 200,
+		-- Happiness/Revolt Meter (horizontal bar)
+		MeterWidth = 200,
+		MeterHeight = 35,
 		MeterBackground = Color3.fromRGB(76, 62, 62), -- Tundora
 		MeterBorder = Color3.fromRGB(90, 78, 78), -- Don Juan
 		MeterHappyColor = Color3.fromRGB(100, 200, 100),

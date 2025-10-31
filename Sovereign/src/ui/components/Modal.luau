@@ -62,6 +62,22 @@ function Modal:render()
 					TextXAlignment = Enum.TextXAlignment.Center,
 					TextYAlignment = Enum.TextYAlignment.Center,
 				}),
+
+				-- X button in top-right corner
+				CloseButtonTop = React.createElement("TextButton", {
+					Size = UDim2.new(0, 50, 0, 50),
+					Position = UDim2.new(1, -60, 0, 15),
+					BackgroundColor3 = Color3.fromRGB(60, 60, 65),
+					BorderSizePixel = 2,
+					BorderColor3 = UIConfig.HUD.UtilityButtonBorder,
+					Text = "X",
+					Font = Enum.Font.GothamBold,
+					TextSize = 28,
+					TextColor3 = Color3.fromRGB(220, 220, 220),
+					[React.Event.MouseButton1Click] = self.props.onClose,
+				}, {
+					Corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 8) }),
+				}),
 			}),
 
 			-- Content area (scrollable)

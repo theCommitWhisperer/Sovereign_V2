@@ -12,6 +12,7 @@ local GameData = require(ReplicatedStorage.Shared.GameData)
 local PlayerManager = require(script.Parent.PlayerManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local MoraleManager = require(script.Parent.MoraleManager)
+local FactionManager = require(script.Parent.FactionManager)
 
 local CombatDebug = DebugManager.createChannel("Combat", false)
 local DamageDebug = DebugManager.createChannel("Damage", true)
@@ -119,7 +120,7 @@ end
 
 -- Check if two units are enemies
 local function areEnemies(unit1: CombatUnit, unit2: CombatUnit): boolean
-	return unit1.owner ~= unit2.owner
+	return FactionManager.areEnemies(unit1.faction, unit2.faction)
 end
 
 -- Calculate distance between two models
@@ -606,6 +607,12 @@ function handleUnitDeath(unit: CombatUnit)
 
 	-- Morale impact on nearby allies
 	MoraleManager.evaluateCombatSituation(unit.model)
+
+	-- Record unit loss for revolt risk
+	local owner = game.Players:GetPlayerByUserId(unit.owner)
+	if owner then
+		RevoltManager.recordUnitLoss(owner)
+	end
 
 	-- Morale boost for enemies
 	for enemyModel, enemyUnit in ActiveCombatUnits do

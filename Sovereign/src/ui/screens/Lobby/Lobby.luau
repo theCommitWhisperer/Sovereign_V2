@@ -9,7 +9,7 @@ local PlayerList = require(script.Parent.PlayerList)
 local MapPreview = require(script.Parent.MapPreview)
 local Row = require(script.Parent.Parent.Parent.components.Row)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local LobbyDebug = DebugManager.createChannel("Lobby", false)
+local LobbyDebug = DebugManager.createChannel("Lobby", true)
 
 local Lobby = React.Component:extend("Lobby")
 
@@ -32,6 +32,9 @@ end
 
 function Lobby:init()
 	self.state = getInitialState()
+
+	-- Track if game is starting to prevent double-clicks
+	self.isStartingGame = false
 
 	self.addAI = function()
 		if #self.state.players < 4 then
@@ -436,6 +439,13 @@ function Lobby:render()
 							TextColor3 = lobbyConfig.StartButtonTextColor,
 							TextSize = lobbyConfig.StartButtonTextSize,
 							[React.Event.MouseButton1Click] = function()
+								-- Prevent double-clicks
+								if self.isStartingGame then
+									LobbyDebug:warn("Game is already starting, ignoring duplicate click")
+									return
+								end
+								self.isStartingGame = true
+
 								local settings = {
 									selectedMap = self.state.selectedMap,
 									startingTroops = self.state.startingTroops,
@@ -464,10 +474,7 @@ function Lobby:render()
 
 								LobbyDebug:info("Starting game with settings", settings)
 
-								-- Navigate to HUD (which triggers game start in App.luau)
-								if navigate then
-									navigate("hud")
-								end
+								-- Don't navigate here - wait for GameStarted event in App.luau to switch to HUD
 							end,
 						}),
 						BackButton = React.createElement("TextButton", {

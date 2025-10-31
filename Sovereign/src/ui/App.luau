@@ -2,7 +2,7 @@ local React = require(game.ReplicatedStorage.Packages.react)
 local Router = require(script.Parent.Router)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local AppDebug = DebugManager.createChannel("App", false)
+local AppDebug = DebugManager.createChannel("App", true)
 
 -- Updated paths to the new 'screens' directory
 local MainMenu = require(script.Parent.screens.MainMenu.MainMenu)
@@ -40,18 +40,17 @@ function App:init()
 		if action == "GameStarted" then
 			AppDebug:info("Game started! Switching to HUD.")
 			self:setState({ route = "hud" })
+		elseif action == "GameLeft" then
+			AppDebug:info("Game left! Switching to main menu.")
+			self:setState({ route = "mainMenu" })
 		end
 	end)
 
 	self.navigate = function(route)
 		AppDebug:info("App:navigate() called with route:", route)
 
-		-- NEW: If navigating to HUD, send StartGame event to server
-		if route == "hud" then
-			AppDebug:info("Sending StartGame request to server")
-			self.gameEvent:FireServer("StartGame", {})
-		end
-
+		-- Navigation to HUD is now handled by GameStarted event from server
+		-- Lobby sends StartGame event directly, so don't send it again here
 		self:setState({ route = route })
 	end
 end

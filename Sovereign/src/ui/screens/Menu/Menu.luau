@@ -10,6 +10,9 @@ local UIConfig = require(script.Parent.Parent.Parent.UIConfig)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local MenuDebug = DebugManager.createChannel("Menu", false)
 
+local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
+local GameEvent = RemoteEvents:WaitForChild("GameEvent")
+
 local Menu = React.Component:extend("Menu")
 
 export type Props = {
@@ -43,10 +46,10 @@ function Menu:handleMenuAction(action: string)
 			self.props.navigate("settings")
 		end
 	elseif action == "mainmenu" then
-		-- Return to main menu
-		if self.props.navigate then
-			self.props.navigate("mainmenu")
-		end
+		-- Return to main menu - send LeaveGame event to server
+		-- The server will send back a GameLeft event which will trigger navigation in App.luau
+		MenuDebug:info("Leaving game and returning to main menu")
+		GameEvent:FireServer("LeaveGame", {})
 	elseif action == "quit" then
 		-- Quit the game
 		local player = Players.LocalPlayer
