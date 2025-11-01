@@ -12,6 +12,7 @@ local BuildingMenu = require(script.Parent.BuildingMenu)
 local SelectionPanel = require(script.Parent.SelectionPanel)
 local TrainingPanel = require(script.Parent.TrainingPanel)
 local UnitSelectionPanel = require(script.Parent.UnitSelectionPanel)
+local MiniMap = require(script.Parent.MiniMap)
 local Policies = require(script.Parent.Parent.Policies.Policies)
 local Menu = require(script.Parent.Parent.Menu.Menu)
 local Stats = require(script.Parent.Parent.Stats.Stats)
@@ -697,18 +698,11 @@ function HUD:render()
 				Name = "MiniMapFrame",
 				Size = UDim2.new(0, UIConfig.HUD.MinimapSize, 0, UIConfig.HUD.MinimapSize),
 				Position = UDim2.new(0, UIConfig.HUD.UtilityButtonWidth + 10, 0, 10), -- 10px from top
-				BackgroundColor3 = UIConfig.HUD.MinimapBackground,
+				BackgroundColor3 = Color3.fromRGB(0, 0, 0),
 				BorderColor3 = UIConfig.HUD.MinimapBorder,
-				BorderSizePixel = 1,
+				BorderSizePixel = 2,
 			}, {
-				Label = React.createElement("TextLabel", {
-					Size = UDim2.fromScale(1, 1),
-					BackgroundTransparency = 1,
-					Text = "MINIMAP",
-					Font = Enum.Font.GothamBold,
-					TextSize = 16,
-					TextColor3 = UIConfig.HUD.PanelTextColor,
-				}),
+				MiniMap = React.createElement(MiniMap),
 			}),
 
 			-- 5 Category buttons (stacked vertically, next to minimap) - Icon only with padding
