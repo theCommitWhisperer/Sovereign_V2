@@ -31,20 +31,28 @@ end
 
 -- Helper function to get season icon
 local function getSeasonIcon(season: string?): string
-	if season == "Spring" then return "🌸"
-	elseif season == "Summer" then return "☀️"
-	elseif season == "Autumn" then return "🍂"
-	elseif season == "Winter" then return "❄️"
+	if season == "Spring" then
+		return "🌸"
+	elseif season == "Summer" then
+		return "☀️"
+	elseif season == "Autumn" then
+		return "🍂"
+	elseif season == "Winter" then
+		return "❄️"
 	end
 	return "🌸"
 end
 
 -- Helper function to get weather icon
 local function getWeatherIcon(weather: string?): string
-	if weather == "Clear" then return "☀️"
-	elseif weather == "Rain" then return "🌧️"
-	elseif weather == "Storm" then return "⛈️"
-	elseif weather == "Drought" then return "🌵"
+	if weather == "Clear" then
+		return "☀️"
+	elseif weather == "Rain" then
+		return "🌧️"
+	elseif weather == "Storm" then
+		return "⛈️"
+	elseif weather == "Drought" then
+		return "🌵"
 	end
 	return "☀️"
 end
@@ -275,9 +283,27 @@ function Stats:render()
 					Padding = UDim.new(0, 10),
 				}),
 
-				PopCard = self:createLargeStatCard("👥", "POPULATION", self.props.population or 0, Color3.fromRGB(100, 181, 246), 1),
-				HappinessCard = self:createLargeStatCard("😊", "HAPPINESS", (self.props.happiness or 50) .. "%", Color3.fromRGB(255, 193, 7), 2),
-				GloryCard = self:createLargeStatCard("⭐", "GLORY", self.props.glory or 0, Color3.fromRGB(255, 152, 0), 3),
+				PopCard = self:createLargeStatCard(
+					"👥",
+					"POPULATION",
+					self.props.population or 0,
+					Color3.fromRGB(100, 181, 246),
+					1
+				),
+				HappinessCard = self:createLargeStatCard(
+					"😊",
+					"HAPPINESS",
+					(self.props.happiness or 50) .. "%",
+					Color3.fromRGB(255, 193, 7),
+					2
+				),
+				GloryCard = self:createLargeStatCard(
+					"⭐",
+					"GLORY",
+					self.props.glory or 0,
+					Color3.fromRGB(255, 152, 0),
+					3
+				),
 			}),
 
 			-- DIVIDER
@@ -431,13 +457,7 @@ function Stats:render()
 					}),
 
 					-- Economy Health Bar
-					HealthBar = self:createHealthBar(
-						"🏰",
-						"Economy Health",
-						snapshot.economyHealth or 50,
-						100,
-						2
-					),
+					HealthBar = self:createHealthBar("🏰", "Economy Health", snapshot.economyHealth or 50, 100, 2),
 
 					-- Housing Bar
 					HousingBar = self:createHealthBar(
@@ -456,66 +476,75 @@ function Stats:render()
 					}),
 
 					TaxRow = self:createEconomyStatRow("💸", "Tax Rate", `{snapshot.taxRate or 0}%`, 5),
-					ConsumptionRow = self:createEconomyStatRow("🍴", "Food Usage (per 30s)", tostring(snapshot.foodConsumptionRate or 0), 6),
+					ConsumptionRow = self:createEconomyStatRow(
+						"🍴",
+						"Food Usage (per 30s)",
+						tostring(snapshot.foodConsumptionRate or 0),
+						6
+					),
 				}),
 			}),
 
 			-- WARNINGS
-			WarningsSection = ((snapshot.isStarving or (snapshot.population or 0) > (snapshot.housingCapacity or 0))) and React.createElement("Frame", {
-				Size = UDim2.new(1, 0, 0, 0),
-				BackgroundTransparency = 1,
-				AutomaticSize = Enum.AutomaticSize.Y,
-				LayoutOrder = 6,
-			}, {
-				Layout = React.createElement("UIListLayout", {
-					FillDirection = Enum.FillDirection.Vertical,
-					Padding = UDim.new(0, 10),
-				}),
-
-				StarvationWarning = snapshot.isStarving and React.createElement("Frame", {
-					Size = UDim2.new(1, 0, 0, 50),
-					BackgroundColor3 = Color3.fromRGB(183, 28, 28),
-					BorderSizePixel = 0,
-				}, {
-					Corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 8) }),
-					Padding = React.createElement("UIPadding", {
-						PaddingLeft = UDim.new(0, 20),
-						PaddingRight = UDim.new(0, 20),
-					}),
-
-					Label = React.createElement("TextLabel", {
-						Size = UDim2.fromScale(1, 1),
+			WarningsSection = (snapshot.isStarving or (snapshot.population or 0) > (snapshot.housingCapacity or 0))
+					and React.createElement("Frame", {
+						Size = UDim2.new(1, 0, 0, 0),
 						BackgroundTransparency = 1,
-						Text = "⚠️ CRITICAL: Your people are starving!",
-						Font = Enum.Font.GothamBold,
-						TextSize = 18,
-						TextColor3 = Color3.fromRGB(255, 255, 255),
-						TextXAlignment = Enum.TextXAlignment.Left,
-					}),
-				}) or nil,
+						AutomaticSize = Enum.AutomaticSize.Y,
+						LayoutOrder = 6,
+					}, {
+						Layout = React.createElement("UIListLayout", {
+							FillDirection = Enum.FillDirection.Vertical,
+							Padding = UDim.new(0, 10),
+						}),
 
-				OvercrowdingWarning = ((snapshot.population or 0) > (snapshot.housingCapacity or 0)) and React.createElement("Frame", {
-					Size = UDim2.new(1, 0, 0, 50),
-					BackgroundColor3 = Color3.fromRGB(245, 124, 0),
-					BorderSizePixel = 0,
-				}, {
-					Corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 8) }),
-					Padding = React.createElement("UIPadding", {
-						PaddingLeft = UDim.new(0, 20),
-						PaddingRight = UDim.new(0, 20),
-					}),
+						StarvationWarning = snapshot.isStarving and React.createElement("Frame", {
+							Size = UDim2.new(1, 0, 0, 50),
+							BackgroundColor3 = Color3.fromRGB(183, 28, 28),
+							BorderSizePixel = 0,
+						}, {
+							Corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 8) }),
+							Padding = React.createElement("UIPadding", {
+								PaddingLeft = UDim.new(0, 20),
+								PaddingRight = UDim.new(0, 20),
+							}),
 
-					Label = React.createElement("TextLabel", {
-						Size = UDim2.fromScale(1, 1),
-						BackgroundTransparency = 1,
-						Text = "⚠️ WARNING: Overcrowded - Build more housing!",
-						Font = Enum.Font.GothamBold,
-						TextSize = 18,
-						TextColor3 = Color3.fromRGB(255, 255, 255),
-						TextXAlignment = Enum.TextXAlignment.Left,
-					}),
-				}) or nil,
-			}) or nil,
+							Label = React.createElement("TextLabel", {
+								Size = UDim2.fromScale(1, 1),
+								BackgroundTransparency = 1,
+								Text = "⚠️ CRITICAL: Your people are starving!",
+								Font = Enum.Font.GothamBold,
+								TextSize = 18,
+								TextColor3 = Color3.fromRGB(255, 255, 255),
+								TextXAlignment = Enum.TextXAlignment.Left,
+							}),
+						}) or nil,
+
+						OvercrowdingWarning = ((snapshot.population or 0) > (snapshot.housingCapacity or 0))
+								and React.createElement("Frame", {
+									Size = UDim2.new(1, 0, 0, 50),
+									BackgroundColor3 = Color3.fromRGB(245, 124, 0),
+									BorderSizePixel = 0,
+								}, {
+									Corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 8) }),
+									Padding = React.createElement("UIPadding", {
+										PaddingLeft = UDim.new(0, 20),
+										PaddingRight = UDim.new(0, 20),
+									}),
+
+									Label = React.createElement("TextLabel", {
+										Size = UDim2.fromScale(1, 1),
+										BackgroundTransparency = 1,
+										Text = "⚠️ WARNING: Overcrowded - Build more housing!",
+										Font = Enum.Font.GothamBold,
+										TextSize = 18,
+										TextColor3 = Color3.fromRGB(255, 255, 255),
+										TextXAlignment = Enum.TextXAlignment.Left,
+									}),
+								})
+							or nil,
+					})
+				or nil,
 		}),
 	})
 end

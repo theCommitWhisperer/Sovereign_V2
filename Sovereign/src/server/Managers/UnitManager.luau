@@ -48,13 +48,14 @@ local function getDummyModel(): Model
 	local model = Instance.new("Model")
 	model.Name = "Dummy"
 
-	-- Make HumanoidRootPart invisible (for BillboardGuis)
+	-- Make HumanoidRootPart (critical for Humanoid:MoveTo to work)
 	local humanoidRootPart = Instance.new("Part")
 	humanoidRootPart.Name = "HumanoidRootPart"
 	humanoidRootPart.Size = Vector3.new(2, 4, 2)
-	humanoidRootPart.Transparency = 1 -- Set to 1 to be completely invisible
-	humanoidRootPart.CanCollide = false
+	humanoidRootPart.Transparency = 1 -- Invisible
+	humanoidRootPart.CanCollide = true -- MUST collide for pathfinding
 	humanoidRootPart.Material = Enum.Material.SmoothPlastic
+	humanoidRootPart.Anchored = false -- MUST be unanchored for movement
 	humanoidRootPart.Parent = model
 
 	-- Add basic visible parts (Head and Torso)
@@ -62,29 +63,33 @@ local function getDummyModel(): Model
 	head.Name = "Head"
 	head.Size = Vector3.new(2, 2, 2)
 	head.Color = Color3.fromRGB(255, 204, 153)
-	head.CanCollide = true -- IMPORTANT: Visible parts must collide
+	head.CanCollide = false -- Don't need collision on welded parts
 	head.Material = Enum.Material.Plastic
 	head.Shape = Enum.PartType.Block
+	head.Anchored = false
 	head.Parent = model
 
 	local torso = Instance.new("Part")
 	torso.Name = "Torso"
 	torso.Size = Vector3.new(3, 4, 1.5)
 	torso.Color = Color3.fromRGB(100, 100, 100)
-	torso.CanCollide = true
+	torso.CanCollide = false -- Don't need collision on welded parts
 	torso.Material = Enum.Material.Plastic
+	torso.Anchored = false
 	torso.Parent = model
 
 	local humanoid = Instance.new("Humanoid")
 	humanoid.HipHeight = 2.5 -- Standard R15 hip height
+	humanoid.WalkSpeed = 16 -- Default walk speed
 	humanoid.Parent = model
 
 	model.PrimaryPart = humanoidRootPart
 
-	-- Position and Weld parts (simplified)
-	torso.Position = humanoidRootPart.Position
-	head.Position = humanoidRootPart.Position + Vector3.new(0, 3, 0)
+	-- Position parts relative to HumanoidRootPart
+	torso.CFrame = humanoidRootPart.CFrame
+	head.CFrame = humanoidRootPart.CFrame * CFrame.new(0, 3, 0)
 
+	-- Weld parts to HumanoidRootPart
 	local weldTorso = Instance.new("WeldConstraint")
 	weldTorso.Part0 = humanoidRootPart
 	weldTorso.Part1 = torso
@@ -201,9 +206,14 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 	unit:SetAttribute("Owner", ownerId)
 	unit:SetAttribute("UnitId", unit.Name)
 
-	-- Set initial position
+	-- Set initial position (use PivotTo for unanchored models)
 	local spawnPos = position or Vector3.new(math.random(-20, 20), 10, math.random(-20, 20))
-	unit:SetPrimaryPartCFrame(CFrame.new(spawnPos))
+
+	-- Temporarily anchor to position, then unanchor for physics
+	if unit.PrimaryPart then
+		unit.PrimaryPart.Anchored = true
+		unit:PivotTo(CFrame.new(spawnPos))
+	end
 
 	-- Update humanoid speed if specified
 	if unitInfo.movement then
@@ -289,6 +299,14 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 		PlayerManager.addUnit(playerForCombat, unit)
 		PlayerManager.updatePlayerStats(playerForCombat)
 	end
+
+	-- Unanchor the unit after everything is set up so it can move
+	task.defer(function()
+		if unit and unit.PrimaryPart and unit.Parent then
+			unit.PrimaryPart.Anchored = false
+			UnitManagerDebug:info(`Unanchored unit {unit.Name} for movement`)
+		end
+	end)
 
 	return unit
 end

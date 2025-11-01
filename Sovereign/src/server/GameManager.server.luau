@@ -27,6 +27,7 @@ local ResourceNodeManager = require(Managers.ResourceNodeManager)
 local WorkerManager = require(Managers.WorkerManager)
 local TrainingManager = require(Managers.TrainingManager)
 local CombatManager = require(Managers.CombatManager) -- Updated CombatManager
+local FormationManager = require(Managers.FormationManager)
 local HappinessManager = require(Managers.HappinessManager)
 local TaxManager = require(Managers.TaxManager)
 local RevoltManager = require(Managers.RevoltManager)
@@ -47,6 +48,7 @@ local SpawnManager = require(Managers.SpawnManager)
 local MapManager = require(Managers.MapManager)
 
 CombatManager.init()
+FormationManager.init()
 HappinessManager.init()
 TaxManager.init()
 RevoltManager.init()
@@ -404,6 +406,61 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				unitToMove:SetAttribute("TargetPosition", data.targetPosition)
 				unitToMove:SetAttribute("IsMoving", true)
 				GameManagerDebug:info(`Unit {data.unitId} target set to {data.targetPosition}`)
+			end
+		end
+	elseif action == "MoveUnitsInFormation" then
+		-- Handle formation movement command
+		if typeof(data) == "table" and data.unitIds and data.targetPosition and data.formationType then
+			GameManagerDebug:info(`{player.Name} moving {#data.unitIds} units in {data.formationType} formation`)
+
+			-- Find all units
+			local units = {}
+			for _, unitId in ipairs(data.unitIds) do
+				local unit = findUnit(unitId)
+				if unit and unit:GetAttribute("Owner") == player.UserId then
+					table.insert(units, unit)
+				end
+			end
+
+			if #units >= 2 then
+				-- Calculate facing direction based on current position to target
+				local averagePosition = Vector3.new(0, 0, 0)
+				for _, unit in ipairs(units) do
+					if unit.PrimaryPart then
+						averagePosition = averagePosition + unit.PrimaryPart.Position
+					end
+				end
+				averagePosition = averagePosition / #units
+
+				-- Calculate facing direction (from current avg position to target)
+				local facingDirection = (data.targetPosition - averagePosition).Unit
+				facingDirection = Vector3.new(facingDirection.X, 0, facingDirection.Z).Unit -- Keep it horizontal
+
+				-- Create formation
+				local formation = FormationManager.createFormation(
+					data.formationType,
+					units,
+					data.targetPosition,
+					facingDirection
+				)
+
+				if formation then
+					-- Move units to their formation positions
+					for unit, position in pairs(formation.positions) do
+						unit:SetAttribute("CombatTarget", nil)
+						unit:SetAttribute("TargetPosition", position)
+						unit:SetAttribute("IsMoving", true)
+					end
+
+					GameManagerDebug:info(`Formation created with {#units} units`)
+				end
+			else
+				-- Not enough units, move individually
+				for _, unit in ipairs(units) do
+					unit:SetAttribute("CombatTarget", nil)
+					unit:SetAttribute("TargetPosition", data.targetPosition)
+					unit:SetAttribute("IsMoving", true)
+				end
 			end
 		end
 	elseif action == "StartTraining" then

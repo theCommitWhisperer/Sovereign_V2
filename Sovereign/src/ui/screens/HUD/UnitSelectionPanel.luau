@@ -3,13 +3,13 @@ local UIConfig = require(script.Parent.Parent.Parent.UIConfig)
 
 local UnitSelectionPanel = React.Component:extend("UnitSelectionPanel")
 
--- Formation types
+-- Formation types (must match FormationManager names)
 local FORMATIONS = {
 	{ name = "Line", icon = "━━━", tooltip = "Line Formation" },
 	{ name = "Column", icon = "║", tooltip = "Column Formation" },
-	{ name = "Box", icon = "▢", tooltip = "Box Formation" },
+	{ name = "ShieldWall", icon = "🛡️", tooltip = "Shield Wall" },
 	{ name = "Wedge", icon = "▶", tooltip = "Wedge Formation" },
-	{ name = "Scatter", icon = "⋯", tooltip = "Scatter Formation" },
+	{ name = "Loose", icon = "⋯", tooltip = "Loose Formation" },
 }
 
 function UnitSelectionPanel:render()
@@ -92,12 +92,13 @@ function UnitSelectionPanel:render()
 	})
 
 	for i, formation in ipairs(FORMATIONS) do
+		local isSelected = self.props.selectedFormation == formation.name
 		formationControls[formation.name] = React.createElement("TextButton", {
 			Name = formation.name .. "Button",
 			Size = UDim2.new(0, UIConfig.HUD.FormationButtonSize, 0, UIConfig.HUD.FormationButtonSize),
-			BackgroundColor3 = UIConfig.HUD.FormationButtonBackground,
+			BackgroundColor3 = isSelected and UIConfig.HUD.CategoryButtonSelected or UIConfig.HUD.FormationButtonBackground,
 			BorderSizePixel = 2,
-			BorderColor3 = UIConfig.HUD.FormationButtonBorder,
+			BorderColor3 = isSelected and Color3.fromRGB(255, 200, 100) or UIConfig.HUD.FormationButtonBorder,
 			Text = formation.icon,
 			Font = Enum.Font.GothamBold,
 			TextSize = 20,

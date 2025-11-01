@@ -52,6 +52,7 @@ function HUD:init()
 		commandText = "", -- For admin command input
 		economySnapshot = nil, -- Economy dashboard data
 		stats = nil, -- Stats for the stats modal
+		selectedFormation = "Line", -- Default formation type
 	})
 
 	-- Get game event reference
@@ -136,6 +137,9 @@ function HUD:init()
 	task.spawn(function()
 		local ClientScripts = player:WaitForChild("PlayerScripts"):WaitForChild("Client")
 		local SelectionManager = require(ClientScripts.Selection.SelectionManager)
+
+		-- Store SelectionManager reference for later use
+		self.selectionManager = SelectionManager
 
 		SelectionManager.SelectionChanged:Connect(function(selectedUnits)
 			self:setState({ selectedUnits = selectedUnits })
@@ -734,8 +738,40 @@ function HUD:render()
 					end,
 				}) or hasUnitsSelected and React.createElement(UnitSelectionPanel, {
 					selectedUnits = self.state.selectedUnits,
+					selectedFormation = self.state.selectedFormation,
 					onFormationSelected = function(formationType)
 						HUDDebug:info(`Formation selected: {formationType}`)
+						self:setState({ selectedFormation = formationType })
+						-- Also update SelectionManager
+						if self.selectionManager then
+							self.selectionManager.setFormationType(formationType)
+						end
+
+						-- Immediately arrange units in formation at their current location
+						if #self.state.selectedUnits >= 2 then
+							local unitIds = {}
+							for _, unit in self.state.selectedUnits do
+								table.insert(unitIds, unit:GetAttribute("UnitId") or unit.Name)
+							end
+
+							-- Calculate average position of selected units
+							local avgPosition = Vector3.new(0, 0, 0)
+							for _, unit in self.state.selectedUnits do
+								if unit.PrimaryPart then
+									avgPosition = avgPosition + unit.PrimaryPart.Position
+								end
+							end
+							avgPosition = avgPosition / #self.state.selectedUnits
+
+							-- Send formation command to server
+							self.gameEvent:FireServer("MoveUnitsInFormation", {
+								unitIds = unitIds,
+								targetPosition = avgPosition,
+								formationType = formationType,
+							})
+
+							HUDDebug:info(`Arranging {#unitIds} units in {formationType} formation`)
+						end
 					end,
 				}) or React.createElement(BuildingMenu, {
 					resources = self.state.resources,

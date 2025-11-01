@@ -18,6 +18,7 @@ local selectedUnits: { Model } = {}
 local isBoxSelecting = false
 local boxStartPosition: Vector2? = nil
 local selectionBox: Frame? = nil
+local selectedFormationType: string = "Line" -- Default formation type
 
 local selectionChangedEvent = Instance.new("BindableEvent")
 SelectionManager.SelectionChanged = selectionChangedEvent.Event
@@ -151,6 +152,17 @@ end
 -- Get currently selected units
 function SelectionManager.getSelectedUnits(): { Model }
 	return selectedUnits
+end
+
+-- Set the formation type
+function SelectionManager.setFormationType(formationType: string)
+	selectedFormationType = formationType
+	SelectionDebug:info(`Formation type set to: {formationType}`)
+end
+
+-- Get the current formation type
+function SelectionManager.getFormationType(): string
+	return selectedFormationType
 end
 
 -- Check if a position is on screen
