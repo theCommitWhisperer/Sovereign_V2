@@ -5,9 +5,14 @@ local React = require(game.ReplicatedStorage.Packages.react)
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
 local UIConfig = require(script.Parent.Parent.Parent.UIConfig)
+
+-- Remote function for checking visibility
+local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
+local CheckVisibility = RemoteEvents:WaitForChild("CheckVisibility")
 
 local MiniMap = React.Component:extend("MiniMap")
 
@@ -39,23 +44,27 @@ function MiniMap:updateMinimapIndicators()
 	if unitsFolder then
 		for _, unit in unitsFolder:GetChildren() do
 			if unit:IsA("Model") and unit.PrimaryPart then
-				local owner = unit:GetAttribute("Owner")
-				local pos = unit.PrimaryPart.Position
+				-- Check if unit is visible (fog of war)
+				local isVisible = CheckVisibility:InvokeServer("Unit", unit)
+				if isVisible then
+					local owner = unit:GetAttribute("Owner")
+					local pos = unit.PrimaryPart.Position
 
-				-- Convert world position to minimap position (0-1 scale)
-				local minimapX = (pos.X + MAP_SIZE/2) / MAP_SIZE
-				local minimapZ = (pos.Z + MAP_SIZE/2) / MAP_SIZE
+					-- Convert world position to minimap position (0-1 scale)
+					local minimapX = (pos.X + MAP_SIZE/2) / MAP_SIZE
+					local minimapZ = (pos.Z + MAP_SIZE/2) / MAP_SIZE
 
-				-- Clamp to minimap bounds
-				minimapX = math.clamp(minimapX, 0, 1)
-				minimapZ = math.clamp(minimapZ, 0, 1)
+					-- Clamp to minimap bounds
+					minimapX = math.clamp(minimapX, 0, 1)
+					minimapZ = math.clamp(minimapZ, 0, 1)
 
-				table.insert(unitDots, {
-					x = minimapX,
-					z = minimapZ,
-					isOwned = owner == player.UserId,
-					unitType = unit:GetAttribute("UnitType"),
-				})
+					table.insert(unitDots, {
+						x = minimapX,
+						z = minimapZ,
+						isOwned = owner == player.UserId,
+						unitType = unit:GetAttribute("UnitType"),
+					})
+				end
 			end
 		end
 	end
@@ -65,23 +74,27 @@ function MiniMap:updateMinimapIndicators()
 	if buildingsFolder then
 		for _, building in buildingsFolder:GetChildren() do
 			if building:IsA("Model") and building.PrimaryPart then
-				local owner = building:GetAttribute("Owner")
-				local pos = building.PrimaryPart.Position
+				-- Check if building is visible (fog of war)
+				local isVisible = CheckVisibility:InvokeServer("Building", building)
+				if isVisible then
+					local owner = building:GetAttribute("Owner")
+					local pos = building.PrimaryPart.Position
 
-				-- Convert world position to minimap position (0-1 scale)
-				local minimapX = (pos.X + MAP_SIZE/2) / MAP_SIZE
-				local minimapZ = (pos.Z + MAP_SIZE/2) / MAP_SIZE
+					-- Convert world position to minimap position (0-1 scale)
+					local minimapX = (pos.X + MAP_SIZE/2) / MAP_SIZE
+					local minimapZ = (pos.Z + MAP_SIZE/2) / MAP_SIZE
 
-				-- Clamp to minimap bounds
-				minimapX = math.clamp(minimapX, 0, 1)
-				minimapZ = math.clamp(minimapZ, 0, 1)
+					-- Clamp to minimap bounds
+					minimapX = math.clamp(minimapX, 0, 1)
+					minimapZ = math.clamp(minimapZ, 0, 1)
 
-				table.insert(buildingIcons, {
-					x = minimapX,
-					z = minimapZ,
-					isOwned = owner == player.UserId,
-					buildingType = building:GetAttribute("BuildingType"),
-				})
+					table.insert(buildingIcons, {
+						x = minimapX,
+						z = minimapZ,
+						isOwned = owner == player.UserId,
+						buildingType = building:GetAttribute("BuildingType"),
+					})
+				end
 			end
 		end
 	end

@@ -7,6 +7,10 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
 
+-- Remote function for checking visibility
+local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
+local CheckVisibility = RemoteEvents:WaitForChild("CheckVisibility")
+
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local HealthBarDebug = DebugManager.createChannel("HealthBar", false) -- Corrected to be off by default
 
@@ -53,6 +57,18 @@ local function updateHealthBar(unit: Model, billboard: BillboardGui)
 		if billboard then
 			billboard:Destroy()
 		end
+		return
+	end
+
+	-- Check if unit is visible (fog of war)
+	local isVisible = CheckVisibility:InvokeServer("Unit", unit)
+	local owner = unit:GetAttribute("Owner")
+
+	-- Always show health bars for own units, only show enemy bars if visible
+	local shouldShow = (owner == player.UserId) or isVisible
+
+	if not shouldShow then
+		billboard.Enabled = false
 		return
 	end
 

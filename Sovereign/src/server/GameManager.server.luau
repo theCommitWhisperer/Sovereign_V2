@@ -46,6 +46,7 @@ local NotificationManager = require(Managers.NotificationManager)
 local TestCommandManager = require(Managers.TestCommandManager)
 local SpawnManager = require(Managers.SpawnManager)
 local MapManager = require(Managers.MapManager)
+local FogOfWarManager = require(Managers.FogOfWarManager)
 
 CombatManager.init()
 FormationManager.init()
@@ -108,11 +109,29 @@ local GetStatsEvent = Instance.new("RemoteEvent")
 GetStatsEvent.Name = "GetStats"
 GetStatsEvent.Parent = RemoteEvents
 
+local CheckVisibilityFunc = Instance.new("RemoteFunction")
+CheckVisibilityFunc.Name = "CheckVisibility"
+CheckVisibilityFunc.Parent = RemoteEvents
+
 GameManagerDebug:info("RemoteEvents created")
 
 -- Initialize TestCommandManager after RemoteEvents are created
 TestCommandManager.init()
 GameManagerDebug:info("TestCommandManager initialized")
+
+-- Start fog of war updates
+FogOfWarManager.startUpdates()
+GameManagerDebug:info("FogOfWarManager updates started")
+
+-- Handle visibility checks from client
+CheckVisibilityFunc.OnServerInvoke = function(player: Player, objectType: string, object: Instance): boolean
+	if objectType == "Unit" and object:IsA("Model") then
+		return FogOfWarManager.isUnitVisible(player, object)
+	elseif objectType == "Building" and object:IsA("Model") then
+		return FogOfWarManager.isBuildingVisible(player, object)
+	end
+	return false
+end
 
 -- Helper function to find a unit model by its UnitId (which is the Model.Name in V2)
 local function findUnit(unitId: string): Model?
@@ -126,12 +145,14 @@ end
 -- Player joined - create their data
 Players.PlayerAdded:Connect(function(player)
 	PlayerManager.create(player)
+	FogOfWarManager.init(player)
 	GameManagerDebug:info(`{player.Name} joined - character will spawn when game starts`)
 end)
 
 -- Player left - clean up
 Players.PlayerRemoving:Connect(function(player)
 	SpawnManager.removePlayer(player.UserId)
+	FogOfWarManager.cleanup(player)
 	PlayerManager.remove(player)
 end)
 

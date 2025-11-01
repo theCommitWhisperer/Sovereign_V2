@@ -18,6 +18,7 @@ local EconomyDashboardManager = require(script.Parent.EconomyDashboardManager)
 local NotificationManager = require(script.Parent.NotificationManager)
 local UnitManager = require(script.Parent.UnitManager)
 local BuildingManager = require(script.Parent.BuildingManager)
+local FogOfWarManager = require(script.Parent.FogOfWarManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
 local TestDebug = DebugManager.createChannel("TestCommands", true)
@@ -221,6 +222,28 @@ local function cmdTestNotify(player: Player, args: { string })
 	TestDebug:info(`{player.Name} tested notifications`)
 end
 
+-- Command: Toggle fog of war
+local function cmdFogOfWar(player: Player, args: { string })
+	if #args < 1 then
+		local isEnabled = FogOfWarManager.isEnabled(player)
+		NotificationManager.info(player, "Fog of War", `Fog of War is currently {isEnabled and "ON" or "OFF"}\nUsage: /fog [on|off]`)
+		return
+	end
+
+	local mode = args[1]:lower()
+	if mode == "on" then
+		FogOfWarManager.toggle(player, true)
+		NotificationManager.success(player, "Fog of War", "Fog of War enabled - You can only see units/buildings in vision range")
+		TestDebug:info(`{player.Name} enabled fog of war`)
+	elseif mode == "off" then
+		FogOfWarManager.toggle(player, false)
+		NotificationManager.warning(player, "Fog of War", "Fog of War disabled - You can see everything (admin mode)")
+		TestDebug:info(`{player.Name} disabled fog of war`)
+	else
+		NotificationManager.warning(player, "Error", "Usage: /fog [on|off]")
+	end
+end
+
 -- Command: Show all commands
 local function cmdHelp(player: Player, args: { string })
 	local helpText = [[
@@ -235,6 +258,7 @@ TEST COMMANDS:
 /caravan [route 1-5] - Send test caravan
 /skiptime - Advance season and weather
 /testnotify - Test all notification types
+/fog [on|off] - Toggle fog of war
 /help - Show this help
 ]]
 
@@ -253,6 +277,7 @@ local COMMANDS = {
 	caravan = cmdTestCaravan,
 	skiptime = cmdSkipTime,
 	testnotify = cmdTestNotify,
+	fog = cmdFogOfWar,
 	help = cmdHelp,
 }
 

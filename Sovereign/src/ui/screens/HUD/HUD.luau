@@ -13,6 +13,7 @@ local SelectionPanel = require(script.Parent.SelectionPanel)
 local TrainingPanel = require(script.Parent.TrainingPanel)
 local UnitSelectionPanel = require(script.Parent.UnitSelectionPanel)
 local MiniMap = require(script.Parent.MiniMap)
+local FogOverlay = require(script.Parent.FogOverlay)
 local Policies = require(script.Parent.Parent.Policies.Policies)
 local Menu = require(script.Parent.Parent.Menu.Menu)
 local Stats = require(script.Parent.Parent.Stats.Stats)
@@ -704,6 +705,9 @@ function HUD:render()
 			}, {
 				MiniMap = React.createElement(MiniMap),
 			}),
+
+			-- Fog of War indicator
+			FogOfWarIndicator = React.createElement(FogOverlay),
 
 			-- 5 Category buttons (stacked vertically, next to minimap) - Icon only with padding
 			CategoryButtons = React.createElement("Frame", {

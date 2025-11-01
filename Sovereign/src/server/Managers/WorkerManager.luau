@@ -322,6 +322,8 @@ local function updateWorkerTasks(deltaTime: number)
 					-- Consume input resources
 					if ProductionChainManager.consumeInputs(task.workplace) then
 						task.resourcesCarrying = task.resourcesCarrying + produced
+						task.worker:SetAttribute("ResourcesCarrying", task.resourcesCarrying)
+						task.worker:SetAttribute("ResourceType", task.resourceType)
 
 						-- If full, deposit
 						if task.resourcesCarrying >= carryCapacity then
@@ -372,6 +374,8 @@ local function updateWorkerTasks(deltaTime: number)
 						local gatherRate = baseRate * modifier * weatherModifier
 						local gathered = ResourceNodeManager.gatherFromNode(task.targetNode, gatherRate * deltaTime * 2)
 						task.resourcesCarrying = task.resourcesCarrying + gathered
+						task.worker:SetAttribute("ResourcesCarrying", task.resourcesCarrying)
+						task.worker:SetAttribute("ResourceType", task.resourceType)
 
 						-- If full or node depleted, return
 						if task.resourcesCarrying >= carryCapacity then
@@ -405,6 +409,8 @@ local function updateWorkerTasks(deltaTime: number)
 					resourceType = task.resourceType,
 				})
 				task.resourcesCarrying = 0
+				task.worker:SetAttribute("ResourcesCarrying", 0)
+				task.worker:SetAttribute("ResourceType", nil)
 
 				-- Go back to gathering
 				task.state = "Gathering"
@@ -454,6 +460,8 @@ local function updateHaulerTasks(deltaTime: number)
 					local amount =
 						BuildingManager.takeFromStorage(task.sourceBuilding, task.resourceType, carryCapacity)
 					task.resourcesCarrying = amount
+					task.hauler:SetAttribute("ResourcesCarrying", amount)
+					task.hauler:SetAttribute("ResourceType", task.resourceType)
 
 					if amount > 0 then
 						HaulerDebug:info(`Hauler picked up resources`, {
@@ -479,6 +487,8 @@ local function updateHaulerTasks(deltaTime: number)
 							-- Put resources back
 							BuildingManager.addToStorage(task.sourceBuilding, task.resourceType, amount)
 							task.resourcesCarrying = 0
+							task.hauler:SetAttribute("ResourcesCarrying", 0)
+							task.hauler:SetAttribute("ResourceType", nil)
 							task.state = "Idle"
 						end
 					else
@@ -535,6 +545,8 @@ local function updateHaulerTasks(deltaTime: number)
 					-- Reset
 					task.resourcesCarrying = 0
 					task.resourceType = nil
+					task.hauler:SetAttribute("ResourcesCarrying", 0)
+					task.hauler:SetAttribute("ResourceType", nil)
 					task.sourceBuilding = nil
 					task.targetStorage = nil
 					task.state = "Idle"
