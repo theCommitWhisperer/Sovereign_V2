@@ -5,7 +5,7 @@ local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local HUDDebug = DebugManager.createChannel("HUD", false)
+local HUDDebug = DebugManager.createChannel("HUD", true)
 
 local ResourceDisplay = require(script.Parent.ResourceDisplay)
 local BuildingMenu = require(script.Parent.BuildingMenu)
@@ -150,12 +150,14 @@ function HUD:init()
 	self:setupBuildingSelection()
 
 	-- Request queue updates periodically if a building is selected
+	-- Using a reference to track the current building for polling
+	self.pollingBuildingId = nil
 	task.spawn(function()
 		while true do
 			task.wait(0.5)
-			if self.state.selectedTrainingBuilding then
+			if self.pollingBuildingId then
 				self.gameEvent:FireServer("GetTrainingQueue", {
-					buildingId = self.state.selectedTrainingBuilding.Name,
+					buildingId = self.pollingBuildingId,
 				})
 			end
 		end
@@ -269,12 +271,21 @@ function HUD:setupBuildingSelection()
 									trainingQueue = {},
 								})
 
+								-- Start polling for this building
+								self.pollingBuildingId = building.Name
+
 								-- Request current queue
 								self.gameEvent:FireServer("GetTrainingQueue", {
 									buildingId = building.Name,
 								})
 							else
 								HUDDebug:info("Building cannot train units")
+								-- Clear training panel if building can't train
+								self.pollingBuildingId = nil
+								self:setState({
+									selectedTrainingBuilding = React.None,
+									trainingQueue = {},
+								})
 							end
 						end
 					else
@@ -282,12 +293,30 @@ function HUD:setupBuildingSelection()
 							hasBuildingType = buildingType ~= nil,
 							ownerMatch = owner == player.UserId,
 						})
+						-- Clear training panel if building check failed
+						self.pollingBuildingId = nil
+						self:setState({
+							selectedTrainingBuilding = React.None,
+							trainingQueue = {},
+						})
 					end
 				else
 					HUDDebug:info("No building found")
+					-- Clear training panel when clicking on non-building
+					self.pollingBuildingId = nil
+					self:setState({
+						selectedTrainingBuilding = React.None,
+						trainingQueue = {},
+					})
 				end
 			else
 				HUDDebug:info("Raycast hit nothing")
+				-- Clear training panel when clicking on nothing
+				self.pollingBuildingId = nil
+				self:setState({
+					selectedTrainingBuilding = React.None,
+					trainingQueue = {},
+				})
 			end
 		end
 	end)
@@ -441,7 +470,20 @@ function HUD:createCategoryButton(category: string, icon: string)
 		TextColor3 = UIConfig.HUD.PanelTextColor,
 		LayoutOrder = layoutOrder,
 		[React.Event.MouseButton1Click] = function()
-			self:setState({ selectedCategory = category })
+			HUDDebug:info(`Category button clicked: {category}`)
+			HUDDebug:info(`Current selectedTrainingBuilding: {tostring(self.state.selectedTrainingBuilding)}`)
+			-- Stop polling when switching to building menu
+			self.pollingBuildingId = nil
+			HUDDebug:info(`Stopped polling, pollingBuildingId set to nil`)
+			HUDDebug:info("About to call setState to clear training building")
+			self:setState({
+				selectedCategory = category,
+				-- Clear training panel and unit selection when switching to building menu (use React.None to clear)
+				selectedTrainingBuilding = React.None,
+				trainingQueue = {},
+				selectedUnits = {},
+			})
+			HUDDebug:info("setState called successfully")
 		end,
 	})
 end
@@ -451,6 +493,8 @@ function HUD:render()
 
 	local hasUnitsSelected = #self.state.selectedUnits > 0
 	local hasTrainingBuildingSelected = self.state.selectedTrainingBuilding ~= nil
+
+	HUDDebug:info(`Render state check: selectedTrainingBuilding={tostring(self.state.selectedTrainingBuilding)}, hasTrainingBuildingSelected={hasTrainingBuildingSelected}`)
 	local showBuildingsInContent = not hasUnitsSelected and not hasTrainingBuildingSelected
 
 	-- Category icons
@@ -734,7 +778,14 @@ function HUD:render()
 						end
 					end,
 					onClose = function()
-						self:setState({ selectedTrainingBuilding = nil })
+						HUDDebug:info("Training panel close button clicked")
+						-- Stop polling when closing training panel
+						self.pollingBuildingId = nil
+						HUDDebug:info(`Stopped polling, pollingBuildingId set to nil`)
+						self:setState({
+							selectedTrainingBuilding = React.None,
+							trainingQueue = {},
+						})
 					end,
 				}) or hasUnitsSelected and React.createElement(UnitSelectionPanel, {
 					selectedUnits = self.state.selectedUnits,
@@ -763,14 +814,22 @@ function HUD:render()
 							end
 							avgPosition = avgPosition / #self.state.selectedUnits
 
+							-- Offset formation center slightly forward (in camera's facing direction)
+							-- This prevents units from colliding with each other when forming up
+							local camera = workspace.CurrentCamera
+							local cameraLook = camera.CFrame.LookVector
+							local horizontalLook = Vector3.new(cameraLook.X, 0, cameraLook.Z).Unit
+							local formationOffset = horizontalLook * 8  -- Move formation 8 studs forward from average position
+							local targetPosition = avgPosition + formationOffset
+
 							-- Send formation command to server
 							self.gameEvent:FireServer("MoveUnitsInFormation", {
 								unitIds = unitIds,
-								targetPosition = avgPosition,
+								targetPosition = targetPosition,
 								formationType = formationType,
 							})
 
-							HUDDebug:info(`Arranging {#unitIds} units in {formationType} formation`)
+							HUDDebug:info(`Arranging {#unitIds} units in {formationType} formation at offset position`)
 						end
 					end,
 				}) or React.createElement(BuildingMenu, {

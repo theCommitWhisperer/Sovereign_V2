@@ -105,7 +105,7 @@ local FORMATIONS = {
 		-- Basic line formation
 		shape = "line",
 		rows = 1,
-		spacing = 5,
+		spacing = 6,  -- Increased from 5 to reduce collisions
 		bonuses = {
 			attack = 1.0,
 			defense = 1.0,
@@ -119,7 +119,7 @@ local FORMATIONS = {
 		-- Marching formation - multiple files side-by-side
 		shape = "column",
 		rows = 1,
-		spacing = 3,
+		spacing = 4,  -- Increased from 3 to reduce collisions
 		bonuses = {
 			attack = 0.8,
 			defense = 0.8,

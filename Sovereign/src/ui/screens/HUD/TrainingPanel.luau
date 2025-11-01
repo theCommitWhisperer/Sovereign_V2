@@ -180,7 +180,7 @@ function TrainingPanel:render()
 				BackgroundColor3 = UIConfig.HUD.TrainingUnitButtonBackground,
 				BorderSizePixel = 1,
 				BorderColor3 = UIConfig.HUD.TrainingUnitButtonBorder,
-				Text = "✕",
+				Text = "X",
 				Font = Enum.Font.GothamBold,
 				TextSize = 16,
 				TextColor3 = UIConfig.HUD.PanelTextColor,
