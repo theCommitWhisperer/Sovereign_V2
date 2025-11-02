@@ -12,6 +12,7 @@ local BuildingMenu = require(script.Parent.BuildingMenu)
 local SelectionPanel = require(script.Parent.SelectionPanel)
 local TrainingPanel = require(script.Parent.TrainingPanel)
 local UnitSelectionPanel = require(script.Parent.UnitSelectionPanel)
+local WorkerAssignmentPanel = require(script.Parent.WorkerAssignmentPanel)
 local MiniMap = require(script.Parent.MiniMap)
 local FogOverlay = require(script.Parent.FogOverlay)
 local Policies = require(script.Parent.Parent.Policies.Policies)
@@ -38,12 +39,13 @@ function HUD:init()
 		selectedBuilding = nil,
 		selectedUnits = {},
 		selectedTrainingBuilding = nil,
+		selectedProductionBuilding = nil,
 		trainingQueue = {},
 		-- New state for UI
 		showMenuModal = false,
 		showStatsModal = false,
 		showPoliciesModal = false,
-		selectedCategory = "Castle", -- Castle, Military, Housing, Food, Industry
+		selectedCategory = "Defense", -- Defense, Economy, Housing, Food, Culture
 		armySize = 0,
 		honor = 0,
 		glory = 0,
@@ -270,6 +272,7 @@ function HUD:setupBuildingSelection()
 
 								self:setState({
 									selectedTrainingBuilding = building,
+									selectedProductionBuilding = React.None,
 									trainingQueue = {},
 								})
 
@@ -280,12 +283,24 @@ function HUD:setupBuildingSelection()
 								self.gameEvent:FireServer("GetTrainingQueue", {
 									buildingId = building.Name,
 								})
+							elseif buildingInfo and buildingInfo.produces_resource then
+								HUDDebug:info("Selected production building", {
+									buildingType = buildingType,
+									produces = buildingInfo.produces_resource,
+								})
+
+								self:setState({
+									selectedProductionBuilding = building,
+									selectedTrainingBuilding = React.None,
+									trainingQueue = {},
+								})
 							else
-								HUDDebug:info("Building cannot train units")
-								-- Clear training panel if building can't train
+								HUDDebug:info("Building cannot train units or produce resources")
+								-- Clear panels if building can't train or produce
 								self.pollingBuildingId = nil
 								self:setState({
 									selectedTrainingBuilding = React.None,
+									selectedProductionBuilding = React.None,
 									trainingQueue = {},
 								})
 							end
@@ -295,28 +310,31 @@ function HUD:setupBuildingSelection()
 							hasBuildingType = buildingType ~= nil,
 							ownerMatch = owner == player.UserId,
 						})
-						-- Clear training panel if building check failed
+						-- Clear panels if building check failed
 						self.pollingBuildingId = nil
 						self:setState({
 							selectedTrainingBuilding = React.None,
+							selectedProductionBuilding = React.None,
 							trainingQueue = {},
 						})
 					end
 				else
 					HUDDebug:info("No building found")
-					-- Clear training panel when clicking on non-building
+					-- Clear panels when clicking on non-building
 					self.pollingBuildingId = nil
 					self:setState({
 						selectedTrainingBuilding = React.None,
+						selectedProductionBuilding = React.None,
 						trainingQueue = {},
 					})
 				end
 			else
 				HUDDebug:info("Raycast hit nothing")
-				-- Clear training panel when clicking on nothing
+				-- Clear panels when clicking on nothing
 				self.pollingBuildingId = nil
 				self:setState({
 					selectedTrainingBuilding = React.None,
+					selectedProductionBuilding = React.None,
 					trainingQueue = {},
 				})
 			end
@@ -449,15 +467,15 @@ function HUD:createCategoryButton(category: string, icon: string)
 
 	-- Set layout order based on category
 	local layoutOrder = 1
-	if category == "Castle" then
+	if category == "Defense" then
 		layoutOrder = 1
-	elseif category == "Military" then
+	elseif category == "Economy" then
 		layoutOrder = 2
 	elseif category == "Housing" then
 		layoutOrder = 3
 	elseif category == "Food" then
 		layoutOrder = 4
-	elseif category == "Industry" then
+	elseif category == "Culture" then
 		layoutOrder = 5
 	end
 
@@ -480,8 +498,9 @@ function HUD:createCategoryButton(category: string, icon: string)
 			HUDDebug:info("About to call setState to clear training building")
 			self:setState({
 				selectedCategory = category,
-				-- Clear training panel and unit selection when switching to building menu (use React.None to clear)
+				-- Clear panels and unit selection when switching to building menu (use React.None to clear)
 				selectedTrainingBuilding = React.None,
+				selectedProductionBuilding = React.None,
 				trainingQueue = {},
 				selectedUnits = {},
 			})
@@ -495,9 +514,10 @@ function HUD:render()
 
 	local hasUnitsSelected = #self.state.selectedUnits > 0
 	local hasTrainingBuildingSelected = self.state.selectedTrainingBuilding ~= nil
+	local hasProductionBuildingSelected = self.state.selectedProductionBuilding ~= nil
 
-	HUDDebug:info(`Render state check: selectedTrainingBuilding={tostring(self.state.selectedTrainingBuilding)}, hasTrainingBuildingSelected={hasTrainingBuildingSelected}`)
-	local showBuildingsInContent = not hasUnitsSelected and not hasTrainingBuildingSelected
+	HUDDebug:info(`Render state check: selectedTrainingBuilding={tostring(self.state.selectedTrainingBuilding)}, hasTrainingBuildingSelected={hasTrainingBuildingSelected}, hasProductionBuildingSelected={hasProductionBuildingSelected}`)
+	local showBuildingsInContent = not hasUnitsSelected and not hasTrainingBuildingSelected and not hasProductionBuildingSelected
 
 	-- Category icons
 	local CATEGORY_ICONS = {
@@ -727,16 +747,16 @@ function HUD:render()
 					VerticalAlignment = Enum.VerticalAlignment.Top,
 				}),
 
-				-- Castle button (🏰)
-				CastleButton = self:createCategoryButton("Castle", "🏰"),
-				-- Military button (⚔️)
-				MilitaryButton = self:createCategoryButton("Military", "⚔️"),
+				-- Defense button (🛡️)
+				DefenseButton = self:createCategoryButton("Defense", "🛡️"),
+				-- Economy button (💰)
+				EconomyButton = self:createCategoryButton("Economy", "💰"),
 				-- Housing button (🏠)
 				HousingButton = self:createCategoryButton("Housing", "🏠"),
 				-- Food button (🌾)
 				FoodButton = self:createCategoryButton("Food", "🌾"),
-				-- Industry button (🔨)
-				IndustryButton = self:createCategoryButton("Industry", "🔨"),
+				-- Culture button (⛪)
+				CultureButton = self:createCategoryButton("Culture", "⛪"),
 			}),
 
 			-- Content Area (shows buildings OR selected units)
@@ -762,7 +782,7 @@ function HUD:render()
 				BorderSizePixel = 1,
 				BorderColor3 = UIConfig.HUD.ContentAreaBorder,
 			}, {
-				-- Content priority: Training Panel > Unit Selection > Building Menu
+				-- Content priority: Training Panel > Production Panel > Unit Selection > Building Menu
 				Content = hasTrainingBuildingSelected and React.createElement(TrainingPanel, {
 					selectedBuilding = self.state.selectedTrainingBuilding,
 					queue = self.state.trainingQueue,
@@ -783,6 +803,14 @@ function HUD:render()
 						self:setState({
 							selectedTrainingBuilding = React.None,
 							trainingQueue = {},
+						})
+					end,
+				}) or hasProductionBuildingSelected and React.createElement(WorkerAssignmentPanel, {
+					selectedBuilding = self.state.selectedProductionBuilding,
+					onClose = function()
+						HUDDebug:info("Worker assignment panel close button clicked")
+						self:setState({
+							selectedProductionBuilding = React.None,
 						})
 					end,
 				}) or hasUnitsSelected and React.createElement(UnitSelectionPanel, {

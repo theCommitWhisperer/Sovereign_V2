@@ -48,49 +48,73 @@ local function createCarryIndicator(worker: Model): BillboardGui?
 
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "ResourceCarryIndicator"
-	billboard.Size = UDim2.new(5, 0, 1, 0)
-	billboard.StudsOffset = Vector3.new(0, 4.5, 0)  -- Above the worker
-	billboard.AlwaysOnTop = true
+	billboard.Size = UDim2.new(3, 0, 0.6, 0)  -- Smaller, more compact
+	billboard.StudsOffset = Vector3.new(0, 3.5, 0)  -- Closer to worker
+	billboard.AlwaysOnTop = false  -- Don't show through walls
 	billboard.Parent = worker.PrimaryPart
 
-	-- Background
+	-- Background with better styling
 	local background = Instance.new("Frame")
 	background.Name = "Background"
-	background.Size = UDim2.new(1, 0, 1, 0)
-	background.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-	background.BackgroundTransparency = 0.3
+	background.Size = UDim2.new(0, 60, 0, 24)  -- Fixed pixel size for consistency
+	background.AnchorPoint = Vector2.new(0.5, 0.5)
+	background.Position = UDim2.new(0.5, 0, 0.5, 0)
+	background.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+	background.BackgroundTransparency = 0.15
 	background.BorderSizePixel = 0
 	background.Parent = billboard
 
-	-- Corner
+	-- Rounded corners
 	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 4)
+	corner.CornerRadius = UDim.new(0, 6)
 	corner.Parent = background
 
-	-- Icon label
+	-- Subtle border/glow
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.fromRGB(80, 80, 90)
+	stroke.Transparency = 0.4
+	stroke.Thickness = 1
+	stroke.Parent = background
+
+	-- Icon label (centered, bigger)
 	local iconLabel = Instance.new("TextLabel")
 	iconLabel.Name = "Icon"
-	iconLabel.Size = UDim2.new(0.4, 0, 1, 0)
-	iconLabel.Position = UDim2.new(0, 0, 0, 0)
+	iconLabel.Size = UDim2.new(0, 20, 0, 20)
+	iconLabel.Position = UDim2.new(0, 4, 0, 2)
 	iconLabel.BackgroundTransparency = 1
 	iconLabel.Font = Enum.Font.GothamBold
-	iconLabel.TextSize = 18
+	iconLabel.TextSize = 16
 	iconLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	iconLabel.Text = ""
 	iconLabel.Parent = background
 
-	-- Text label (amount)
+	-- Text label (amount) - cleaner font
 	local textLabel = Instance.new("TextLabel")
 	textLabel.Name = "Amount"
-	textLabel.Size = UDim2.new(0.6, 0, 1, 0)
-	textLabel.Position = UDim2.new(0.4, 0, 0, 0)
+	textLabel.Size = UDim2.new(0, 32, 0, 20)
+	textLabel.Position = UDim2.new(0, 26, 0, 2)
 	textLabel.BackgroundTransparency = 1
 	textLabel.Font = Enum.Font.GothamBold
-	textLabel.TextSize = 14
+	textLabel.TextSize = 13
 	textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	textLabel.Text = ""
 	textLabel.TextXAlignment = Enum.TextXAlignment.Left
 	textLabel.Parent = background
+
+	-- Text shadow for readability
+	local shadow = Instance.new("TextLabel")
+	shadow.Name = "Shadow"
+	shadow.Size = textLabel.Size
+	shadow.Position = UDim2.new(0, 27, 0, 3)
+	shadow.BackgroundTransparency = 1
+	shadow.Font = textLabel.Font
+	shadow.TextSize = textLabel.TextSize
+	shadow.TextColor3 = Color3.fromRGB(0, 0, 0)
+	shadow.TextTransparency = 0.5
+	shadow.Text = ""
+	shadow.TextXAlignment = Enum.TextXAlignment.Left
+	shadow.ZIndex = 0
+	shadow.Parent = background
 
 	return billboard
 end
@@ -108,8 +132,8 @@ local function updateCarryIndicator(worker: Model, billboard: BillboardGui)
 	local resourcesCarrying = worker:GetAttribute("ResourcesCarrying") or 0
 	local resourceType = worker:GetAttribute("ResourceType")
 
-	if resourcesCarrying <= 0 or not resourceType then
-		-- Hide indicator if not carrying
+	if resourcesCarrying <= 0.5 or not resourceType then
+		-- Hide indicator if not carrying (with small threshold to avoid flicker)
 		billboard.Enabled = false
 		return
 	end
@@ -124,9 +148,16 @@ local function updateCarryIndicator(worker: Model, billboard: BillboardGui)
 		displayName = resourceType
 	}
 
+	-- Round to whole number for cleaner display
+	local roundedAmount = math.floor(resourcesCarrying + 0.5)
+
 	-- Update icon and text
-	local iconLabel = billboard:FindFirstChild("Background") and billboard.Background:FindFirstChild("Icon")
-	local amountLabel = billboard:FindFirstChild("Background") and billboard.Background:FindFirstChild("Amount")
+	local background = billboard:FindFirstChild("Background")
+	if not background then return end
+
+	local iconLabel = background:FindFirstChild("Icon")
+	local amountLabel = background:FindFirstChild("Amount")
+	local shadowLabel = background:FindFirstChild("Shadow")
 
 	if iconLabel then
 		iconLabel.Text = resourceInfo.icon
@@ -134,8 +165,12 @@ local function updateCarryIndicator(worker: Model, billboard: BillboardGui)
 	end
 
 	if amountLabel then
-		amountLabel.Text = `{resourcesCarrying}`
-		amountLabel.TextColor3 = resourceInfo.color
+		amountLabel.Text = tostring(roundedAmount)
+		amountLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	end
+
+	if shadowLabel then
+		shadowLabel.Text = tostring(roundedAmount)
 	end
 end
 

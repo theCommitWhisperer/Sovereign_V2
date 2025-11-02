@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local BuildingManager = require(script.Parent.BuildingManager)
 local PlayerManager = require(script.Parent.PlayerManager)
 local GameData = require(ReplicatedStorage.Shared.GameData)
+local BuildingTypeHelper = require(ReplicatedStorage.Shared.BuildingTypeHelper)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
 local ProductionChainDebug = DebugManager.createChannel("ProductionChain", true)
@@ -19,19 +20,24 @@ function ProductionChainManager.canProduce(building: Instance): boolean
 		return false
 	end
 
-	local buildingData = GameData.Buildings[buildingType]
-	if not buildingData or not buildingData.consumes_resource or not buildingData.consumption_rate then
-		-- Building doesn't consume resources, so it can produce
+	-- Use BuildingTypeHelper to check if building needs inputs
+	-- Passive producers (Farm, Woodcutters, etc.) can always produce
+	if BuildingTypeHelper.isPassiveProducer(buildingType) then
 		return true
 	end
 
-	-- Check if building has enough of the consumed resource in its storage
-	local requiredResource = buildingData.consumes_resource
-	local requiredAmount = buildingData.consumption_rate
+	-- Production chain buildings need to check input availability
+	if BuildingTypeHelper.isProductionChain(buildingType) then
+		local buildingData = GameData.Buildings[buildingType]
+		if not buildingData or not buildingData.consumes_resource or not buildingData.consumption_rate then
+			return false
+		end
 
-	local storedAmount = BuildingManager.getStorageAmount(building, requiredResource)
+		local storedAmount = BuildingManager.getStorageAmount(building, buildingData.consumes_resource)
+		return storedAmount >= buildingData.consumption_rate
+	end
 
-	return storedAmount >= requiredAmount
+	return false
 end
 
 -- Consume input resources for production
@@ -41,27 +47,33 @@ function ProductionChainManager.consumeInputs(building: Instance): boolean
 		return false
 	end
 
-	local buildingData = GameData.Buildings[buildingType]
-	if not buildingData or not buildingData.consumes_resource or not buildingData.consumption_rate then
-		-- Building doesn't consume resources
+	-- Passive producers don't consume anything - always succeed
+	if BuildingTypeHelper.isPassiveProducer(buildingType) then
 		return true
 	end
 
-	local requiredResource = buildingData.consumes_resource
-	local requiredAmount = buildingData.consumption_rate
+	-- Production chain buildings need to consume inputs
+	if BuildingTypeHelper.isProductionChain(buildingType) then
+		local buildingData = GameData.Buildings[buildingType]
+		if not buildingData or not buildingData.consumes_resource or not buildingData.consumption_rate then
+			return false
+		end
 
-	-- Check if we have enough
-	if not ProductionChainManager.canProduce(building) then
-		ProductionChainDebug:warn(`{buildingType} cannot produce - not enough {requiredResource}`)
+		-- Check if we have enough
+		if not ProductionChainManager.canProduce(building) then
+			ProductionChainDebug:warn(`{buildingType} cannot produce - not enough {buildingData.consumes_resource}`)
+			return false
+		end
+
+		-- Consume the input resources
+		local consumed = BuildingManager.takeFromStorage(building, buildingData.consumes_resource, buildingData.consumption_rate)
+
+		if consumed > 0 then
+			ProductionChainDebug:info(`{buildingType} consumed {consumed} {buildingData.consumes_resource} for production`)
+			return true
+		end
+
 		return false
-	end
-
-	-- Consume the input resources
-	local consumed = BuildingManager.takeFromStorage(building, requiredResource, requiredAmount)
-
-	if consumed > 0 then
-		ProductionChainDebug:info(`{buildingType} consumed {consumed} {requiredResource} for production`)
-		return true
 	end
 
 	return false
@@ -109,14 +121,11 @@ function ProductionChainManager.getProductionStatus(building: Instance): {
 	return status
 end
 
--- Check if a building is a production chain building (consumes to produce)
+-- Check if a building is a resource producer (includes both passive and production chain)
+-- This replaces the old isProductionChainBuilding to support all production types
 function ProductionChainManager.isProductionChainBuilding(buildingType: string): boolean
-	local buildingData = GameData.Buildings[buildingType]
-	if not buildingData then
-		return false
-	end
-
-	return buildingData.consumes_resource ~= nil and buildingData.produces_resource ~= nil
+	-- Now includes ALL buildings that produce resources (Farm, Woodcutters, AND production chains)
+	return BuildingTypeHelper.isResourceProducer(buildingType)
 end
 
 return ProductionChainManager

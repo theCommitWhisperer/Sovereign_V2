@@ -19,55 +19,83 @@ local function createDamageNumber(unit: Model, damage: number)
 		return
 	end
 
+	local roundedDamage = math.floor(damage + 0.5)
+	local isCritical = damage > 50
+
 	-- Create billboard GUI
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "DamageNumber"
-	billboard.Size = UDim2.new(4, 0, 2, 0)
-	billboard.StudsOffset = Vector3.new(0, 4, 0)  -- Float above health bar
-	billboard.AlwaysOnTop = true
+	billboard.Size = UDim2.new(3, 0, 1.5, 0)
+	billboard.StudsOffset = Vector3.new(math.random(-10, 10) / 10, 4.5, 0)  -- Slight random offset
+	billboard.AlwaysOnTop = false  -- Don't show through walls
 	billboard.Parent = unit.PrimaryPart
+
+	-- Container for scaling effect
+	local container = Instance.new("Frame")
+	container.Name = "Container"
+	container.Size = UDim2.new(1, 0, 1, 0)
+	container.BackgroundTransparency = 1
+	container.Parent = billboard
 
 	-- Create text label for damage
 	local damageLabel = Instance.new("TextLabel")
 	damageLabel.Name = "DamageText"
 	damageLabel.Size = UDim2.new(1, 0, 1, 0)
 	damageLabel.BackgroundTransparency = 1
-	damageLabel.Text = `-${math.floor(damage)}`
+	damageLabel.Text = `-{roundedDamage}`
 	damageLabel.Font = Enum.Font.GothamBold
-	damageLabel.TextSize = 24
-	damageLabel.TextColor3 = Color3.fromRGB(255, 80, 80)  -- Red
-	damageLabel.TextStrokeTransparency = 0.5
+	damageLabel.TextSize = isCritical and 28 or 20
+	damageLabel.TextColor3 = isCritical and Color3.fromRGB(255, 50, 50) or Color3.fromRGB(255, 100, 100)
+	damageLabel.TextStrokeTransparency = 0
 	damageLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 	damageLabel.TextScaled = false
-	damageLabel.Parent = billboard
+	damageLabel.Parent = container
 
-	-- Bigger text for critical damage (>50)
-	if damage > 50 then
-		damageLabel.TextSize = 32
-		damageLabel.TextColor3 = Color3.fromRGB(255, 0, 0)  -- Brighter red
-	end
-
-	-- Animate upward and fade out
+	-- Animate with bounce-out effect
 	local tweenInfo = TweenInfo.new(
-		1.2,  -- Duration
-		Enum.EasingStyle.Quad,
+		0.8,  -- Faster duration
+		Enum.EasingStyle.Back,  -- Bounce effect
 		Enum.EasingDirection.Out
 	)
 
-	local offsetTween = TweenService:Create(billboard, tweenInfo, {
-		StudsOffset = Vector3.new(math.random(-1, 1), 7, 0)  -- Float upward with slight randomness
+	-- Pop-up scale animation
+	container.Size = UDim2.new(0.5, 0, 0.5, 0)
+	container.Position = UDim2.new(0.25, 0, 0.25, 0)
+
+	local scaleTween = TweenService:Create(container, tweenInfo, {
+		Size = UDim2.new(1, 0, 1, 0),
+		Position = UDim2.new(0, 0, 0, 0)
 	})
 
-	local fadeTween = TweenService:Create(damageLabel, tweenInfo, {
+	-- Float upward
+	local floatTween = TweenService:Create(billboard, TweenInfo.new(
+		1.0,
+		Enum.EasingStyle.Quad,
+		Enum.EasingDirection.Out
+	), {
+		StudsOffset = Vector3.new(billboard.StudsOffset.X, 6, 0)
+	})
+
+	-- Fade out
+	local fadeTween = TweenService:Create(damageLabel, TweenInfo.new(
+		0.5,  -- Start fading halfway
+		Enum.EasingStyle.Quad,
+		Enum.EasingDirection.In
+	), {
 		TextTransparency = 1,
 		TextStrokeTransparency = 1,
 	})
 
-	offsetTween:Play()
-	fadeTween:Play()
+	scaleTween:Play()
+	floatTween:Play()
+
+	-- Delay fade to let it be visible
+	task.delay(0.5, function()
+		fadeTween:Play()
+	end)
 
 	-- Destroy after animation
-	task.delay(1.2, function()
+	task.delay(1.0, function()
 		billboard:Destroy()
 	end)
 

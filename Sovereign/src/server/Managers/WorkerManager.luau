@@ -76,6 +76,10 @@ local function transformWorker(worker: Model, jobType: string)
 
 	worker:SetAttribute("UnitType", jobType)
 
+	WorkerDebug:info(`Transformed {worker.Name} to {jobType}`, {
+		unitType = jobType
+	})
+
 	-- Update humanoid properties if needed
 	local humanoid = worker:FindFirstChildOfClass("Humanoid")
 	if humanoid then
@@ -251,7 +255,93 @@ local function findBuildingWithResources(position: Vector3, ownerId: number): (I
 	return nearest, resourceType
 end
 
--- Simple pathfinding - use 2D distance to avoid Y-axis issues
+-- Calculate arrival threshold based on building size
+local function getBuildingArrivalThreshold(building: Instance): number
+	local buildingPart = nil
+
+	-- Handle both Model and Part buildings
+	if building:IsA("Model") then
+		buildingPart = building.PrimaryPart or building:FindFirstChildWhichIsA("Part")
+	elseif building:IsA("BasePart") then
+		buildingPart = building
+	end
+
+	if not buildingPart then
+		return 10
+	end
+
+	-- Get building size (use the larger of X or Z dimensions)
+	local size = buildingPart.Size
+	local maxDimension = math.max(size.X, size.Z)
+
+	-- Threshold = half the building's largest dimension + small buffer
+	-- Reduced buffer to prevent overlapping with nearby buildings
+	return (maxDimension / 2) + 5
+end
+
+-- Pathfinding-based movement to a building
+local function moveTowardsBuilding(unit: Model, building: Instance, speed: number): boolean
+	if not unit.PrimaryPart then
+		WorkerDebug:warn("Unit has no PrimaryPart!", { unitName = unit.Name })
+		return true
+	end
+
+	-- Get building part (handle both Model and Part)
+	local buildingPart = nil
+	if building:IsA("Model") then
+		buildingPart = building.PrimaryPart or building:FindFirstChildWhichIsA("Part")
+	elseif building:IsA("BasePart") then
+		buildingPart = building
+	end
+
+	if not buildingPart then
+		WorkerDebug:warn("Building has no valid part!")
+		return true
+	end
+
+	local currentPos = unit.PrimaryPart.Position
+	local buildingPos = buildingPart.Position
+
+	-- Calculate 2D distance (ignore Y axis)
+	local currentPos2D = Vector3.new(currentPos.X, 0, currentPos.Z)
+	local buildingPos2D = Vector3.new(buildingPos.X, 0, buildingPos.Z)
+	local distance2D = (buildingPos2D - currentPos2D).Magnitude
+
+	-- Calculate dynamic arrival threshold based on building size
+	local arrivalThreshold = getBuildingArrivalThreshold(building)
+
+	-- Check if we've arrived
+	if distance2D <= arrivalThreshold then
+		-- Stop movement
+		unit:SetAttribute("IsMoving", false)
+		unit:SetAttribute("TargetPosition", nil)
+		WorkerDebug:info(`Worker arrived at building`, {
+			unitName = unit.Name,
+			distance = distance2D,
+			threshold = arrivalThreshold
+		})
+		return true -- Arrived
+	end
+
+	-- Not arrived yet - pathfind to building center
+	local currentTarget = unit:GetAttribute("TargetPosition")
+	local isMoving = unit:GetAttribute("IsMoving")
+
+	-- Only update if target changed or unit isn't moving
+	if not isMoving or not currentTarget or (currentTarget - buildingPos).Magnitude > 1 then
+		unit:SetAttribute("TargetPosition", buildingPos)
+		unit:SetAttribute("IsMoving", true)
+		WorkerDebug:info(`Worker pathfinding to building`, {
+			unitName = unit.Name,
+			distance = distance2D,
+			threshold = arrivalThreshold
+		})
+	end
+
+	return false -- Not arrived yet
+end
+
+-- Simple movement to a position (for resource nodes)
 local function moveTowards(unit: Model, targetPos: Vector3, speed: number): boolean
 	if not unit.PrimaryPart then
 		WorkerDebug:warn("Unit has no PrimaryPart!", { unitName = unit.Name })
@@ -265,17 +355,30 @@ local function moveTowards(unit: Model, targetPos: Vector3, speed: number): bool
 	local targetPos2D = Vector3.new(targetPos.X, 0, targetPos.Z)
 	local distance2D = (targetPos2D - currentPos2D).Magnitude
 
-	-- Increased arrival threshold to 8 studs
-	if distance2D > 8 then
-		-- Move towards target (keep current Y position)
-		local direction = (targetPos2D - currentPos2D).Unit
-		local newPos = currentPos + (direction * speed)
-		unit:SetPrimaryPartCFrame(CFrame.new(newPos))
-		return false -- Not arrived
-	else
-		MovementDebug:info(`Unit arrived!`, { distance = distance2D })
+	-- Check if we've arrived (5 stud threshold for resource nodes)
+	if distance2D <= 5 then
+		-- Stop movement
+		unit:SetAttribute("IsMoving", false)
+		unit:SetAttribute("TargetPosition", nil)
 		return true -- Arrived
 	end
+
+	-- Not arrived yet - ensure MovementSystem is handling this unit
+	local currentTarget = unit:GetAttribute("TargetPosition")
+	local isMoving = unit:GetAttribute("IsMoving")
+
+	-- Only update if target changed or unit isn't moving
+	if not isMoving or not currentTarget or (currentTarget - targetPos).Magnitude > 1 then
+		unit:SetAttribute("TargetPosition", targetPos)
+		unit:SetAttribute("IsMoving", true)
+		WorkerDebug:info(`Worker starting pathfinding movement`, {
+			unitName = unit.Name,
+			distance = distance2D,
+			targetPos = targetPos
+		})
+	end
+
+	return false -- Not arrived yet
 end
 -- Update worker tasks
 local function updateWorkerTasks(deltaTime: number)
@@ -294,23 +397,62 @@ local function updateWorkerTasks(deltaTime: number)
 
 		if task.state == "GoingToWorkplace" then
 			-- Walk to workplace and transform
-			local arrived = moveTowards(task.worker, task.workplace.Position, 0.5)
+			local arrived = moveTowardsBuilding(task.worker, task.workplace, 0.5)
 
 			if arrived then
-				WorkerDebug:info(`Worker arrived at workplace`, {
+				WorkerDebug:info(`Worker arrived at workplace - transforming`, {
+					workerName = task.worker.Name,
 					currentType = task.worker:GetAttribute("UnitType"),
 					transformingTo = task.jobType,
+					workplaceType = task.workplaceType,
 				})
 				transformWorker(task.worker, task.jobType)
 				task.state = "Gathering"
+				WorkerDebug:info(`Worker state changed to Gathering`, {
+					workerName = task.worker.Name,
+					jobType = task.jobType,
+				})
 			end
 		elseif task.state == "Gathering" then
-			-- Check if this is a production chain building (consumes resources to produce)
-			local isProductionChain = ProductionChainManager.isProductionChainBuilding(task.workplaceType)
+			-- Check if this is a resource production building (all types handled uniformly)
+			local isProducer = ProductionChainManager.isProductionChainBuilding(task.workplaceType)
 
-			if isProductionChain then
-				-- Production chain building: produce from stored input resources
-				-- Worker stays at workplace and "crafts" the resource
+			if isProducer then
+				-- Production building: produce resources at workplace
+				-- Worker stays at workplace and produces the resource
+				-- (Handles both passive producers like Farms and production chains like Smithy)
+
+				-- Verify worker is still at the workplace
+				local atWorkplace = false
+				if task.worker.PrimaryPart and task.workplace then
+					local buildingPart = nil
+					if task.workplace:IsA("Model") then
+						buildingPart = task.workplace.PrimaryPart or task.workplace:FindFirstChildWhichIsA("Part")
+					elseif task.workplace:IsA("BasePart") then
+						buildingPart = task.workplace
+					end
+
+					if buildingPart then
+						local workerPos = task.worker.PrimaryPart.Position
+						local buildingPos = buildingPart.Position
+						local distance = (Vector3.new(workerPos.X, 0, workerPos.Z) - Vector3.new(buildingPos.X, 0, buildingPos.Z)).Magnitude
+						local threshold = getBuildingArrivalThreshold(task.workplace)
+						atWorkplace = distance <= threshold
+
+						if not atWorkplace then
+							-- Worker wandered away, send them back
+							WorkerDebug:warn(`{task.jobType} wandered from workplace, distance: {distance}`)
+							task.state = "GoingToWorkplace"
+						end
+					end
+				end
+
+				if not atWorkplace then
+					-- Worker not at workplace, skip production this frame
+					continue
+				end
+
+				-- Check if building can produce (handles input requirements automatically)
 				local canProduce = ProductionChainManager.canProduce(task.workplace)
 
 				if canProduce then
@@ -319,18 +461,24 @@ local function updateWorkerTasks(deltaTime: number)
 					local productionRate = (buildingInfo.production_rate or 1) * modifier
 					local produced = productionRate * deltaTime * 2
 
-					-- Consume input resources
-					if ProductionChainManager.consumeInputs(task.workplace) then
+					-- Consume input resources (returns true for passive producers automatically)
+					local consumed = ProductionChainManager.consumeInputs(task.workplace)
+
+					if consumed then
 						task.resourcesCarrying = task.resourcesCarrying + produced
 						task.worker:SetAttribute("ResourcesCarrying", task.resourcesCarrying)
 						task.worker:SetAttribute("ResourceType", task.resourceType)
 
+						WorkerDebug:info(`{task.jobType} producing {task.resourceType}`, {
+							carrying = task.resourcesCarrying,
+							capacity = carryCapacity,
+							produced = produced,
+						})
+
 						-- If full, deposit
 						if task.resourcesCarrying >= carryCapacity then
 							task.state = "ReturningToWorkplace"
-							WorkerDebug:info(`{task.jobType} produced {task.resourcesCarrying} {task.resourceType}`, {
-								carrying = task.resourcesCarrying,
-							})
+							WorkerDebug:info(`{task.jobType} produced {task.resourcesCarrying} {task.resourceType}`)
 						end
 					else
 						-- Cannot produce, wait for input resources
@@ -377,6 +525,14 @@ local function updateWorkerTasks(deltaTime: number)
 						task.worker:SetAttribute("ResourcesCarrying", task.resourcesCarrying)
 						task.worker:SetAttribute("ResourceType", task.resourceType)
 
+						WorkerDebug:info(`{task.jobType} gathering`, {
+							gathered = gathered,
+							carrying = task.resourcesCarrying,
+							capacity = carryCapacity,
+							gatherRate = gatherRate,
+							deltaTime = deltaTime,
+						})
+
 						-- If full or node depleted, return
 						if task.resourcesCarrying >= carryCapacity then
 							task.state = "ReturningToWorkplace"
@@ -399,7 +555,7 @@ local function updateWorkerTasks(deltaTime: number)
 			end
 		elseif task.state == "ReturningToWorkplace" then
 			-- Return resources to workplace
-			local arrived = moveTowards(task.worker, task.workplace.Position, 0.5)
+			local arrived = moveTowardsBuilding(task.worker, task.workplace, 0.5)
 			if arrived then
 				-- Deposit to workplace storage
 				local deposited =
@@ -447,7 +603,7 @@ local function updateHaulerTasks(deltaTime: number)
 			end
 		elseif task.state == "GoingToPickup" then
 			if task.sourceBuilding and task.sourceBuilding.Parent and task.resourceType then
-				local arrived = moveTowards(task.hauler, task.sourceBuilding.Position, 0.4)
+				local arrived = moveTowardsBuilding(task.hauler, task.sourceBuilding, 0.4)
 
 				if arrived then
 					-- Pick up resources
@@ -506,7 +662,7 @@ local function updateHaulerTasks(deltaTime: number)
 			end
 		elseif task.state == "GoingToStorage" then
 			if task.targetStorage and task.targetStorage.Parent and task.resourceType then
-				local arrived = moveTowards(task.hauler, task.targetStorage.Position, 0.4)
+				local arrived = moveTowardsBuilding(task.hauler, task.targetStorage, 0.4)
 
 				if arrived then
 					HaulerDebug:info(`Hauler arrived at storage`, {

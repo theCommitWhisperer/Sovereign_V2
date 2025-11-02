@@ -6,15 +6,15 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local FogDebug = DebugManager.createChannel("FogOfWar", true)  -- Enable debug
+local FogDebug = DebugManager.createChannel("FogOfWar", true) -- Enable debug
 
 local FogOfWarManager = {}
 
 -- Default vision ranges (in studs)
 local VISION_RANGES = {
-	Unit = 50,        -- Units can see 50 studs
-	Building = 60,    -- Buildings can see 60 studs
-	Keep = 100,       -- Keep has extended vision
+	Unit = 100,
+	Building = 150,
+	Keep = 300,
 }
 
 -- Player-specific fog of war state
@@ -29,7 +29,7 @@ local playerFogData: { [Player]: FogOfWarData } = {}
 -- Initialize fog of war for a player
 function FogOfWarManager.init(player: Player)
 	playerFogData[player] = {
-		enabled = true,  -- Fog of war ON by default
+		enabled = true, -- Fog of war ON by default
 		visibleUnits = {},
 		visibleBuildings = {},
 	}
@@ -69,7 +69,7 @@ end
 local function isPositionVisible(player: Player, position: Vector3): boolean
 	local data = playerFogData[player]
 	if not data or not data.enabled then
-		return true  -- If fog disabled, everything is visible
+		return true -- If fog disabled, everything is visible
 	end
 
 	-- Check vision from player's units
