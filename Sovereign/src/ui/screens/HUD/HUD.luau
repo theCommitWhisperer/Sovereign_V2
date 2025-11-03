@@ -859,6 +859,7 @@ function HUD:render()
 						end
 					end,
 				}) or React.createElement(BuildingMenu, {
+					tooltip = self.props.tooltip, -- Pass tooltip API down
 					resources = self.state.resources,
 					selectedCategory = self.state.selectedCategory,
 					onBuildingSelected = function(buildingName)
