@@ -174,9 +174,16 @@ function Lobby:render()
 	return React.createElement("Frame", {
 		Name = "LobbyScreen",
 		Size = UDim2.fromScale(1, 1),
-		BackgroundColor3 = UIConfig.Color.Background,
-		BackgroundTransparency = 0.3,
+		BackgroundTransparency = 1,
 	}, {
+		BackgroundImage = React.createElement("ImageLabel", {
+			Name = "BackgroundImage",
+			Image = "rbxassetid://99876577284469",
+			ScaleType = Enum.ScaleType.Stretch,
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 1),
+			ZIndex = 1,
+		}),
 		MainFrame = React.createElement("Frame", {
 			Name = "MainFrame",
 			Size = UDim2.new(0.95, 0, 0.95, 0),
@@ -465,6 +472,7 @@ function Lobby:render()
 									vikingRaids = self.state.vikingRaids,
 									honor = self.state.honor,
 									rank = self.state.rank,
+									showTutorial = self.state.showTutorial,
 								}
 
 								local ReplicatedStorage = game:GetService("ReplicatedStorage")

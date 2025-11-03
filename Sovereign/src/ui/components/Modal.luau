@@ -63,8 +63,8 @@ function Modal:render()
 					TextYAlignment = Enum.TextYAlignment.Center,
 				}),
 
-				-- X button in top-right corner
-				CloseButtonTop = React.createElement("TextButton", {
+				-- X button in top-right corner (only if onClose is provided)
+				CloseButtonTop = self.props.onClose and React.createElement("TextButton", {
 					Size = UDim2.new(0, 50, 0, 50),
 					Position = UDim2.new(1, -60, 0, 15),
 					BackgroundColor3 = Color3.fromRGB(60, 60, 65),
@@ -77,7 +77,7 @@ function Modal:render()
 					[React.Event.MouseButton1Click] = self.props.onClose,
 				}, {
 					Corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 8) }),
-				}),
+				}) or nil,
 			}),
 
 			-- Content area (scrollable)
@@ -109,8 +109,8 @@ function Modal:render()
 				Content = React.createElement(React.Fragment, nil, self.props.children),
 			}),
 
-			-- Footer with close button
-			Footer = React.createElement("Frame", {
+			-- Footer with close button (only if onClose is provided)
+			Footer = self.props.onClose and React.createElement("Frame", {
 				Position = UDim2.new(0, 0, 1, -80),
 				Size = UDim2.new(1, 0, 0, 80),
 				BackgroundTransparency = 1,
@@ -128,7 +128,7 @@ function Modal:render()
 					TextColor3 = UIConfig.HUD.PanelTextColor,
 					[React.Event.MouseButton1Click] = self.props.onClose,
 				}),
-			}),
+			}) or nil,
 		}),
 	})
 end

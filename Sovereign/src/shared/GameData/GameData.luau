@@ -36,14 +36,7 @@ GameData.Factions = {
 		SecondaryColor = Color3.fromRGB(192, 192, 192),
 		SpawnPoint = CFrame.new(-250, 10, 250), -- NW quadrant center
 		BuildZoneRadius = 200, -- Radius within estate (400x400 estate = 200 radius)
-		StartingPeasants = 5,
-		StartingResources = {
-			Wood = 600,
-			Stone = 200,
-			Gold = 900,
-			Weapons = 10,
-			Iron_Bars = 20,
-		},
+		StartingPeasants = 20, -- Standardized across all factions
 	} :: FactionData,
 
 	-- Quadrant 2: Northeast (Gold)
@@ -54,14 +47,7 @@ GameData.Factions = {
 		SecondaryColor = Color3.fromRGB(128, 0, 0),
 		SpawnPoint = CFrame.new(250, 10, 250), -- NE quadrant center
 		BuildZoneRadius = 200,
-		StartingPeasants = 4,
-		StartingResources = {
-			Wood = 500,
-			Stone = 250,
-			Gold = 1000,
-			Weapons = 10,
-			Iron_Bars = 20,
-		},
+		StartingPeasants = 20, -- Standardized across all factions
 	} :: FactionData,
 
 	-- Quadrant 3: Southwest (Green)
@@ -72,14 +58,7 @@ GameData.Factions = {
 		SecondaryColor = Color3.fromRGB(139, 69, 19),
 		SpawnPoint = CFrame.new(-250, 10, -250), -- SW quadrant center
 		BuildZoneRadius = 200,
-		StartingPeasants = 6,
-		StartingResources = {
-			Wood = 700,
-			Stone = 150,
-			Gold = 800,
-			Weapons = 10,
-			Iron_Bars = 20,
-		},
+		StartingPeasants = 20, -- Standardized across all factions
 	} :: FactionData,
 
 	-- Quadrant 4: Southeast (Gray)
@@ -90,14 +69,7 @@ GameData.Factions = {
 		SecondaryColor = Color3.fromRGB(100, 100, 20),
 		SpawnPoint = CFrame.new(250, 10, -250), -- SE quadrant center
 		BuildZoneRadius = 200,
-		StartingPeasants = 5,
-		StartingResources = {
-			Wood = 400,
-			Stone = 400,
-			Gold = 1000,
-			Weapons = 10,
-			Iron_Bars = 20,
-		},
+		StartingPeasants = 20, -- Standardized across all factions
 	} :: FactionData,
 }
 

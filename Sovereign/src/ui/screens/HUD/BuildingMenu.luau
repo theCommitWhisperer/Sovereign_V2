@@ -15,7 +15,7 @@ end
 local BUILDING_CATEGORIES = {
 	-- Defense: Walls, towers, military buildings
 	Defense = {
-		"Keep",
+		-- Keep is built during tutorial only, not available in menu
 		"Wooden_Palisade",
 		"Stone_Wall",
 		"Watch_Tower",
@@ -107,6 +107,11 @@ function BuildingMenu:render()
 			end
 
 			local buttonChildren = {
+				Border = React.createElement("UIStroke", {
+					Color = UIConfig.HUD.StrokeColor,
+					Thickness = UIConfig.HUD.StrokeThickness,
+				}),
+
 				Padding = React.createElement("UIPadding", {
 					PaddingTop = UDim.new(0, 4),
 					PaddingBottom = UDim.new(0, 4),
@@ -124,7 +129,7 @@ function BuildingMenu:render()
 				Name = React.createElement("TextLabel", {
 					Size = UDim2.new(1, 0, 0, 18),
 					Text = buildingName:gsub("_", " "),
-					Font = Enum.Font.GothamBold,
+					FontFace = UIConfig.Font.Title,
 					TextSize = 11,
 					TextColor3 = UIConfig.HUD.PanelTextColor,
 					BackgroundTransparency = 1,
@@ -135,7 +140,7 @@ function BuildingMenu:render()
 				Cost = React.createElement("TextLabel", {
 					Size = UDim2.new(1, 0, 1, -21),
 					Text = costText,
-					Font = Enum.Font.Gotham,
+					FontFace = UIConfig.Font.Default,
 					TextSize = 9,
 					TextColor3 = canAfford and UIConfig.HUD.StatLabelColor or Color3.fromRGB(255, 100, 100),
 					BackgroundTransparency = 1,
@@ -153,8 +158,7 @@ function BuildingMenu:render()
 				Text = "",
 				BackgroundColor3 = canAfford and UIConfig.HUD.BuildingButtonAffordable
 					or UIConfig.HUD.BuildingButtonUnaffordable,
-				BorderSizePixel = 1,
-				BorderColor3 = UIConfig.HUD.BuildingButtonBorder,
+				BorderSizePixel = 0,
 				LayoutOrder = i,
 				[React.Event.MouseButton1Click] = function()
 					if canAfford and self.props.onBuildingSelected then
@@ -172,6 +176,11 @@ function BuildingMenu:render()
 						-- Subtype
 						if buildingInfo.subtype then
 							tooltipLines[#tooltipLines + 1] = buildingInfo.subtype
+						end
+
+						-- Description
+						if buildingInfo.description then
+							tooltipLines[#tooltipLines + 1] = "\n" .. buildingInfo.description
 						end
 
 						-- Stats with icons
@@ -199,7 +208,7 @@ function BuildingMenu:render()
 						end
 
 						if statsLine ~= "" then
-							tooltipLines[#tooltipLines + 1] = statsLine
+							tooltipLines[#tooltipLines + 1] = "\n" .. statsLine
 						end
 
 						-- Production info
@@ -223,7 +232,7 @@ function BuildingMenu:render()
 						end
 
 						-- Build time
-						tooltipLines[#tooltipLines + 1] = "⏱️ " .. buildingInfo.construction.build_time_seconds .. "s"
+						tooltipLines[#tooltipLines + 1] = "\n⏱️ " .. buildingInfo.construction.build_time_seconds .. "s"
 
 						local tooltipText = table.concat(tooltipLines, "\n")
 						self.props.tooltip.show(tooltipText, buttonRef.current)

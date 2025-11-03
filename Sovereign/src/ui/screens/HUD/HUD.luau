@@ -18,6 +18,7 @@ local FogOverlay = require(script.Parent.FogOverlay)
 local Policies = require(script.Parent.Parent.Policies.Policies)
 local Menu = require(script.Parent.Parent.Menu.Menu)
 local Stats = require(script.Parent.Parent.Stats.Stats)
+local TutorialModal = require(script.Parent.Parent.Parent.components.TutorialModal)
 
 local player = Players.LocalPlayer
 
@@ -57,6 +58,12 @@ function HUD:init()
 		economySnapshot = nil, -- Economy dashboard data
 		stats = nil, -- Stats for the stats modal
 		selectedFormation = "Line", -- Default formation type
+		-- Tutorial state
+		tutorialEnabled = false, -- Whether full tutorial (Storehouse + Granary) is enabled
+		showKeepModal = true, -- Always show Keep modal initially
+		tutorialStep = 1, -- Current step (1=Keep, 2=Storehouse, 3=Granary)
+		buildingsCompleted = {}, -- Track which required buildings have been built
+		tutorialModalHidden = false, -- Temporarily hide modal during placement
 	})
 
 	-- Get game event reference
@@ -68,10 +75,34 @@ function HUD:init()
 		self:setState({ stats = stats })
 	end)
 
+	-- Initialize from gameStartData prop if available
+	if self.props.gameStartData then
+		local data = self.props.gameStartData
+		HUDDebug:info("Initializing from gameStartData prop", data)
+		if data.resources then
+			local tutorialEnabled = if data.showTutorial ~= nil then data.showTutorial else true
+			HUDDebug:info("Tutorial setting from prop", { showTutorial = data.showTutorial, tutorialEnabled = tutorialEnabled })
+			self:setState({
+				resources = data.resources,
+				tutorialEnabled = tutorialEnabled,
+			})
+		end
+	end
+
 	self.connection = self.gameEvent.OnClientEvent:Connect(function(action, data)
 		if action == "GameStarted" and data.resources then
-			HUDDebug:info("Received resources", { resources = data.resources })
-			self:setState({ resources = data.resources })
+			HUDDebug:info("Received resources from event", { resources = data.resources })
+			-- Set tutorial state based on game settings
+			local tutorialEnabled = if data.showTutorial ~= nil then data.showTutorial else true
+			HUDDebug:info("Tutorial setting from event", { showTutorial = data.showTutorial, tutorialEnabled = tutorialEnabled })
+			self:setState({
+				resources = data.resources,
+				tutorialEnabled = tutorialEnabled,
+			})
+		elseif action == "BuildingPlaced" and data.buildingType then
+			-- Handle tutorial progression when buildings are placed
+			HUDDebug:info("Building placed", { buildingType = data.buildingType })
+			self:onBuildingPlaced(data.buildingType)
 		elseif action == "UpdateResources" and data.resources then
 			HUDDebug:info("Resources updated", { resources = data.resources })
 			self:setState({ resources = data.resources })
@@ -166,6 +197,78 @@ function HUD:init()
 			end
 		end
 	end)
+end
+
+-- Tutorial: Handle building placement to progress tutorial
+function HUD:onBuildingPlaced(buildingType)
+	-- Tutorial buildings in order
+	local tutorialBuildings = { "Keep", "Storehouse", "Granary" }
+	local currentRequiredBuilding = tutorialBuildings[self.state.tutorialStep]
+
+	if buildingType == currentRequiredBuilding then
+		HUDDebug:info("Tutorial: Required building placed", { buildingType = buildingType, step = self.state.tutorialStep })
+
+		-- Mark building as completed
+		local newCompleted = table.clone(self.state.buildingsCompleted)
+		newCompleted[buildingType] = true
+
+		-- Special handling for Keep (step 1)
+		if self.state.tutorialStep == 1 then
+			-- Keep is done
+			if self.state.tutorialEnabled then
+				-- Tutorial is enabled, continue to Storehouse
+				HUDDebug:info("Tutorial: Keep placed, moving to Storehouse")
+				self:setState({
+					buildingsCompleted = newCompleted,
+					tutorialStep = 2,
+					tutorialModalHidden = false,
+					showKeepModal = false,
+				})
+			else
+				-- Tutorial disabled, just close the Keep modal
+				HUDDebug:info("Tutorial: Keep placed, tutorial disabled - closing modal")
+				self:setState({
+					buildingsCompleted = newCompleted,
+					showKeepModal = false,
+					tutorialModalHidden = false,
+				})
+			end
+		-- Check if all tutorial buildings are complete
+		elseif self.state.tutorialStep >= #tutorialBuildings then
+			-- Tutorial complete! Disable tutorial to hide modal
+			HUDDebug:info("Tutorial: Complete!")
+			self:setState({
+				buildingsCompleted = newCompleted,
+				tutorialEnabled = false, -- Disable tutorial to prevent modal from showing
+				tutorialModalHidden = false,
+				showKeepModal = false,
+			})
+		else
+			-- Move to next step and show modal again
+			self:setState({
+				buildingsCompleted = newCompleted,
+				tutorialStep = self.state.tutorialStep + 1,
+				tutorialModalHidden = false,
+			})
+		end
+	end
+end
+
+-- Tutorial: Handle when player clicks "Build" button in tutorial modal
+function HUD:onTutorialBuildRequested(buildingType, isAutoTriggered)
+	HUDDebug:info("Tutorial: Build requested", { buildingType = buildingType, isAutoTriggered = isAutoTriggered })
+
+	-- Only hide modal if not auto-triggered (manual button clicks hide modal)
+	-- Auto-triggered steps keep modal visible so player can read instructions while placing
+	if not isAutoTriggered then
+		HUDDebug:info("Tutorial: Hiding modal (manual trigger)")
+		self:setState({ tutorialModalHidden = true })
+	else
+		HUDDebug:info("Tutorial: Keeping modal visible (auto trigger)")
+	end
+
+	-- Trigger building placement (same event as BuildingMenu uses)
+	self.gameEvent:FireServer("StartPlacement", buildingType)
 end
 
 function HUD:setupBuildingSelection()
@@ -1065,6 +1168,36 @@ function HUD:render()
 					economySnapshot = self.state.economySnapshot,
 				})
 			or nil,
+
+		-- Tutorial Modal (required buildings guide)
+		-- Step 1 (Keep) always shows, Steps 2-3 only if tutorialEnabled
+		TutorialModal = (function()
+			-- Determine if modal should be shown
+			local isKeepStep = self.state.tutorialStep == 1
+			local showKeep = isKeepStep and self.state.showKeepModal
+			local showTutorialStep = (not isKeepStep) and self.state.tutorialStep <= 3 and self.state.tutorialEnabled
+			local shouldShow = not self.state.tutorialModalHidden and (showKeep or showTutorialStep)
+
+			HUDDebug:info("Tutorial modal render check", {
+				tutorialEnabled = self.state.tutorialEnabled,
+				showKeepModal = self.state.showKeepModal,
+				tutorialModalHidden = self.state.tutorialModalHidden,
+				tutorialStep = self.state.tutorialStep,
+				shouldShow = shouldShow,
+			})
+
+			if shouldShow then
+				return React.createElement(TutorialModal, {
+					visible = true,
+					currentStep = self.state.tutorialStep,
+					onBuildRequested = function(buildingType, isAutoTriggered)
+						self:onTutorialBuildRequested(buildingType, isAutoTriggered)
+					end,
+				})
+			else
+				return nil
+			end
+		end)(),
 	})
 end
 

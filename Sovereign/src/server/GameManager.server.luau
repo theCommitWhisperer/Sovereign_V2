@@ -156,35 +156,94 @@ Players.PlayerRemoving:Connect(function(player)
 	PlayerManager.remove(player)
 end)
 
-local function spawnInitialSetup(player: Player, factionData: any, spawnPointOverride: CFrame?)
+-- Helper function to calculate starting resources based on lobby setting
+local function calculateStartingResources(setting: string, resourceType: string): number
+	local multipliers = {
+		Low = 0.5,
+		Standard = 1.0,
+		High = 2.0,
+	}
+
+	local baseValues = {
+		Wood = 400,
+		Stone = 200,
+		Gold = 500,
+		Food = 300,
+		Iron_Bars = 15,
+		Weapons = 8,
+	}
+
+	local multiplier = multipliers[setting] or 1.0
+	local baseValue = baseValues[resourceType] or 0
+	return math.floor(baseValue * multiplier)
+end
+
+-- Helper function to calculate starting troop count based on lobby setting
+local function calculateTroopCount(setting: string): number
+	local counts = {
+		None = 0,
+		Low = 2,
+		Standard = 4,
+		High = 8,
+	}
+	return counts[setting] or 4
+end
+
+local function spawnInitialSetup(player: Player, factionData: any, spawnPointOverride: CFrame?, lobbySettings: any)
 	local spawnPoint = spawnPointOverride or factionData.SpawnPoint
 
-	-- 1. Spawn the Keep
-	local keep = BuildingManager.createBuilding(player, "Keep", spawnPoint)
-	if not keep then
-		GameManagerDebug:warn(`Failed to create Keep for {player.Name}`)
-		return
-	end
-
-	-- 2. Spawn the King near the Keep
-	local kingSpawnPos = spawnPoint.Position + Vector3.new(5, 0, 5)
-	UnitManager.createUnit("King", player.UserId, kingSpawnPos, factionData.Name) -- Pass faction
-
-	-- 3. Spawn peasants around the Keep
+	-- 1. Spawn peasants around the spawn point
 	for i = 1, factionData.StartingPeasants do
 		local angle = (math.pi * 2 * i) / factionData.StartingPeasants
-		local offset = Vector3.new(math.cos(angle) * 10, 0, math.sin(angle) * 10)
+		local offset = Vector3.new(math.cos(angle) * 15, 0, math.sin(angle) * 15)
 		local peasantSpawnPos = spawnPoint.Position + offset
-		UnitManager.createUnit("Peasant", player.UserId, peasantSpawnPos, factionData.Name) -- Pass faction
+		UnitManager.createUnit("Peasant", player.UserId, peasantSpawnPos, factionData.Name)
 	end
-	-- 4. Spawn resource nodes around the spawn
-	ResourceNodeManager.spawnNodesNearPosition(spawnPoint.Position, 150, "Wood", 20)
-	ResourceNodeManager.spawnNodesNearPosition(spawnPoint.Position, 150, "Stone", 15)
-	ResourceNodeManager.spawnNodesNearPosition(spawnPoint.Position, 100, "Food", 10)
-	ResourceNodeManager.spawnNodesNearPosition(spawnPoint.Position, 120, "Iron_Ore", 8)
+
+	-- 2. Spawn starting troops (if peace time is off, otherwise queue them)
+	local troopCount = calculateTroopCount(lobbySettings.startingTroops or "Standard")
+	local troopTypes = {"Archer", "Knight", "Light_Cavalry", "Macemen"}
+
+	if troopCount > 0 then
+		-- Check if peace time is active
+		local peaceTimeActive = lobbySettings.peaceTime and lobbySettings.peaceTime ~= "None"
+
+		if not peaceTimeActive then
+			-- Spawn troops immediately
+			for i = 1, troopCount do
+				local troopType = troopTypes[((i - 1) % #troopTypes) + 1]
+				local angle = (math.pi * 2 * i) / troopCount
+				local offset = Vector3.new(math.cos(angle) * 20, 0, math.sin(angle) * 20)
+				local troopSpawnPos = spawnPoint.Position + offset
+				UnitManager.createUnit(troopType, player.UserId, troopSpawnPos, factionData.Name)
+			end
+			GameManagerDebug:info(`Spawned {troopCount} troops for {player.Name}`)
+		else
+			-- TODO: Queue troops to spawn after peace time ends
+			-- For now, just log that troops will spawn later
+			GameManagerDebug:info(`{troopCount} troops queued for {player.Name} (will spawn after peace time)`)
+		end
+	end
+
+	-- 3. Spawn resource nodes in distinct areas around the spawn
+	-- Wooded area (northwest of spawn)
+	local woodAreaCenter = spawnPoint.Position + Vector3.new(-80, 0, 80)
+	ResourceNodeManager.spawnNodesNearPosition(woodAreaCenter, 60, "Wood", 25)
+
+	-- Stone area (northeast of spawn)
+	local stoneAreaCenter = spawnPoint.Position + Vector3.new(80, 0, 80)
+	ResourceNodeManager.spawnNodesNearPosition(stoneAreaCenter, 50, "Stone", 20)
+
+	-- Fertile land (southwest of spawn)
+	local fertileAreaCenter = spawnPoint.Position + Vector3.new(-80, 0, -80)
+	ResourceNodeManager.spawnNodesNearPosition(fertileAreaCenter, 50, "Food", 15)
+
+	-- Iron area (southeast of spawn)
+	local ironAreaCenter = spawnPoint.Position + Vector3.new(80, 0, -80)
+	ResourceNodeManager.spawnNodesNearPosition(ironAreaCenter, 40, "Iron_Ore", 12)
 
 	GameManagerDebug:info(
-		`Spawned Keep, King, {factionData.StartingPeasants} peasants, and resource nodes for {player.Name} + factionData {factionData.Name}`
+		`Spawned {factionData.StartingPeasants} peasants and resource nodes for {player.Name} in {factionData.Name}`
 	)
 end
 
@@ -241,6 +300,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		local vikingRaidsEnabled = settings.vikingRaids or false
 		local peaceTimeStr = settings.peaceTime or "10 minutes"
 		local selectedMap = settings.map or "ClassicPlains"
+		local showTutorial = if settings.showTutorial ~= nil then settings.showTutorial else true
 
 		-- Set the active map and configure SpawnManager
 		if not MapManager.setMap(selectedMap) then
@@ -291,13 +351,16 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 
 		GameManagerDebug:info(`Assigned {player.Name} to Quadrant {quadrant} ({factionName})`)
 
-		-- Set starting resources
-		for resource, amount in pairs(factionData.StartingResources) do
-			playerData.Resources[resource] = amount
-		end
+		-- Set starting resources dynamically based on lobby settings
+		playerData.Resources.Wood = calculateStartingResources(settings.startingResources or "Standard", "Wood")
+		playerData.Resources.Stone = calculateStartingResources(settings.startingResources or "Standard", "Stone")
+		playerData.Resources.Gold = calculateStartingResources(settings.startingGold or "Standard", "Gold")
+		playerData.Resources.Food = calculateStartingResources(settings.startingFood or "Standard", "Food")
+		playerData.Resources.Iron_Bars = calculateStartingResources(settings.startingResources or "Standard", "Iron_Bars")
+		playerData.Resources.Weapons = calculateStartingResources(settings.startingResources or "Standard", "Weapons")
 
 		-- Spawn initial setup with quadrant spawn point
-		spawnInitialSetup(player, factionData, quadrantSpawn)
+		spawnInitialSetup(player, factionData, quadrantSpawn, settings)
 
 		-- Load character now (Players.CharacterAutoLoads is false)
 		player:LoadCharacter()
@@ -313,6 +376,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		GameEvent:FireClient(player, "GameStarted", {
 			faction = factionName,
 			resources = playerData.Resources,
+			showTutorial = showTutorial,
 		})
 
 		-- Send immediate economy dashboard update
@@ -360,6 +424,10 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				local building = BuildingManager.createBuilding(player, data.buildingName, data.cframe)
 
 				if building then
+					-- Notify client that building was placed (for tutorial progression)
+					GameEvent:FireClient(player, "BuildingPlaced", {
+						buildingType = data.buildingName,
+					})
 					-- If it's a production building, auto-assign a worker
 					if buildingInfo.requires_worker then
 						-- Find a free peasant

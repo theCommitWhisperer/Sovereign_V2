@@ -38,10 +38,14 @@ function ResourceDisplay:render()
 			Name = resourceName .. "Frame",
 			Size = UDim2.new(0, 85, 1, -6),
 			BackgroundColor3 = UIConfig.HUD.ResourceBackgroundColor,
-			BorderSizePixel = 1,
-			BorderColor3 = UIConfig.HUD.ResourceBorderColor,
+			BorderSizePixel = 0,
 			LayoutOrder = i,
 		}, {
+			Border = React.createElement("UIStroke", {
+				Color = UIConfig.HUD.ResourceBorderColor,
+				Thickness = UIConfig.HUD.BorderThickness,
+			}),
+
 			Padding = React.createElement("UIPadding", {
 				PaddingTop = UDim.new(0, 3),
 				PaddingBottom = UDim.new(0, 3),
@@ -59,7 +63,7 @@ function ResourceDisplay:render()
 				Size = UDim2.new(0, UIConfig.HUD.ResourceIconSize, 0, UIConfig.HUD.ResourceIconSize),
 				BackgroundTransparency = 1,
 				Text = icon,
-				Font = Enum.Font.Gotham,
+				FontFace = UIConfig.Font.Default,
 				TextSize = 16,
 			}),
 
@@ -67,7 +71,7 @@ function ResourceDisplay:render()
 				Size = UDim2.new(1, -(UIConfig.HUD.ResourceIconSize + 4), 1, 0),
 				BackgroundTransparency = 1,
 				Text = tostring(math.floor(amount)),
-				Font = Enum.Font.GothamBold,
+				FontFace = UIConfig.Font.Title,
 				TextSize = 14,
 				TextColor3 = UIConfig.HUD.ResourceTextColor,
 				TextXAlignment = Enum.TextXAlignment.Left,

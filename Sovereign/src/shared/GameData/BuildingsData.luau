@@ -7,6 +7,7 @@ export type BuildingData = {
 	model_asset_name: string?,
 	type: string,
 	subtype: string,
+	description: string,
 	cost: { [string]: number },
 	construction: { build_time_seconds: number },
 	size: Vector3,
@@ -32,6 +33,7 @@ BuildingsData.Keep = {
 	model_asset_name = nil,
 	type = "Building",
 	subtype = "Main Building",
+	description = "The heart of your settlement. If it's destroyed, you are defeated.",
 	cost = { Wood = 0 },
 	construction = { build_time_seconds = 0 },
 	size = Vector3.new(20, 15, 20),
@@ -44,14 +46,15 @@ BuildingsData.Keep = {
 		Weapons = 500,
 	},
 	components = {},
-	can_train_units = { "Peasant" }, -- ADD THIS
-	max_queue_size = 5, -- ADD THIS - Maximum units in training queue
+	can_train_units = { "Peasant" },
+	max_queue_size = 5,
 } :: BuildingData
 
 BuildingsData.Storehouse = {
 	model_asset_name = nil,
 	type = "Building",
 	subtype = "Storage",
+	description = "Increases your storage capacity for building materials and weapons.",
 	cost = { Wood = 20, Stone = 5 },
 	construction = { build_time_seconds = 10 },
 	size = Vector3.new(12, 10, 12),

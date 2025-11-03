@@ -1,10 +1,11 @@
 -- thecommitwhisperer/sovereign_v2/Sovereign_V2-a5a2c87f4791d0aeedd3f50cf89de31685a4f9fb/Sovereign/src/ui/UIConfig.luau
 local UIConfig = {
 	Font = {
-		Default = Font.new("rbxasset://fonts/families/IndieFlower.json"),
-		Title = Font.new("rbxasset://fonts/families/IndieFlower.json"),
+		Default = Font.new("rbxasset://fonts/families/Fondamento.json"),
+		Title = Font.new("rbxasset://fonts/families/Fondamento.json", Enum.FontWeight.Bold),
+		Medieval = Font.new("rbxasset://fonts/families/Fondamento.json"),
 		Button = {
-			Default = Font.new("rbxasset://fonts/families/IndieFlower.json"),
+			Default = Font.new("rbxasset://fonts/families/Fondamento.json"),
 		},
 	},
 	Color = {
@@ -25,6 +26,13 @@ local UIConfig = {
 	HUD = {
 		-- NEW LAYOUT: Top bar with buttons + stats, Bottom bar with controls + content area
 		-- Color Scheme: Tundora (#4C3E3E), Don Juan (#5A4E4E), Opium (#8A6A6A), Tan (#C7A67A), Whiskey (#D1945C)
+
+		-- Medieval Styling
+		BorderThickness = 2,
+		StrokeColor = Color3.fromRGB(199, 166, 122), -- Tan - for ornamental borders
+		StrokeThickness = 1.5,
+		AccentGold = Color3.fromRGB(218, 165, 32), -- Goldenrod for highlights
+		DarkWood = Color3.fromRGB(61, 43, 31), -- Dark wood tone
 
 		-- Top Bar: MENU | STATS (left), Army/Honor/Glory/Date/Gold/Food/Pop (center)
 		TopBarHeight = 45,
@@ -111,6 +119,12 @@ local UIConfig = {
 		FormationButtonSize = 50,
 		FormationButtonBackground = Color3.fromRGB(138, 106, 106), -- Opium
 		FormationButtonBorder = Color3.fromRGB(76, 62, 62), -- Tundora
+
+		-- Resource Display
+		ResourceBackgroundColor = Color3.fromRGB(61, 43, 31), -- Dark wood
+		ResourceBorderColor = Color3.fromRGB(199, 166, 122), -- Tan border
+		ResourceTextColor = Color3.fromRGB(255, 245, 220), -- Warm white
+		ResourceIconSize = 18,
 	},
 	LobbyPage = {
 		-- Panel Styling

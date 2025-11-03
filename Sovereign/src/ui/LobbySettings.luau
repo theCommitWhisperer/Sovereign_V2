@@ -78,6 +78,7 @@ local LobbySettings = {
 
 	-- Settings that modify core gameplay mechanics
 	GameplayModifiers = {
+		{ id = "showTutorial", label = "Show Tutorial", type = "toggle", defaultValue = true },
 		{ id = "legendsMode", label = "Legends Mode", type = "toggle", defaultValue = false },
 		{ id = "unitMorale", label = "Unit Morale", type = "toggle", defaultValue = true },
 		{

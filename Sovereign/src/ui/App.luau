@@ -22,6 +22,7 @@ function App:init()
 	AppDebug:info("App:init() called.")
 	self:setState({
 		route = "mainMenu", -- Default screen
+		gameStartData = nil, -- Store GameStarted data to pass to HUD
 	})
 
 	self.tooltipRef = React.createRef()
@@ -41,11 +42,18 @@ function App:init()
 
 	self.gameEvent.OnClientEvent:Connect(function(action, data)
 		if action == "GameStarted" then
-			AppDebug:info("Game started! Switching to HUD.")
-			self:setState({ route = "hud" })
+			AppDebug:info("Game started! Switching to HUD.", data)
+			-- Store the game start data to pass to HUD
+			self:setState({
+				route = "hud",
+				gameStartData = data
+			})
 		elseif action == "GameLeft" then
 			AppDebug:info("Game left! Switching to main menu.")
-			self:setState({ route = "mainMenu" })
+			self:setState({
+				route = "mainMenu",
+				gameStartData = nil
+			})
 		end
 	end)
 
@@ -67,6 +75,7 @@ function App:render()
 			routeProps = {
 				navigate = self.navigate,
 				tooltip = tooltipApi, -- Pass tooltip API to all routes
+				gameStartData = self.state.gameStartData, -- Pass game start data to HUD
 			},
 		}),
 		Tooltip = React.createElement(Tooltip, {
