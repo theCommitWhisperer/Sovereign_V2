@@ -142,11 +142,68 @@ local function findUnit(unitId: string): Model?
 	return nil
 end
 
+-- Helper function to setup King health monitoring
+local function setupKingHealthMonitoring(player: Player, character: Model)
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return
+	end
+
+	-- Send initial health update
+	GameEvent:FireClient(player, "KingHealthUpdate", {
+		health = humanoid.Health,
+		maxHealth = humanoid.MaxHealth,
+	})
+
+	-- Listen for health changes
+	local healthConnection = humanoid.HealthChanged:Connect(function(health)
+		GameEvent:FireClient(player, "KingHealthUpdate", {
+			health = math.floor(health),
+			maxHealth = humanoid.MaxHealth,
+		})
+	end)
+
+	-- Handle death
+	local deathConnection = humanoid.Died:Connect(function()
+		GameManagerDebug:warn(`King {player.Name} has died!`)
+		GameEvent:FireClient(player, "KingHealthUpdate", {
+			health = 0,
+			maxHealth = humanoid.MaxHealth,
+		})
+		-- TODO: Implement death consequences (respawn, game over, etc.)
+	end)
+
+	-- Clean up connections when character is removed
+	character.AncestryChanged:Connect(function(_, parent)
+		if not parent then
+			healthConnection:Disconnect()
+			deathConnection:Disconnect()
+		end
+	end)
+
+	GameManagerDebug:info(`King health monitoring setup for {player.Name}`)
+end
+
 -- Player joined - create their data
 Players.PlayerAdded:Connect(function(player)
 	PlayerManager.create(player)
 	FogOfWarManager.init(player)
 	GameManagerDebug:info(`{player.Name} joined - character will spawn when game starts`)
+
+	-- Monitor character respawns for health bar updates
+	player.CharacterAdded:Connect(function(character)
+		local playerData = PlayerManager.get(player)
+		if playerData and playerData.GameState == "InGame" then
+			-- Re-tag character as King after respawn
+			character:SetAttribute("Owner", player.UserId)
+			character:SetAttribute("UnitType", "King")
+			character:SetAttribute("IsKing", true)
+
+			-- Setup health monitoring for respawned character
+			setupKingHealthMonitoring(player, character)
+			GameManagerDebug:info(`{player.Name} character respawned and re-tagged as King`)
+		end
+	end)
 end)
 
 -- Player left - clean up
@@ -192,7 +249,10 @@ end
 local function spawnInitialSetup(player: Player, factionData: any, spawnPointOverride: CFrame?, lobbySettings: any)
 	local spawnPoint = spawnPointOverride or factionData.SpawnPoint
 
-	-- 1. Spawn peasants around the spawn point
+	-- 1. Player's character IS the King - we'll tag it when character loads
+	GameManagerDebug:info(`Player {player.Name} will be the King (character-based)`)
+
+	-- 2. Spawn peasants around the spawn point
 	for i = 1, factionData.StartingPeasants do
 		local angle = (math.pi * 2 * i) / factionData.StartingPeasants
 		local offset = Vector3.new(math.cos(angle) * 15, 0, math.sin(angle) * 15)
@@ -200,7 +260,7 @@ local function spawnInitialSetup(player: Player, factionData: any, spawnPointOve
 		UnitManager.createUnit("Peasant", player.UserId, peasantSpawnPos, factionData.Name)
 	end
 
-	-- 2. Spawn starting troops (if peace time is off, otherwise queue them)
+	-- 3. Spawn starting troops (if peace time is off, otherwise queue them)
 	local troopCount = calculateTroopCount(lobbySettings.startingTroops or "Standard")
 	local troopTypes = {"Archer", "Knight", "Light_Cavalry", "Macemen"}
 
@@ -225,7 +285,7 @@ local function spawnInitialSetup(player: Player, factionData: any, spawnPointOve
 		end
 	end
 
-	-- 3. Spawn resource nodes in distinct areas around the spawn
+	-- 4. Spawn resource nodes in distinct areas around the spawn
 	-- Wooded area (northwest of spawn)
 	local woodAreaCenter = spawnPoint.Position + Vector3.new(-80, 0, 80)
 	ResourceNodeManager.spawnNodesNearPosition(woodAreaCenter, 60, "Wood", 25)
@@ -370,7 +430,16 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		local character = player.Character or player.CharacterAdded:Wait()
 		local humanoidRootPart = character:WaitForChild("HumanoidRootPart") :: BasePart
 		humanoidRootPart.CFrame = quadrantSpawn * CFrame.new(0, 3, 0)
-		GameManagerDebug:info(`Character spawned and teleported {player.Name} to quadrant {quadrant}`)
+
+		-- Tag the player's character as King (can't change name due to security restrictions)
+		character:SetAttribute("Owner", player.UserId)
+		character:SetAttribute("UnitType", "King")
+		character:SetAttribute("IsKing", true)
+
+		GameManagerDebug:info(`Character spawned and teleported {player.Name} to quadrant {quadrant} (tagged as King)`)
+
+		-- Setup King health monitoring
+		setupKingHealthMonitoring(player, character)
 
 		-- Notify client
 		GameEvent:FireClient(player, "GameStarted", {
@@ -409,7 +478,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		GameManagerDebug:info(`{player.Name} placing building:`, data)
 
 		-- Client confirmed building placement
-		if typeof(data) == "table" and data.buildingName and data.cframe then
+		if typeof(data) == "table" and data.buildingName and data.position then
 			local buildingInfo = GameData.Buildings[data.buildingName]
 			if not buildingInfo then
 				GameManagerDebug:warn(`Unknown building: {data.buildingName}`)
@@ -420,8 +489,12 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				-- Deduct resources
 				PlayerManager.deductResources(player, buildingInfo.cost)
 
+				-- Create the CFrame from position and rotation
+				local rotation = data.rotationY or 0
+				local cframe = CFrame.new(data.position) * CFrame.Angles(0, math.rad(rotation), 0)
+
 				-- Create the building
-				local building = BuildingManager.createBuilding(player, data.buildingName, data.cframe)
+				local building = BuildingManager.createBuilding(player, data.buildingName, cframe)
 
 				if building then
 					-- Notify client that building was placed (for tutorial progression)
@@ -552,6 +625,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				end
 			end
 		end
+	-- Removed MoveKing action - King movement is now handled by Roblox's built-in character controls
 	elseif action == "StartTraining" then
 		-- Handle unit training request
 		if typeof(data) == "table" and data.buildingId and data.unitType then

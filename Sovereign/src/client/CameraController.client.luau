@@ -1,38 +1,27 @@
 --!strict
--- CameraController: Sets up RTS-style camera controls
+-- CameraController: Studio-style hybrid camera system with RTS and King modes
+-- Press Tab to toggle between modes
+-- Now using modular StudioCameraController for better mobile support
 
-local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
-local camera = Workspace.CurrentCamera
 
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local CameraDebug = DebugManager.createChannel("Camera", false)
+local CameraDebug = DebugManager.createChannel("Camera", true)
+
+-- Import the new Studio Camera Controller
+local StudioCameraController = require(script.Parent.Camera.StudioCameraController)
 
 -- Wait for game to start
 local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
 local gameEvent = RemoteEvents:WaitForChild("GameEvent")
 
+-- Create camera controller instance
+local cameraController = nil
 local cameraEnabled = false
-
--- Camera settings (adjusted for 1000x1000 map)
-local CAMERA_HEIGHT = 50 -- Start at medium height
-local CAMERA_ANGLE = 70 -- More top-down view for better overview
-local CAMERA_DISTANCE = 40
-local PAN_SPEED = 1.0 -- Faster panning for larger map
-local ZOOM_SPEED = 10 -- Faster zoom
-local MIN_HEIGHT = 30 -- Minimum zoom for detail work
-local MAX_HEIGHT = 400 -- Maximum zoom to see entire map
-
--- Camera state
-local cameraTarget = Vector3.new(0, 0, 0)
-local currentHeight = CAMERA_HEIGHT
-local isPanning = false
-local lastMousePosition = Vector2.new()
 
 -- Initialize camera when game starts
 gameEvent.OnClientEvent:Connect(function(action, data)
@@ -43,93 +32,43 @@ gameEvent.OnClientEvent:Connect(function(action, data)
 		local character = player.Character or player.CharacterAdded:Wait()
 		local humanoidRootPart = character:WaitForChild("HumanoidRootPart") :: BasePart
 
-		-- Set camera to Scriptable
-		camera.CameraType = Enum.CameraType.Scriptable
+		-- Create and initialize the new camera controller
+		cameraController = StudioCameraController.new()
 
-		-- Initialize camera position
-		cameraTarget = humanoidRootPart.Position
-		camera.CFrame = CFrame.new(cameraTarget + Vector3.new(0, currentHeight, CAMERA_DISTANCE), cameraTarget)
+		-- Store spawn position and start camera above it
+		local spawnPosition = humanoidRootPart.Position
+		cameraController:Initialize(spawnPosition)
 
-		CameraDebug:info("RTS camera initialized")
+		CameraDebug:info("Camera system initialized with StudioCameraController", {
+			spawnPos = spawnPosition,
+			isMobile = cameraController.inputHandler:IsMobile(),
+			isDesktop = cameraController.inputHandler:IsDesktop(),
+		})
+
+		-- Optional: Set up camera bounds (if you have a playable area defined)
+		-- Example: cameraController:SetBoundsFromPart(workspace.MapBounds)
 	end
 end)
 
--- Handle mouse input for panning
+-- Handle Tab key for mode switching
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if not cameraEnabled or gameProcessed then
+	if input.KeyCode == Enum.KeyCode.Tab and cameraEnabled and cameraController then
+		CameraDebug:info("Tab pressed, switching camera mode")
+		cameraController:ToggleCameraMode()
 		return
 	end
 
-	if input.UserInputType == Enum.UserInputType.MouseButton3 then -- Middle mouse
-		isPanning = true
-		lastMousePosition = UserInputService:GetMouseLocation()
+	-- Handle Reset Camera (Home key)
+	if input.KeyCode == Enum.KeyCode.Home and cameraEnabled and cameraController then
+		CameraDebug:info("Home pressed, resetting camera")
+		local character = player.Character
+		if character then
+			local humanoidRootPart = character:FindFirstChild("HumanoidRootPart") :: BasePart
+			if humanoidRootPart then
+				cameraController:ResetCamera(humanoidRootPart.Position)
+			end
+		end
 	end
 end)
 
-UserInputService.InputEnded:Connect(function(input)
-	if not cameraEnabled then
-		return
-	end
-
-	if input.UserInputType == Enum.UserInputType.MouseButton3 then
-		isPanning = false
-	end
-end)
-
--- Handle zoom with mouse wheel
-UserInputService.InputChanged:Connect(function(input, gameProcessed)
-	if not cameraEnabled or gameProcessed then
-		return
-	end
-
-	if input.UserInputType == Enum.UserInputType.MouseWheel then
-		currentHeight = math.clamp(currentHeight - input.Position.Z * ZOOM_SPEED, MIN_HEIGHT, MAX_HEIGHT)
-	end
-end)
-
--- Update camera every frame
-RunService.RenderStepped:Connect(function(deltaTime)
-	if not cameraEnabled then
-		return
-	end
-
-	-- Pan camera if middle mouse is held
-	if isPanning then
-		local currentMousePosition = UserInputService:GetMouseLocation()
-		local delta = currentMousePosition - lastMousePosition
-		lastMousePosition = currentMousePosition
-
-		-- Convert screen space movement to world space
-		local right = camera.CFrame.RightVector
-		local forward = (camera.CFrame.LookVector * Vector3.new(1, 0, 1)).Unit
-
-		cameraTarget = cameraTarget - (right * delta.X * PAN_SPEED) + (forward * delta.Y * PAN_SPEED)
-	end
-
-	-- WASD camera movement
-	local moveDirection = Vector3.new()
-	if UserInputService:IsKeyDown(Enum.KeyCode.W) then
-		moveDirection = moveDirection + Vector3.new(0, 0, -1)
-	end
-	if UserInputService:IsKeyDown(Enum.KeyCode.S) then
-		moveDirection = moveDirection + Vector3.new(0, 0, 1)
-	end
-	if UserInputService:IsKeyDown(Enum.KeyCode.A) then
-		moveDirection = moveDirection + Vector3.new(-1, 0, 0)
-	end
-	if UserInputService:IsKeyDown(Enum.KeyCode.D) then
-		moveDirection = moveDirection + Vector3.new(1, 0, 0)
-	end
-
-	if moveDirection.Magnitude > 0 then
-		-- Scale movement speed based on zoom level (faster when zoomed out)
-		local moveSpeed = 50 + (currentHeight - MIN_HEIGHT) * 2
-		cameraTarget = cameraTarget + (moveDirection.Unit * deltaTime * moveSpeed)
-	end
-
-	-- Calculate camera position based on angle and height
-	local angleRad = math.rad(CAMERA_ANGLE)
-	local offset = Vector3.new(0, currentHeight, currentHeight / math.tan(angleRad))
-
-	camera.CFrame = CFrame.new(cameraTarget + offset, cameraTarget)
-end)
+CameraDebug:info("Camera controller loaded with Studio-style controls")

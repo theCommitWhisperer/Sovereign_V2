@@ -64,6 +64,11 @@ function HUD:init()
 		tutorialStep = 1, -- Current step (1=Keep, 2=Storehouse, 3=Granary)
 		buildingsCompleted = {}, -- Track which required buildings have been built
 		tutorialModalHidden = false, -- Temporarily hide modal during placement
+		-- Camera mode
+		cameraMode = "RTS", -- Current camera mode: "RTS" or "King"
+		-- King health
+		kingHealth = 100,
+		kingMaxHealth = 100,
 	})
 
 	-- Get game event reference
@@ -152,6 +157,18 @@ function HUD:init()
 					economyHealth = data.snapshot.economyHealth,
 				})
 				self:setState({ economySnapshot = data.snapshot })
+			end
+		elseif action == "CameraModeChanged" then
+			-- Camera mode changed (RTS/King)
+			if typeof(data) == "string" then
+				HUDDebug:info("Camera mode changed", { mode = data })
+				self:setState({ cameraMode = data })
+			end
+		elseif action == "KingHealthUpdate" then
+			-- King health changed
+			if data.health and data.maxHealth then
+				HUDDebug:info("King health updated", { health = data.health, maxHealth = data.maxHealth })
+				self:setState({ kingHealth = data.health, kingMaxHealth = data.maxHealth })
 			end
 		elseif action == "VikingRaid" then
 			-- Viking raid notification
@@ -679,6 +696,102 @@ function HUD:render()
 					self:setState({ showStatsModal = not self.state.showStatsModal })
 				end,
 			}),
+
+			-- Camera Mode Indicator (next to STATS)
+			CameraModeIndicator = React.createElement("Frame", {
+				Size = UDim2.new(0, UIConfig.HUD.TopButtonWidth, 0, UIConfig.HUD.TopButtonHeight),
+				Position = UDim2.new(0, (UIConfig.HUD.TopButtonWidth + 5) * 2 + 5, 0, 5),
+				BackgroundColor3 = self.state.cameraMode == "King" and Color3.fromRGB(90, 60, 40) or UIConfig.HUD.TopButtonBackground,
+				BorderSizePixel = 2,
+				BorderColor3 = self.state.cameraMode == "King" and UIConfig.HUD.AccentGold or UIConfig.HUD.TopButtonBorder,
+			}, {
+				Icon = React.createElement("TextLabel", {
+					Size = UDim2.new(1, 0, 0.5, 0),
+					Position = UDim2.fromScale(0, 0),
+					BackgroundTransparency = 1,
+					Text = self.state.cameraMode == "King" and "👑" or "🗺️",
+					Font = Enum.Font.GothamBold,
+					TextSize = 18,
+					TextColor3 = Color3.fromRGB(255, 255, 255),
+					TextYAlignment = Enum.TextYAlignment.Center,
+				}),
+				Label = React.createElement("TextLabel", {
+					Size = UDim2.new(1, 0, 0.5, 0),
+					Position = UDim2.fromScale(0, 0.5),
+					BackgroundTransparency = 1,
+					Text = self.state.cameraMode == "King" and "KING" or "RTS",
+					Font = Enum.Font.GothamBold,
+					TextSize = 10,
+					TextColor3 = self.state.cameraMode == "King" and UIConfig.HUD.AccentGold or UIConfig.HUD.PanelTextColor,
+					TextYAlignment = Enum.TextYAlignment.Top,
+				}),
+				Hint = React.createElement("TextLabel", {
+					Size = UDim2.new(1, 0, 0, 12),
+					Position = UDim2.new(0, 0, 1, 2),
+					BackgroundTransparency = 1,
+					Text = "Tab to toggle",
+					Font = Enum.Font.Gotham,
+					TextSize = 9,
+					TextColor3 = Color3.fromRGB(150, 150, 150),
+					TextYAlignment = Enum.TextYAlignment.Top,
+				}),
+			}),
+
+			-- King Health Bar (only visible in King mode)
+			KingHealthBar = self.state.cameraMode == "King" and React.createElement("Frame", {
+				Size = UDim2.new(0, UIConfig.HUD.TopButtonWidth + 80, 0, 30),
+				Position = UDim2.new(0, (UIConfig.HUD.TopButtonWidth + 5) * 3 + 10, 0, 5),
+				BackgroundColor3 = Color3.fromRGB(40, 40, 40),
+				BorderSizePixel = 2,
+				BorderColor3 = UIConfig.HUD.AccentGold,
+			}, {
+				-- Health icon
+				Icon = React.createElement("TextLabel", {
+					Size = UDim2.fromOffset(24, 24),
+					Position = UDim2.fromOffset(3, 3),
+					BackgroundTransparency = 1,
+					Text = "❤️",
+					Font = Enum.Font.GothamBold,
+					TextSize = 16,
+					TextXAlignment = Enum.TextXAlignment.Center,
+					TextYAlignment = Enum.TextYAlignment.Center,
+				}),
+
+				-- Health bar container
+				BarContainer = React.createElement("Frame", {
+					Size = UDim2.new(1, -60, 0, 16),
+					Position = UDim2.fromOffset(30, 7),
+					BackgroundColor3 = Color3.fromRGB(20, 20, 20),
+					BorderSizePixel = 1,
+					BorderColor3 = Color3.fromRGB(100, 100, 100),
+				}, {
+					-- Health bar fill (green to red based on percentage)
+					HealthBar = React.createElement("Frame", {
+						Size = UDim2.fromScale(self.state.kingHealth / self.state.kingMaxHealth, 1),
+						BackgroundColor3 = self.state.kingHealth / self.state.kingMaxHealth > 0.5
+							and Color3.fromRGB(0, 200, 0)
+							or self.state.kingHealth / self.state.kingMaxHealth > 0.25
+							and Color3.fromRGB(255, 165, 0)
+							or Color3.fromRGB(200, 0, 0),
+						BorderSizePixel = 0,
+					}),
+				}),
+
+				-- Health text (e.g., "100/100")
+				HealthText = React.createElement("TextLabel", {
+					Size = UDim2.new(1, -35, 1, 0),
+					Position = UDim2.fromOffset(30, 0),
+					BackgroundTransparency = 1,
+					Text = string.format("%d/%d", self.state.kingHealth, self.state.kingMaxHealth),
+					Font = Enum.Font.GothamBold,
+					TextSize = 11,
+					TextColor3 = Color3.fromRGB(255, 255, 255),
+					TextXAlignment = Enum.TextXAlignment.Center,
+					TextYAlignment = Enum.TextYAlignment.Center,
+					TextStrokeTransparency = 0.5,
+					TextStrokeColor3 = Color3.fromRGB(0, 0, 0),
+				}),
+			}) or nil,
 
 			-- Command Input TextBox (below MENU/STATS buttons)
 			CommandInput = React.createElement("TextBox", {
