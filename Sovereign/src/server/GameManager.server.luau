@@ -689,8 +689,8 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 						-- Remove from player's building list
 						table.remove(playerData.Buildings, i)
 
-						-- Destroy the building model
-						building:Destroy()
+						-- Use BuildingManager to properly delete (handles walls and storage)
+						BuildingManager.deleteBuilding(building)
 
 						GameManagerDebug:info(`Successfully deleted building {data.buildingId}`)
 						break

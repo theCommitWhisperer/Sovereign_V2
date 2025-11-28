@@ -344,29 +344,151 @@ BuildingsData.Trading_Post = {
 -- DEFENSIVE BUILDINGS
 -- ========================================
 
+-- ========================================
+-- STONE WALL PIECES (Auto-generated variants)
+-- ========================================
+
 BuildingsData.Stone_Wall = {
-	model_asset_name = nil,
-	type = "Building",
+	model_asset_name = "stoneWallStraight",
+	type = "Wall",
 	subtype = "Defense",
+	description = "Strong stone wall for castle defense",
 	cost = { Stone = 10 },
 	construction = { build_time_seconds = 8 },
-	size = Vector3.new(8, 6, 2), -- Long and thin
+	size = Vector3.new(8.5, 6, 2), -- Slightly wider for overlap (0.25 studs on each side)
 	storage_capacity = {},
 	components = {},
-	defense_value = 50, -- Provides defensive bonus
+	defense_value = 50,
 	deletion_confirmation_required = false,
 } :: BuildingData
 
-BuildingsData.Wooden_Palisade = {
-	model_asset_name = nil,
-	type = "Building",
+BuildingsData.Stone_Wall_Straight = {
+	model_asset_name = "stoneWallStraight",
+	type = "Wall",
 	subtype = "Defense",
-	cost = { Wood = 5 },
-	construction = { build_time_seconds = 5 },
-	size = Vector3.new(8, 4, 2), -- Wooden fence
+	description = "Straight stone wall section",
+	cost = { Stone = 10 },
+	construction = { build_time_seconds = 8 },
+	size = Vector3.new(8.5, 6, 2), -- Slightly wider for overlap (0.25 studs on each side)
 	storage_capacity = {},
 	components = {},
-	defense_value = 20, -- Weaker than stone
+	defense_value = 50,
+	deletion_confirmation_required = false,
+} :: BuildingData
+
+BuildingsData.Stone_Wall_Corner = {
+	model_asset_name = "stoneWall90degreeTurn",
+	type = "Wall",
+	subtype = "Defense",
+	description = "Stone wall corner piece",
+	cost = { Stone = 10 },
+	construction = { build_time_seconds = 8 },
+	size = Vector3.new(6, 6, 6),
+	storage_capacity = {},
+	components = {},
+	defense_value = 50,
+	deletion_confirmation_required = false,
+} :: BuildingData
+
+BuildingsData.Stone_Wall_T = {
+	model_asset_name = "stoneWall3way",
+	type = "Wall",
+	subtype = "Defense",
+	description = "Stone wall T-junction",
+	cost = { Stone = 10 },
+	construction = { build_time_seconds = 8 },
+	size = Vector3.new(8, 6, 8),
+	storage_capacity = {},
+	components = {},
+	defense_value = 50,
+	deletion_confirmation_required = false,
+} :: BuildingData
+
+BuildingsData.Stone_Wall_Cross = {
+	model_asset_name = "stoneWall4way",
+	type = "Wall",
+	subtype = "Defense",
+	description = "Stone wall 4-way intersection",
+	cost = { Stone = 10 },
+	construction = { build_time_seconds = 8 },
+	size = Vector3.new(8, 6, 8),
+	storage_capacity = {},
+	components = {},
+	defense_value = 50,
+	deletion_confirmation_required = false,
+} :: BuildingData
+
+-- ========================================
+-- WOODEN PALISADE PIECES (Auto-generated variants)
+-- ========================================
+
+BuildingsData.Wooden_Palisade = {
+	model_asset_name = nil,
+	type = "Wall",
+	subtype = "Defense",
+	description = "Wooden palisade wall for early defense",
+	cost = { Wood = 5 },
+	construction = { build_time_seconds = 5 },
+	size = Vector3.new(8, 4, 2),
+	storage_capacity = {},
+	components = {},
+	defense_value = 20,
+	deletion_confirmation_required = false,
+} :: BuildingData
+
+BuildingsData.Wooden_Palisade_Straight = {
+	model_asset_name = nil,
+	type = "Wall",
+	subtype = "Defense",
+	description = "Straight wooden palisade section",
+	cost = { Wood = 5 },
+	construction = { build_time_seconds = 5 },
+	size = Vector3.new(8, 4, 2),
+	storage_capacity = {},
+	components = {},
+	defense_value = 20,
+	deletion_confirmation_required = false,
+} :: BuildingData
+
+BuildingsData.Wooden_Palisade_Corner = {
+	model_asset_name = nil,
+	type = "Wall",
+	subtype = "Defense",
+	description = "Wooden palisade corner piece",
+	cost = { Wood = 5 },
+	construction = { build_time_seconds = 5 },
+	size = Vector3.new(6, 4, 6),
+	storage_capacity = {},
+	components = {},
+	defense_value = 20,
+	deletion_confirmation_required = false,
+} :: BuildingData
+
+BuildingsData.Wooden_Palisade_T = {
+	model_asset_name = nil,
+	type = "Wall",
+	subtype = "Defense",
+	description = "Wooden palisade T-junction",
+	cost = { Wood = 5 },
+	construction = { build_time_seconds = 5 },
+	size = Vector3.new(8, 4, 8),
+	storage_capacity = {},
+	components = {},
+	defense_value = 20,
+	deletion_confirmation_required = false,
+} :: BuildingData
+
+BuildingsData.Wooden_Palisade_Cross = {
+	model_asset_name = nil,
+	type = "Wall",
+	subtype = "Defense",
+	description = "Wooden palisade 4-way intersection",
+	cost = { Wood = 5 },
+	construction = { build_time_seconds = 5 },
+	size = Vector3.new(8, 4, 8),
+	storage_capacity = {},
+	components = {},
+	defense_value = 20,
 	deletion_confirmation_required = false,
 } :: BuildingData
 
