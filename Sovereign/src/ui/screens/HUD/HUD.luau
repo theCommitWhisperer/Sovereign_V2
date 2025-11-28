@@ -69,6 +69,9 @@ function HUD:init()
 		-- King health
 		kingHealth = 100,
 		kingMaxHealth = 100,
+		-- Wall placement
+		currentWallPiece = "Wall Segment",
+		isPlacingWall = false,
 	})
 
 	-- Get game event reference
@@ -113,6 +116,11 @@ function HUD:init()
 			self:setState({ resources = data.resources })
 		elseif action == "StartPlacement" and typeof(data) == "string" then
 			HUDDebug:info("Server approved placement", { buildingType = data })
+			-- Update HUD state to show wall indicator
+			self:setState({
+				isPlacingBuilding = true,
+				selectedBuilding = data,
+			})
 		elseif action == "TrainingQueueUpdate" then
 			-- Update training queue display
 			if data.buildingId and data.queue then
@@ -200,6 +208,32 @@ function HUD:init()
 
 	-- Listen for building clicks
 	self:setupBuildingSelection()
+
+	-- Listen for wall piece updates from PlacementController via BindableEvent
+	local wallPieceEvent = ReplicatedStorage:FindFirstChild("WallPieceChanged")
+	if not wallPieceEvent then
+		wallPieceEvent = Instance.new("BindableEvent")
+		wallPieceEvent.Name = "WallPieceChanged"
+		wallPieceEvent.Parent = ReplicatedStorage
+	end
+
+	self.wallPieceConnection = wallPieceEvent.Event:Connect(function(data)
+		HUDDebug:info("Wall piece state changed", {
+			oldPiece = self.state.currentWallPiece,
+			newPiece = data.currentPiece,
+			isPlacingWalls = data.isPlacingWalls,
+		})
+		self:setState({
+			currentWallPiece = data.currentPiece,
+			isPlacingWall = data.isPlacingWalls,
+		})
+	end)
+
+	-- Store reference to reset function via BindableFunction
+	local resetWallPieceFunc = ReplicatedStorage:FindFirstChild("ResetWallPiece")
+	if resetWallPieceFunc then
+		self.resetWallPieceFunc = resetWallPieceFunc
+	end
 
 	-- Request queue updates periodically if a building is selected
 	-- Using a reference to track the current building for polling
@@ -612,6 +646,12 @@ function HUD:createCategoryButton(category: string, icon: string)
 		[React.Event.MouseButton1Click] = function()
 			HUDDebug:info(`Category button clicked: {category}`)
 			HUDDebug:info(`Current selectedTrainingBuilding: {tostring(self.state.selectedTrainingBuilding)}`)
+
+			-- Reset wall piece selection when clicking on HUD
+			if self.resetWallPieceFunc then
+				self.resetWallPieceFunc:Invoke()
+			end
+
 			-- Stop polling when switching to building menu
 			self.pollingBuildingId = nil
 			HUDDebug:info(`Stopped polling, pollingBuildingId set to nil`)
@@ -1078,6 +1118,8 @@ function HUD:render()
 					tooltip = self.props.tooltip, -- Pass tooltip API down
 					resources = self.state.resources,
 					selectedCategory = self.state.selectedCategory,
+					currentWallPiece = self.state.currentWallPiece,
+					isPlacingWall = self.state.isPlacingWall,
 					onBuildingSelected = function(buildingName)
 						HUDDebug:info("Building selected for placement", { building = buildingName })
 						self:setState({

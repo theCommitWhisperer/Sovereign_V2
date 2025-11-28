@@ -56,13 +56,23 @@ function BuildingManager.createBuilding(
 	local Assets = ReplicatedStorage:FindFirstChild("Assets")
 	local buildingAssets = Assets and Assets:FindFirstChild("Buildings")
 	local modelAsset = nil
-	
+
 	-- Try to find the specific asset defined in BuildingData, or default to name
 	local assetName = buildingInfo.model_asset_name or buildingName
-	
-	-- Special handling for Wall: Use provided piece type or default to Straight
+
+	-- Special handling for Wall buildings: Use provided piece type or the building's asset
+	local isWallBuilding = buildingName == "Stone_Wall"
+		or buildingName == "Wall_Segment"
+		or buildingName == "Wall_Corner"
+		or buildingName == "Wall_Corner_Reverse"
+		or buildingName == "Wall_Tower"
+		or buildingName == "Wall_Gatehouse"
+		or buildingName == "Ladder_Wall_Segment"
+
 	if buildingName == "Stone_Wall" then
 		assetName = wallPieceType or "Wall Segment"
+	elseif isWallBuilding and buildingInfo.model_asset_name then
+		assetName = buildingInfo.model_asset_name
 	end
 	
 	if buildingAssets then
@@ -112,7 +122,7 @@ function BuildingManager.createBuilding(
 	building:SetAttribute("IsConstructed", true)
 
 	-- For walls, set manual placement attributes BEFORE registering with WallSystem
-	if buildingName == "Stone_Wall" then
+	if isWallBuilding then
 		if wallPieceType then
 			building:SetAttribute("ManualPieceType", wallPieceType)
 		end
@@ -131,7 +141,7 @@ function BuildingManager.createBuilding(
 
 	-- [ADDED] Register with WallSystem if it's a wall
 	building.Parent = BuildingsFolder
-	if buildingName == "Stone_Wall" then
+	if isWallBuilding then
 		WallSystem.registerWall(building)
 	end
 

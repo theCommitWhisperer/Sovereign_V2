@@ -13,6 +13,22 @@ local camera = Workspace.CurrentCamera
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local PlacementDebug = DebugManager.createChannel("Placement", true)
 
+-- Create BindableEvent for wall piece updates to HUD
+local wallPieceEvent = ReplicatedStorage:FindFirstChild("WallPieceChanged")
+if not wallPieceEvent then
+	wallPieceEvent = Instance.new("BindableEvent")
+	wallPieceEvent.Name = "WallPieceChanged"
+	wallPieceEvent.Parent = ReplicatedStorage
+end
+
+-- Create BindableFunction for reset wall piece
+local resetWallPieceFunc = ReplicatedStorage:FindFirstChild("ResetWallPiece")
+if not resetWallPieceFunc then
+	resetWallPieceFunc = Instance.new("BindableFunction")
+	resetWallPieceFunc.Name = "ResetWallPiece"
+	resetWallPieceFunc.Parent = ReplicatedStorage
+end
+
 -- [ADD] At the top with other requires
 local WallSystemVals = {
 	Grid = 8,
@@ -90,6 +106,27 @@ local WALL_PIECES = {
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local KeybindingsManager = require(script.Parent.Camera.KeybindingsManager)
 
+-- Function to reset wall piece selection (called when clicking HUD)
+local function resetWallPieceSelection()
+	wallPieceIndex = 1
+	PlacementDebug:info("Wall piece selection reset to straight segment")
+
+	-- Notify HUD of the change
+	wallPieceEvent:Fire({
+		currentPiece = WALL_PIECES[wallPieceIndex].name,
+		isPlacingWalls = isPlacing and (currentBuildingName == "Stone_Wall"
+			or currentBuildingName == "Wall_Segment"
+			or currentBuildingName == "Wall_Corner"
+			or currentBuildingName == "Wall_Corner_Reverse"
+			or currentBuildingName == "Wall_Tower"
+			or currentBuildingName == "Wall_Gatehouse"
+			or currentBuildingName == "Ladder_Wall_Segment"),
+	})
+end
+
+-- Connect the BindableFunction
+resetWallPieceFunc.OnInvoke = resetWallPieceSelection
+
 -- Clean up ghost building
 local function cleanup()
 	if ghostBuilding then
@@ -99,8 +136,18 @@ local function cleanup()
 	isPlacing = false
 	currentBuildingName = nil
 	manualRotation = 0 -- Reset rotation
-	wallPieceIndex = 1 -- Reset wall piece selection
+	-- DON'T reset wallPieceIndex - keep it persistent!
+	-- wallPieceIndex = 1 -- Reset wall piece selection
 	pivotIndex = 1 -- Reset pivot to center
+
+	-- Notify HUD that placement ended
+	gameEvent:FireServer("PlacementEnded")
+
+	-- Notify HUD that we're no longer placing walls
+	wallPieceEvent:Fire({
+		currentPiece = WALL_PIECES[wallPieceIndex].name,
+		isPlacingWalls = false,
+	})
 end
 
 -- Start placement mode
@@ -118,14 +165,44 @@ local function startPlacement(buildingName: string)
 	isPlacing = true
 	currentBuildingName = buildingName
 
+	-- Notify HUD if placing a wall
+	local isWallBuilding = buildingName == "Stone_Wall"
+		or buildingName == "Wall_Segment"
+		or buildingName == "Wall_Corner"
+		or buildingName == "Wall_Corner_Reverse"
+		or buildingName == "Wall_Tower"
+		or buildingName == "Wall_Gatehouse"
+		or buildingName == "Ladder_Wall_Segment"
+
+	if isWallBuilding then
+		wallPieceEvent:Fire({
+			currentPiece = WALL_PIECES[wallPieceIndex].name,
+			isPlacingWalls = true,
+		})
+	end
+
 	-- Create ghost building
 	local buildingTemplate
-	if buildingName == "Stone_Wall" then
+	-- Use the isWallBuilding variable from above (already defined)
+	if isWallBuilding then
 		local assets = ReplicatedStorage:WaitForChild("Assets")
 		if assets then
 			local buildings = assets:WaitForChild("Buildings")
 			if buildings then
-				buildingTemplate = buildings:FindFirstChild("Wall Segment")
+				-- Map building name to asset name
+				local assetName = "Wall Segment" -- default
+				if buildingName == "Wall_Corner" then
+					assetName = "Wall Corner"
+				elseif buildingName == "Wall_Corner_Reverse" then
+					assetName = "Wall Corner Reverse"
+				elseif buildingName == "Wall_Tower" then
+					assetName = "Tower"
+				elseif buildingName == "Wall_Gatehouse" then
+					assetName = "Gatehouse"
+				elseif buildingName == "Ladder_Wall_Segment" then
+					assetName = "Ladder Wall Segment"
+				end
+				buildingTemplate = buildings:FindFirstChild(assetName)
 			end
 		end
 	end
@@ -233,7 +310,15 @@ local function updateGhostPosition()
 		local snappedPos = Vector3.new(snappedX, groundY + distance_from_pivot_to_floor, snappedZ)
 
 		-- [NEW] Wall Smart Preview Logic
-		if currentBuildingName == "Stone_Wall" then
+		local isWallBuilding = currentBuildingName == "Stone_Wall"
+			or currentBuildingName == "Wall_Segment"
+			or currentBuildingName == "Wall_Corner"
+			or currentBuildingName == "Wall_Corner_Reverse"
+			or currentBuildingName == "Wall_Tower"
+			or currentBuildingName == "Wall_Gatehouse"
+			or currentBuildingName == "Ladder_Wall_Segment"
+
+		if isWallBuilding then
 			local bitmask = 0
 			local params = OverlapParams.new()
 			params.FilterDescendantsInstances = { ghostBuilding, player.Character }
@@ -254,11 +339,21 @@ local function updateGhostPosition()
 					local parentName = p.Parent and p.Parent.Name or "nil"
 					local buildingType = p.Parent and p.Parent:GetAttribute("BuildingType") or "nil"
 					PlacementDebug:info("Part " .. i, { name = p.Name, parent = parentName, type = buildingType })
-					-- Check if it's a wall
-					if p.Parent and p.Parent:GetAttribute("BuildingType") == "Stone_Wall" then
-						bitmask = bitmask + dir.bit
-						PlacementDebug:info("Found neighbor wall, bitmask is now", bitmask)
-						break
+					-- Check if it's any wall type
+					if p.Parent then
+						local isNeighborWall = buildingType == "Stone_Wall"
+							or buildingType == "Wall_Segment"
+							or buildingType == "Wall_Corner"
+							or buildingType == "Wall_Corner_Reverse"
+							or buildingType == "Wall_Tower"
+							or buildingType == "Wall_Gatehouse"
+							or buildingType == "Ladder_Wall_Segment"
+
+						if isNeighborWall then
+							bitmask = bitmask + dir.bit
+							PlacementDebug:info("Found neighbor wall, bitmask is now", bitmask)
+							break
+						end
 					end
 				end
 			end
@@ -269,11 +364,12 @@ local function updateGhostPosition()
 			if wallPieceIndex > 1 then
 				-- Manual piece selection via R key
 				assetName = WALL_PIECES[wallPieceIndex].name
-				rotation = WALL_PIECES[wallPieceIndex].rotation
-				PlacementDebug:info("Using manual wall piece", { asset = assetName, index = wallPieceIndex })
+				rotation = WALL_PIECES[wallPieceIndex].rotation + manualRotation -- Combine manual rotation
+				PlacementDebug:info("Using manual wall piece", { asset = assetName, index = wallPieceIndex, rotation = rotation })
 			else
 				-- Automatic piece selection based on neighbors
 				assetName, rotation = getWallAssetName(bitmask)
+				rotation = rotation + manualRotation -- Add manual rotation to auto-selected piece
 				PlacementDebug:info("Auto-selected wall piece", { asset = assetName, rot = rotation })
 			end
 
@@ -315,8 +411,8 @@ local function updateGhostPosition()
 			end
 
 			-- Apply Position and Rotation
-			local finalRotation = rotation + manualRotation
-			ghostBuilding:PivotTo(CFrame.new(finalPosition) * CFrame.Angles(0, math.rad(finalRotation), 0))
+			-- Note: rotation already includes manualRotation from above
+			ghostBuilding:PivotTo(CFrame.new(finalPosition) * CFrame.Angles(0, math.rad(rotation), 0))
 		else
 			-- Standard non-wall behavior (apply manual rotation)
 			if ghostBuilding:IsA("Model") then
@@ -341,26 +437,42 @@ local function updateGhostPosition()
 
 		-- Check collisions
 		local hasCollision = false
-		if currentBuildingName == "Stone_Wall" then
+		if isWallBuilding then
 			local ghostGridX = math.floor(snappedPos.X / 8 + 0.5)
 			local ghostGridZ = math.floor(snappedPos.Z / 8 + 0.5)
 
 			for _, part in ipairs(overlappingParts) do
 				local parent = part.Parent
-				if parent and parent:GetAttribute("BuildingType") == "Stone_Wall" then
-					-- It's a wall. Check if it's on the same grid cell.
-					local wallPos = parent:GetPivot().Position
-					local wallGridX = math.floor(wallPos.X / 8 + 0.5)
-					local wallGridZ = math.floor(wallPos.Z / 8 + 0.5)
+				if parent then
+					local buildingType = parent:GetAttribute("BuildingType")
+					-- Check if it's any wall type
+					local isParentWall = buildingType == "Stone_Wall"
+						or buildingType == "Wall_Segment"
+						or buildingType == "Wall_Corner"
+						or buildingType == "Wall_Corner_Reverse"
+						or buildingType == "Wall_Tower"
+						or buildingType == "Wall_Gatehouse"
+						or buildingType == "Ladder_Wall_Segment"
 
-					if wallGridX == ghostGridX and wallGridZ == ghostGridZ then
-						-- Overlapping with a wall on the same cell. This is not allowed.
+					if isParentWall then
+						-- It's a wall. Check if it's on the same grid cell.
+						local wallPos = parent:GetPivot().Position
+						local wallGridX = math.floor(wallPos.X / 8 + 0.5)
+						local wallGridZ = math.floor(wallPos.Z / 8 + 0.5)
+
+						if wallGridX == ghostGridX and wallGridZ == ghostGridZ then
+							-- Overlapping with a wall on the same cell. This is not allowed.
+							hasCollision = true
+							break
+						end
+						-- If it's on a different cell, it's a neighbor, so we ignore the collision and continue to the next part.
+					elseif part.Name ~= "Baseplate" and not part:IsA("Terrain") then
+						-- It's not a wall and not the ground. This is a collision.
 						hasCollision = true
 						break
 					end
-					-- If it's on a different cell, it's a neighbor, so we ignore the collision and continue to the next part.
 				elseif part.Name ~= "Baseplate" and not part:IsA("Terrain") then
-					-- It's not a wall and not the ground. This is a collision.
+					-- No parent or it's not a wall and not the ground. This is a collision.
 					hasCollision = true
 					break
 				end
@@ -404,13 +516,27 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end
 
 	if input.KeyCode == KeybindingsManager.GetKeybinding("CyclePlacementType") then
-		if currentBuildingName == "Stone_Wall" then
+		local isWallBuilding = currentBuildingName == "Stone_Wall"
+			or currentBuildingName == "Wall_Segment"
+			or currentBuildingName == "Wall_Corner"
+			or currentBuildingName == "Wall_Corner_Reverse"
+			or currentBuildingName == "Wall_Tower"
+			or currentBuildingName == "Wall_Gatehouse"
+			or currentBuildingName == "Ladder_Wall_Segment"
+
+		if isWallBuilding then
 			-- Cycle through wall piece types
 			wallPieceIndex = (wallPieceIndex % #WALL_PIECES) + 1
 			PlacementDebug:info(
 				"Changed wall piece",
 				{ index = wallPieceIndex, piece = WALL_PIECES[wallPieceIndex].name }
 			)
+
+			-- Notify HUD of the change
+			wallPieceEvent:Fire({
+				currentPiece = WALL_PIECES[wallPieceIndex].name,
+				isPlacingWalls = true,
+			})
 		end
 		return
 	end
@@ -446,14 +572,31 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 				manualRotation = manualRotation, -- Send manual rotation offset
 			}
 
+			-- Check if this is a wall building
+			local isWallBuilding = currentBuildingName == "Stone_Wall"
+				or currentBuildingName == "Wall_Segment"
+				or currentBuildingName == "Wall_Corner"
+				or currentBuildingName == "Wall_Corner_Reverse"
+				or currentBuildingName == "Wall_Tower"
+				or currentBuildingName == "Wall_Gatehouse"
+				or currentBuildingName == "Ladder_Wall_Segment"
+
 			-- For walls, send the selected piece type
-			if currentBuildingName == "Stone_Wall" and wallPieceIndex > 1 then
+			if isWallBuilding and wallPieceIndex > 1 then
 				placementData.wallPieceType = WALL_PIECES[wallPieceIndex].name
 			end
 
 			gameEvent:FireServer("PlaceBuilding", placementData)
 
-			cleanup()
+			-- For walls, keep placement mode active to allow continuous building
+			if isWallBuilding then
+				-- Don't cleanup - just reset the ghost for the next placement
+				-- Keep wallPieceIndex, manualRotation, and isPlacing state
+				PlacementDebug:info("Continuing wall placement mode")
+			else
+				-- For other buildings, cleanup as normal
+				cleanup()
+			end
 		end
 	elseif input.UserInputType == Enum.UserInputType.MouseButton2 or input.KeyCode == Enum.KeyCode.Escape then
 		-- Right click or ESC - cancel
@@ -477,3 +620,24 @@ RunService.RenderStepped:Connect(function()
 end)
 
 PlacementDebug:info("Initialized")
+
+-- Export functions for external use (e.g., HUD can call to reset wall selection)
+return {
+	resetWallPieceSelection = resetWallPieceSelection,
+	getCurrentWallPiece = function()
+		return WALL_PIECES[wallPieceIndex].name
+	end,
+	getWallPieceIndex = function()
+		return wallPieceIndex
+	end,
+	isPlacingWalls = function()
+		local isWallBuilding = currentBuildingName == "Stone_Wall"
+			or currentBuildingName == "Wall_Segment"
+			or currentBuildingName == "Wall_Corner"
+			or currentBuildingName == "Wall_Corner_Reverse"
+			or currentBuildingName == "Wall_Tower"
+			or currentBuildingName == "Wall_Gatehouse"
+			or currentBuildingName == "Ladder_Wall_Segment"
+		return isPlacing and isWallBuilding
+	end,
+}

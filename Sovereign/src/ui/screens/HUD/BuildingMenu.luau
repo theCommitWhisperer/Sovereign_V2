@@ -17,10 +17,16 @@ local BUILDING_CATEGORIES = {
 	Defense = {
 		-- Keep is built during tutorial only, not available in menu
 		"Wooden_Palisade",
-		"Stone_Wall",
+		-- Wall pieces (all variations)
+		"Wall_Segment",
+		"Wall_Corner",
+		"Wall_Corner_Reverse",
+		"Wall_Tower",
+		"Wall_Gatehouse",
+		"Ladder_Wall_Segment",
+		-- Other defense
 		"Watch_Tower",
 		"Arrow_Tower",
-		"Gatehouse",
 		"Barracks",
 		"Guard_House",
 		"Crannog",
@@ -77,6 +83,18 @@ local BUILDING_CATEGORIES = {
 function BuildingMenu:render()
 	local resources = self.props.resources or {}
 	local selectedCategory = self.props.selectedCategory or "Defense"
+	local currentWallPiece = self.props.currentWallPiece or "Wall Segment"
+	local isPlacingWall = self.props.isPlacingWall or false
+
+	-- Map wall piece names to building IDs
+	local wallPieceMapping = {
+		["Wall Segment"] = "Wall_Segment",
+		["Wall Corner"] = "Wall_Corner",
+		["Wall Corner Reverse"] = "Wall_Corner_Reverse",
+		["Tower"] = "Wall_Tower",
+		["Gatehouse"] = "Wall_Gatehouse",
+		["Ladder Wall Segment"] = "Ladder_Wall_Segment",
+	}
 
 	local buildingButtons = {}
 	buildingButtons.Layout = React.createElement("UIGridLayout", {
@@ -106,10 +124,13 @@ function BuildingMenu:render()
 				costText = costText .. resource:gsub("_", " ") .. ": " .. cost
 			end
 
+			-- Check if this wall piece is currently selected (only highlight when actively placing walls)
+			local isSelectedWallPiece = isPlacingWall and wallPieceMapping[currentWallPiece] == buildingName
+
 			local buttonChildren = {
 				Border = React.createElement("UIStroke", {
-					Color = UIConfig.HUD.StrokeColor,
-					Thickness = UIConfig.HUD.StrokeThickness,
+					Color = isSelectedWallPiece and Color3.fromRGB(255, 215, 100) or UIConfig.HUD.StrokeColor,
+					Thickness = isSelectedWallPiece and 3 or UIConfig.HUD.StrokeThickness,
 				}),
 
 				Padding = React.createElement("UIPadding", {
@@ -156,8 +177,8 @@ function BuildingMenu:render()
 				ref = buttonRef,
 				Size = UDim2.new(0, UIConfig.HUD.BuildingButtonSize, 0, UIConfig.HUD.BuildingButtonSize),
 				Text = "",
-				BackgroundColor3 = canAfford and UIConfig.HUD.BuildingButtonAffordable
-					or UIConfig.HUD.BuildingButtonUnaffordable,
+				BackgroundColor3 = isSelectedWallPiece and Color3.fromRGB(255, 255, 255)
+					or (canAfford and UIConfig.HUD.BuildingButtonAffordable or UIConfig.HUD.BuildingButtonUnaffordable),
 				BorderSizePixel = 0,
 				LayoutOrder = i,
 				[React.Event.MouseButton1Click] = function()

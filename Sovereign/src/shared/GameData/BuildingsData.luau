@@ -357,6 +357,92 @@ BuildingsData.Stone_Wall = {
 	deletion_confirmation_required = false,
 } :: BuildingData
 
+-- Individual Wall Piece Types
+BuildingsData.Wall_Segment = {
+	model_asset_name = "Wall Segment",
+	type = "Building",
+	subtype = "Defense",
+	cost = { Stone = 10 },
+	construction = { build_time_seconds = 8 },
+	size = Vector3.new(8, 6, 2),
+	storage_capacity = {},
+	components = {},
+	defense_value = 50,
+	deletion_confirmation_required = false,
+	description = "Basic stone wall segment",
+} :: BuildingData
+
+BuildingsData.Wall_Corner = {
+	model_asset_name = "Wall Corner",
+	type = "Building",
+	subtype = "Defense",
+	cost = { Stone = 10 },
+	construction = { build_time_seconds = 8 },
+	size = Vector3.new(8, 6, 8),
+	storage_capacity = {},
+	components = {},
+	defense_value = 50,
+	deletion_confirmation_required = false,
+	description = "Wall corner piece",
+} :: BuildingData
+
+BuildingsData.Wall_Corner_Reverse = {
+	model_asset_name = "Wall Corner Reverse",
+	type = "Building",
+	subtype = "Defense",
+	cost = { Stone = 10 },
+	construction = { build_time_seconds = 8 },
+	size = Vector3.new(8, 6, 8),
+	storage_capacity = {},
+	components = {},
+	defense_value = 50,
+	deletion_confirmation_required = false,
+	description = "Reverse wall corner piece",
+} :: BuildingData
+
+BuildingsData.Wall_Tower = {
+	model_asset_name = "Tower",
+	type = "Building",
+	subtype = "Defense",
+	cost = { Stone = 20 },
+	construction = { build_time_seconds = 12 },
+	size = Vector3.new(8, 10, 8),
+	storage_capacity = {},
+	components = {},
+	defense_value = 100,
+	attack_damage = 10,
+	deletion_confirmation_required = false,
+	description = "Defensive tower for wall junctions",
+} :: BuildingData
+
+BuildingsData.Wall_Gatehouse = {
+	model_asset_name = "Gatehouse",
+	type = "Building",
+	subtype = "Defense",
+	cost = { Wood = 30, Stone = 40 },
+	construction = { build_time_seconds = 20 },
+	size = Vector3.new(12, 14, 8),
+	storage_capacity = {},
+	components = {},
+	defense_value = 150,
+	deletion_confirmation_required = false,
+	description = "Fortified gate for wall access",
+} :: BuildingData
+
+BuildingsData.Ladder_Wall_Segment = {
+	model_asset_name = "Ladder Wall Segment",
+	type = "Building",
+	subtype = "Defense",
+	cost = { Stone = 10, Wood = 5 },
+	construction = { build_time_seconds = 10 },
+	size = Vector3.new(8, 6, 2),
+	storage_capacity = {},
+	components = {},
+	defense_value = 50,
+	deletion_confirmation_required = false,
+	description = "Wall segment with ladder access",
+} :: BuildingData
+
 BuildingsData.Wooden_Palisade = {
 	model_asset_name = nil,
 	type = "Building",

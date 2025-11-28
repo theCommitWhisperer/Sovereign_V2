@@ -7,6 +7,7 @@ local WallSystem = {}
 -- Configuration
 local WALL_GRID_SIZE = 8 -- Wall segments are 8x8
 local WALL_HEIGHT_OFFSET = 0 -- Adjust based on your model's pivot
+local CORNER_OFFSET = 0.5 -- Slight offset to prevent corner/straight overlap visual issues
 
 -- Spatial Hash: [x][z] = WallInstance
 local wallGrid: { [number]: { [number]: Instance } } = {}
@@ -31,7 +32,7 @@ local DIRECTIONS = {
 -- Assumes default assets are:
 -- Straight: Horizontal (E-W) at 0°, Vertical (N-S) at 90°
 -- Corner: Oriented to match straight wall connections
--- 3Way: Oriented to match straight wall connections
+-- Tower: Used for T-junctions and 4-way intersections
 local ADJACENCY_LOOKUP = {
 	[0] = { "Wall Segment", 0 }, -- Isolated (Default to Horizontal)
 	[1] = { "Wall Segment", 90 }, -- N (Vertical)
@@ -39,15 +40,11 @@ local ADJACENCY_LOOKUP = {
 	[3] = { "Wall Corner", 0 }, -- N + E (NE Corner)
 	[4] = { "Wall Segment", 90 }, -- S (Vertical)
 	[5] = { "Wall Segment", 90 }, -- N + S (Straight Vertical)
-	[4] = { "Wall Segment", 0 }, -- S (Vertical)
-	[5] = { "Wall Segment", 0 }, -- N + S (Straight Vertical)
 	[6] = { "Wall Corner", 270 }, -- E + S (SE Corner)
 	[7] = { "Tower", 0 }, -- N + E + S (East T)
 	[8] = { "Wall Segment", 0 }, -- W (Horizontal)
-	[8] = { "Wall Segment", 90 }, -- W (Horizontal)
 	[9] = { "Wall Corner", 90 }, -- N + W (NW Corner)
 	[10] = { "Wall Segment", 0 }, -- E + W (Straight Horizontal)
-	[10] = { "Wall Segment", 90 }, -- E + W (Straight Horizontal)
 	[11] = { "Tower", 180 }, -- N + W + E (North T)
 	[12] = { "Wall Corner", 180 }, -- S + W (SW Corner)
 	[13] = { "Tower", 90 }, -- N + S + W (West T)
@@ -207,6 +204,8 @@ local function updateWallVisuals(x: number, z: number)
 	local position = originalCFrame.Position
 
 	-- Create new CFrame with the same position but new rotation
+	-- Note: For corners and straight pieces to align properly, they should use the same grid size
+	-- and have their pivots set correctly in the model
 	local newCFrame = CFrame.new(position) * CFrame.Angles(0, math.rad(rotation), 0)
 	newModel:PivotTo(newCFrame)
 
