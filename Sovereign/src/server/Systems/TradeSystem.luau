@@ -8,7 +8,7 @@ local TradeManager = require(script.Parent.Parent.Managers.TradeManager)
 local PlayerManager = require(script.Parent.Parent.Managers.PlayerManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local TradeSystemDebug = DebugManager.createChannel("TradeSystem", true)
+local TradeSystemDebug = DebugManager.createChannel("TradeSystem", false)
 
 local TradeSystem = {}
 

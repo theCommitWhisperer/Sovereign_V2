@@ -2,7 +2,7 @@ local React = require(game.ReplicatedStorage.Packages.react)
 local Router = require(script.Parent.Router)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local AppDebug = DebugManager.createChannel("App", true)
+local AppDebug = DebugManager.createChannel("App", false)
 
 -- Screens
 local MainMenu = require(script.Parent.screens.MainMenu.MainMenu)

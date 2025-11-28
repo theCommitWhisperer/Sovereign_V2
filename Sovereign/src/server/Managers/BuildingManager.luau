@@ -7,6 +7,7 @@ local Workspace = game:GetService("Workspace")
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local PlayerManager = require(script.Parent.PlayerManager)
 local SpawnManager = require(script.Parent.SpawnManager)
+local WallSystem = require(script.Parent.Parent.Systems.WallSystem)
 
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local StorageDebug = DebugManager.createChannel("Storage", false)
@@ -25,7 +26,13 @@ if not BuildingsFolder then
 	BuildingsFolder.Parent = Workspace
 end
 
-function BuildingManager.createBuilding(player: Player, buildingName: string, cframe: CFrame): Instance?
+function BuildingManager.createBuilding(
+	player: Player,
+	buildingName: string,
+	cframe: CFrame,
+	wallPieceType: string?,
+	manualRotation: number?
+): Instance?
 	local buildingInfo = GameData.Buildings[buildingName]
 	if not buildingInfo then
 		channel:warn(`Unknown building: {buildingName}`)
@@ -45,37 +52,74 @@ function BuildingManager.createBuilding(player: Player, buildingName: string, cf
 
 	channel:info(`Creating {buildingName} for {player.Name}`)
 
-	-- Create a simple part for now (we'll add models later)
-	local building = Instance.new("Part")
-	building.Name = `{buildingName}_{player.UserId}`
-	building.Size = buildingInfo.size
-	building.CFrame = cframe
-	building.Anchored = true
-	building.Material = Enum.Material.Wood
+	-- [MODIFIED] Check for Assets first
+	local Assets = ReplicatedStorage:FindFirstChild("Assets")
+	local buildingAssets = Assets and Assets:FindFirstChild("Buildings")
+	local modelAsset = nil
+	
+	-- Try to find the specific asset defined in BuildingData, or default to name
+	local assetName = buildingInfo.model_asset_name or buildingName
+	
+	-- Special handling for Wall: Use provided piece type or default to Straight
+	if buildingName == "Stone_Wall" then
+		assetName = wallPieceType or "Wall Segment"
+	end
+	
+	if buildingAssets then
+		local foundTemplate = buildingAssets:FindFirstChild(assetName)
+		if foundTemplate then
+			modelAsset = foundTemplate:Clone()
+		end
+	end
 
-	-- Color based on building type
-	if buildingInfo.subtype == "Castle Core" then
-		building.Color = Color3.fromRGB(139, 69, 19) -- Brown
-	elseif buildingInfo.subtype == "Storage" then
-		building.Color = Color3.fromRGB(205, 133, 63) -- Peru/tan
-	elseif buildingInfo.subtype == "Resource Gathering" then
-		building.Color = Color3.fromRGB(160, 82, 45) -- Sienna
-	elseif
-		buildingInfo.subtype == "Food Production"
-		or buildingInfo.subtype == "Food Processing"
-		or buildingInfo.subtype == "Food Service"
-	then
-		building.Color = Color3.fromRGB(244, 164, 96) -- Sandy brown
-	elseif buildingInfo.subtype == "Housing" then
-		building.Color = Color3.fromRGB(210, 180, 140) -- Tan
+	local building
+	if modelAsset then
+		-- Use the actual model
+		building = modelAsset
+		building.Name = `{buildingName}_{player.UserId}`
+		building:PivotTo(cframe)
 	else
-		building.Color = Color3.fromRGB(139, 69, 19)
+		-- Fallback to generic part (your existing code)
+		building = Instance.new("Part")
+		building.Name = `{buildingName}_{player.UserId}`
+		building.Size = buildingInfo.size
+		building.CFrame = cframe
+		building.Anchored = true
+		building.Material = Enum.Material.Wood
+		-- ... (Keep existing color logic for fallbacks)
+		if buildingInfo.subtype == "Castle Core" then
+			building.Color = Color3.fromRGB(139, 69, 19) -- Brown
+		elseif buildingInfo.subtype == "Storage" then
+			building.Color = Color3.fromRGB(205, 133, 63) -- Peru/tan
+		elseif buildingInfo.subtype == "Resource Gathering" then
+			building.Color = Color3.fromRGB(160, 82, 45) -- Sienna
+		elseif
+			buildingInfo.subtype == "Food Production"
+			or buildingInfo.subtype == "Food Processing"
+			or buildingInfo.subtype == "Food Service"
+		then
+			building.Color = Color3.fromRGB(244, 164, 96) -- Sandy brown
+		elseif buildingInfo.subtype == "Housing" then
+			building.Color = Color3.fromRGB(210, 180, 140) -- Tan
+		else
+			building.Color = Color3.fromRGB(139, 69, 19)
+		end
 	end
 
 	-- Add ownership attribute
 	building:SetAttribute("Owner", player.UserId)
 	building:SetAttribute("BuildingType", buildingName)
 	building:SetAttribute("IsConstructed", true)
+
+	-- For walls, set manual placement attributes BEFORE registering with WallSystem
+	if buildingName == "Stone_Wall" then
+		if wallPieceType then
+			building:SetAttribute("ManualPieceType", wallPieceType)
+		end
+		if manualRotation then
+			building:SetAttribute("ManualRotation", manualRotation)
+		end
+	end
 
 	-- Initialize storage if building has storage capacity
 	if buildingInfo.storage_capacity then
@@ -85,7 +129,11 @@ function BuildingManager.createBuilding(player: Player, buildingName: string, cf
 		end
 	end
 
+	-- [ADDED] Register with WallSystem if it's a wall
 	building.Parent = BuildingsFolder
+	if buildingName == "Stone_Wall" then
+		WallSystem.registerWall(building)
+	end
 
 	-- Track in player data
 	PlayerManager.addBuilding(player, building)

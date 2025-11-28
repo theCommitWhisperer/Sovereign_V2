@@ -10,7 +10,7 @@ local WorkerManager = require(script.Parent.Parent.Managers.WorkerManager)
 local NotificationManager = require(script.Parent.Parent.Managers.NotificationManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local MaintenanceSystemDebug = DebugManager.createChannel("MaintenanceSystem", true)
+local MaintenanceSystemDebug = DebugManager.createChannel("MaintenanceSystem", false)
 
 local MaintenanceSystem = {}
 

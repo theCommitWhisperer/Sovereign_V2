@@ -8,7 +8,7 @@ local WeatherManager = require(script.Parent.Parent.Managers.WeatherManager)
 local PlayerManager = require(script.Parent.Parent.Managers.PlayerManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local WeatherSystemDebug = DebugManager.createChannel("WeatherSystem", true)
+local WeatherSystemDebug = DebugManager.createChannel("WeatherSystem", false)
 
 local WeatherSystem = {}
 

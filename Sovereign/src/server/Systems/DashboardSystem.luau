@@ -8,7 +8,7 @@ local EconomyDashboardManager = require(script.Parent.Parent.Managers.EconomyDas
 local PlayerManager = require(script.Parent.Parent.Managers.PlayerManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local DashboardSystemDebug = DebugManager.createChannel("DashboardSystem", true)
+local DashboardSystemDebug = DebugManager.createChannel("DashboardSystem", false)
 
 local DashboardSystem = {}
 

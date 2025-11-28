@@ -8,7 +8,7 @@ local PopulationManager = require(script.Parent.Parent.Managers.PopulationManage
 local PlayerManager = require(script.Parent.Parent.Managers.PlayerManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local PopulationSystemDebug = DebugManager.createChannel("PopulationSystem", true)
+local PopulationSystemDebug = DebugManager.createChannel("PopulationSystem", false)
 
 local PopulationSystem = {}
 

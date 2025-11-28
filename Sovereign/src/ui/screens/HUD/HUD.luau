@@ -5,7 +5,7 @@ local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local HUDDebug = DebugManager.createChannel("HUD", true)
+local HUDDebug = DebugManager.createChannel("HUD", false)
 
 local ResourceDisplay = require(script.Parent.ResourceDisplay)
 local BuildingMenu = require(script.Parent.BuildingMenu)

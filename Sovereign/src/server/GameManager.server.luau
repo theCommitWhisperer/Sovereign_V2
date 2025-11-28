@@ -80,6 +80,7 @@ local TradeSystem = require(Systems.TradeSystem)
 local CaravanSystem = require(Systems.CaravanSystem)
 local DashboardSystem = require(Systems.DashboardSystem)
 local VictorySystem = require(Systems.VictorySystem)
+local WallSystem = require(Systems.WallSystem)
 
 -- Initialize systems
 PopulationSystem.init()
@@ -489,12 +490,17 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				-- Deduct resources
 				PlayerManager.deductResources(player, buildingInfo.cost)
 
-				-- Create the CFrame from position and rotation
-				local rotation = data.rotationY or 0
-				local cframe = CFrame.new(data.position) * CFrame.Angles(0, math.rad(rotation), 0)
+				-- Create the CFrame from data (use sent CFrame if available)
+				local cframe = data.cframe or CFrame.new(data.position) * CFrame.Angles(0, math.rad(data.rotationY or 0), 0)
 
-				-- Create the building
-				local building = BuildingManager.createBuilding(player, data.buildingName, cframe)
+				-- Create the building (pass wall piece type and rotation for manual selection)
+				local building = BuildingManager.createBuilding(
+					player,
+					data.buildingName,
+					cframe,
+					data.wallPieceType,
+					data.manualRotation
+				)
 
 				if building then
 					-- Notify client that building was placed (for tutorial progression)
@@ -785,3 +791,8 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 end)
 
 GameManagerDebug:info("Server ready!")
+
+-- Call this AFTER the map/buildings have been loaded
+task.delay(1, function()
+    WallSystem.initialize()
+end)

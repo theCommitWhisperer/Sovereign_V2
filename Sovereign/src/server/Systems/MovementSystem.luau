@@ -5,7 +5,7 @@ local RunService = game:GetService("RunService")
 local PathfindingService = game:GetService("PathfindingService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local MovementDebug = DebugManager.createChannel("Movement", true)
+local MovementDebug = DebugManager.createChannel("Movement", false)
 
 local MovementSystem = {}
 

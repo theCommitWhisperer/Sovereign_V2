@@ -37,7 +37,6 @@ function StudioCameraController.new()
 	self.cameraRig = CameraRig.new()
 	self.animator = CameraAnimator.new(self.cameraRig)
 	self.boundsManager = BoundsManager.new()
-	self.keybindingsManager = KeybindingsManager.new()
 
 	-- State
 	self.enabled = false
@@ -277,13 +276,9 @@ function StudioCameraController:ClearBounds()
 	self.boundsManager:SetEnabled(false)
 end
 
-function StudioCameraController:GetKeybindingsManager()
-	return self.keybindingsManager
-end
-
 function StudioCameraController:SyncKeybindings()
 	-- Sync keybindings from KeybindingsManager to DesktopInput
-	local keybindings = self.keybindingsManager:GetAllKeybindings()
+	local keybindings = KeybindingsManager.GetAllKeybindings()
 	for action, keyCode in pairs(keybindings) do
 		if action ~= "ResetCamera" and action ~= "ToggleCameraMode" then
 			self.desktopInput:SetKeybinding(action, keyCode)
@@ -291,8 +286,8 @@ function StudioCameraController:SyncKeybindings()
 	end
 
 	-- Listen for keybinding changes
-	for _, action in ipairs(self.keybindingsManager:GetAllActions()) do
-		self.keybindingsManager:OnKeybindingChanged(action, function(keyCode)
+	for _, action in ipairs(KeybindingsManager.GetAllActions()) do
+		KeybindingsManager.OnKeybindingChanged(action, function(keyCode)
 			if action ~= "ResetCamera" and action ~= "ToggleCameraMode" then
 				self.desktopInput:SetKeybinding(action, keyCode)
 			end

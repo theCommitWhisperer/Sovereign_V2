@@ -8,7 +8,7 @@ local VictoryConditionManager = require(script.Parent.Parent.Managers.VictoryCon
 local PlayerManager = require(script.Parent.Parent.Managers.PlayerManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local VictorySystemDebug = DebugManager.createChannel("VictorySystem", true)
+local VictorySystemDebug = DebugManager.createChannel("VictorySystem", false)
 
 local VictorySystem = {}
 

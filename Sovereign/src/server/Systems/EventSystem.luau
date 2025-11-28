@@ -8,7 +8,7 @@ local EventManager = require(script.Parent.Parent.Managers.EventManager)
 local PlayerManager = require(script.Parent.Parent.Managers.PlayerManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local EventSystemDebug = DebugManager.createChannel("EventSystem", true)
+local EventSystemDebug = DebugManager.createChannel("EventSystem", false)
 
 local EventSystem = {}
 

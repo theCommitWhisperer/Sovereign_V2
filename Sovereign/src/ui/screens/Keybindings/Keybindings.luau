@@ -7,52 +7,33 @@ local Button = require(script.Parent.Parent.Parent.components.Button)
 
 local Keybindings = React.Component:extend("Keybindings")
 
+local KeybindingsManager = require(script.Parent.Parent.Parent.Parent.Client.Camera.KeybindingsManager)
+
 function Keybindings:init()
-	-- Get the KeybindingsManager from the camera controller
-	local player = Players.LocalPlayer
-	local cameraController = nil
-
-	-- Try to get camera controller from client scripts
-	local success = pcall(function()
-		local cameraScript = player.PlayerScripts.Parent:FindFirstChild("client")
-		if cameraScript then
-			local cameraModule = cameraScript:FindFirstChild("Camera")
-			if cameraModule then
-				-- Camera controller should be accessible through shared state
-				-- For now, we'll load keybindings from player attributes
-			end
-		end
-	end)
-
 	self:setState({
-		keybindings = {
-			-- Camera Controls - Load from defaults
-			PanUp = "W",
-			PanDown = "S",
-			PanLeft = "A",
-			PanRight = "D",
-			RotateLeft = "Q",
-			RotateRight = "E",
-			Focus = "F",
-			ResetCamera = "Home",
-			ToggleCameraMode = "Tab",
-		},
-		waitingForInput = nil, -- Which action is waiting for key rebind
-		scrollbarVisible = false,
+		keybindings = KeybindingsManager.GetAllKeybindings(),
+		waitingForInput = nil,
 		conflictMessage = nil,
 	})
-	self.lastScrollTime = 0
-	self.inputConnection = nil
+	self.managerConnection = nil
 end
 
 function Keybindings:didMount()
 	-- Listen for key input when waiting for rebind
 	self.inputConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		-- Don't ignore gameProcessed - we want to catch all keyboard input when rebinding
 		if self.state.waitingForInput and input.UserInputType == Enum.UserInputType.Keyboard then
 			self:handleKeyInput(input.KeyCode)
 		end
 	end)
+
+	-- Listen for external changes from the manager (e.g., reset to defaults)
+	self.managerConnections = {}
+	for _, action in ipairs(KeybindingsManager.GetAllActions()) do
+		local connection = KeybindingsManager.OnKeybindingChanged(action, function()
+			self:setState({ keybindings = KeybindingsManager.GetAllKeybindings() })
+		end)
+		table.insert(self.managerConnections, connection)
+	end
 end
 
 function Keybindings:willUnmount()
@@ -61,92 +42,84 @@ function Keybindings:willUnmount()
 		self.inputConnection:Disconnect()
 		self.inputConnection = nil
 	end
+	-- Clean up manager connections
+	if self.managerConnections then
+		for _, connection in ipairs(self.managerConnections) do
+			connection:Disconnect()
+		end
+		self.managerConnections = nil
+	end
 end
 
 function Keybindings:handleKeyInput(keyCode)
+
 	local action = self.state.waitingForInput
+
 	if not action then
+
 		return
+
 	end
 
-	local keyName = self:getKeyDisplayName(keyCode.Name)
 
-	-- Check for conflict with other bindings
-	for otherAction, otherKey in pairs(self.state.keybindings) do
-		if otherAction ~= action and otherKey == keyName then
-			self.state.conflictMessage = string.format("'%s' is already bound to %s", keyName, otherAction)
-			self.state.waitingForInput = nil
-			self:setState({})
 
-			spawn(function()
-				task.wait(3)
-				self.state.conflictMessage = nil
-				self:setState({})
-			end)
-			return
-		end
-	end
+	local success, conflictAction = KeybindingsManager.SetKeybinding(action, keyCode)
 
-	-- Update the keybinding
-	local newKeybindings = {
-		PanUp = self.state.keybindings.PanUp,
-		PanDown = self.state.keybindings.PanDown,
-		PanLeft = self.state.keybindings.PanLeft,
-		PanRight = self.state.keybindings.PanRight,
-		RotateLeft = self.state.keybindings.RotateLeft,
-		RotateRight = self.state.keybindings.RotateRight,
-		Focus = self.state.keybindings.Focus,
-		ResetCamera = self.state.keybindings.ResetCamera,
-		ToggleCameraMode = self.state.keybindings.ToggleCameraMode,
-	}
-	newKeybindings[action] = keyName
 
-	-- NOTE: Direct state mutation is required due to react-lua limitation
-	-- react-lua does not synchronously update self.state during renders triggered by setState,
-	-- even when using the functional form. This causes self.state to have stale values
-	-- during the render phase. Until this is fixed in react-lua, we must mutate self.state
-	-- directly before calling setState to trigger the re-render.
-	self.state.keybindings = newKeybindings
-	self.state.waitingForInput = nil
-	self:setState({}) -- Trigger re-render
 
-	-- Save to player attributes
-	self:saveKeybindings(newKeybindings)
-end
+	if success then
 
-function Keybindings:saveKeybindings(keybindings)
-	-- Save keybindings to player attributes
-	local player = Players.LocalPlayer
-	local HttpService = game:GetService("HttpService")
+		self:setState({
 
-	local success, err = pcall(function()
-		-- Convert to KeyCode values for storage
-		local data = {}
-		for action, keyName in pairs(keybindings) do
-			-- Store as string name
-			data[action] = keyName
+			waitingForInput = nil,
+
+			conflictMessage = nil,
+
+			keybindings = KeybindingsManager.GetAllKeybindings(),
+
+		})
+
+	else
+
+		local keyName = KeybindingsManager.GetKeyCodeName(keyCode)
+
+		local conflictDesc = "another action"
+
+		if conflictAction then
+
+			conflictDesc = KeybindingsManager.GetActionDescription(conflictAction)
+
 		end
 
-		local jsonData = HttpService:JSONEncode(data)
-		player:SetAttribute("CameraKeybindings", jsonData)
-	end)
 
-	if not success then
-		warn("Failed to save keybindings:", err)
+
+		self:setState({
+
+			waitingForInput = nil,
+
+			conflictMessage = string.format("'%s' is already bound to %s", keyName, conflictDesc),
+
+		})
+
+
+
+		-- Clear the message after a delay
+
+		task.delay(3, function()
+
+			if self.state.conflictMessage then
+
+				self:setState({ conflictMessage = nil })
+
+			end
+
+		end)
+
 	end
+
 end
 
-function Keybindings:getKeyDisplayName(keyCodeName)
-	-- Convert internal key names to friendly display names
-	if keyCodeName == "LeftShift" or keyCodeName == "RightShift" then
-		return "Shift"
-	elseif keyCodeName == "LeftControl" or keyCodeName == "RightControl" then
-		return "Ctrl"
-	elseif keyCodeName == "LeftAlt" or keyCodeName == "RightAlt" then
-		return "Alt"
-	end
-	return keyCodeName
-end
+
 
 function Keybindings:createKeybindingRow(action, displayName, keyName, layoutOrder, waitingForInput)
 	local isWaiting = waitingForInput == action
@@ -186,6 +159,77 @@ end
 function Keybindings:render()
 	local navigate = self.props.navigate
 
+	local actionGroups = {
+		{
+			Title = "Camera Movement",
+			Actions = { "PanUp", "PanDown", "PanLeft", "PanRight" },
+		},
+		{
+			Title = "Camera Rotation",
+			Actions = { "RotateLeft", "RotateRight" },
+		},
+		{
+			Title = "Camera Actions",
+			Actions = { "Focus", "ResetCamera", "ToggleCameraMode" },
+		},
+		{
+			Title = "Placement",
+			Actions = { "RotatePlacement", "CyclePlacementType", "CyclePivot" },
+		},
+	}
+
+	local keybindingElements = {}
+	local layoutOrder = 1
+	for _, group in ipairs(actionGroups) do
+		-- Group Header
+		table.insert(
+			keybindingElements,
+			React.createElement("TextLabel", {
+				Text = group.Title,
+				Size = UDim2.new(0.9, 0, 0, 30),
+				TextSize = 28,
+				FontFace = UIConfig.Font.Title,
+				TextColor3 = UIConfig.Color.Primary,
+				BackgroundTransparency = 1,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				LayoutOrder = layoutOrder,
+			})
+		)
+		layoutOrder = layoutOrder + 1
+
+		-- Keybinding Rows
+		for _, action in ipairs(group.Actions) do
+			local keyCode = self.state.keybindings[action]
+			if keyCode then
+				table.insert(
+					keybindingElements,
+					self:createKeybindingRow(
+						action,
+						KeybindingsManager.GetActionDescription(action),
+						KeybindingsManager.GetKeyCodeName(keyCode),
+						layoutOrder,
+						self.state.waitingForInput
+					)
+				)
+				layoutOrder = layoutOrder + 1
+			end
+		end
+	end
+
+	-- Info text
+	table.insert(keybindingElements, React.createElement("TextLabel", {
+		Text = "Right-click drag: Rotate camera (yaw & pitch)\nMiddle-click drag: Pan camera\nMouse wheel: Zoom in/out\n\nMobile: Use touch gestures\n\nClick a button and press any key to rebind",
+		Size = UDim2.new(0.9, 0, 0, 120),
+		TextSize = 18,
+		FontFace = UIConfig.Font.Default,
+		TextColor3 = Color3.fromRGB(200, 200, 200),
+		BackgroundTransparency = 1,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		TextWrapped = true,
+		LayoutOrder = layoutOrder,
+	}))
+
 	return React.createElement("ScreenGui", { Name = "KeybindingsGui", ZIndexBehavior = Enum.ZIndexBehavior.Sibling }, {
 		Background = React.createElement("Frame", {
 			Name = "Background",
@@ -212,7 +256,7 @@ function Keybindings:render()
 				BackgroundTransparency = 1,
 			}, {
 				Title = React.createElement("TextLabel", {
-					Text = "Camera Controls",
+					Text = "Controls",
 					Size = UDim2.fromScale(1, 1),
 					TextSize = 38,
 					FontFace = UIConfig.Font.Title,
@@ -243,27 +287,8 @@ function Keybindings:render()
 				BorderSizePixel = 0,
 				AutomaticCanvasSize = Enum.AutomaticSize.Y,
 				ScrollBarImageColor3 = Color3.new(0, 0, 0),
-				ScrollBarImageTransparency = self.state.scrollbarVisible and 0.7 or 1,
 				ScrollBarThickness = 6,
 				ClipsDescendants = true,
-				[React.Event.InputChanged] = function(rbx, input)
-					if
-						input.UserInputType == Enum.UserInputType.MouseWheel
-						or input.UserInputType == Enum.UserInputType.Touch
-					then
-						self.lastScrollTime = tick()
-						if not self.state.scrollbarVisible then
-							self:setState({ scrollbarVisible = true })
-						end
-
-						spawn(function()
-							task.wait(2)
-							if tick() - self.lastScrollTime >= 2 then
-								self:setState({ scrollbarVisible = false })
-							end
-						end)
-					end
-				end,
 			}, {
 				Padding = React.createElement("UIPadding", {
 					PaddingTop = UDim.new(0, 20),
@@ -273,65 +298,8 @@ function Keybindings:render()
 					Padding = UDim.new(0, 12),
 					HorizontalAlignment = Enum.HorizontalAlignment.Center,
 				}),
-
-				-- Camera Movement Section
-				MovementHeader = React.createElement("TextLabel", {
-					Text = "Camera Movement",
-					Size = UDim2.new(0.9, 0, 0, 30),
-					TextSize = 28,
-					FontFace = UIConfig.Font.Title,
-					TextColor3 = UIConfig.Color.Primary,
-					BackgroundTransparency = 1,
-					TextXAlignment = Enum.TextXAlignment.Left,
-					LayoutOrder = 1,
-				}),
-				PanUp = self:createKeybindingRow("PanUp", "Pan Forward", self.state.keybindings.PanUp, 2, self.state.waitingForInput),
-				PanDown = self:createKeybindingRow("PanDown", "Pan Backward", self.state.keybindings.PanDown, 3, self.state.waitingForInput),
-				PanLeft = self:createKeybindingRow("PanLeft", "Pan Left", self.state.keybindings.PanLeft, 4, self.state.waitingForInput),
-				PanRight = self:createKeybindingRow("PanRight", "Pan Right", self.state.keybindings.PanRight, 5, self.state.waitingForInput),
-
-				-- Camera Rotation Section
-				RotationHeader = React.createElement("TextLabel", {
-					Text = "Camera Rotation",
-					Size = UDim2.new(0.9, 0, 0, 30),
-					TextSize = 28,
-					FontFace = UIConfig.Font.Title,
-					TextColor3 = UIConfig.Color.Primary,
-					BackgroundTransparency = 1,
-					TextXAlignment = Enum.TextXAlignment.Left,
-					LayoutOrder = 6,
-				}),
-				RotateLeft = self:createKeybindingRow("RotateLeft", "Rotate Left", self.state.keybindings.RotateLeft, 7, self.state.waitingForInput),
-				RotateRight = self:createKeybindingRow("RotateRight", "Rotate Right", self.state.keybindings.RotateRight, 8, self.state.waitingForInput),
-
-				-- Camera Actions Section
-				ActionsHeader = React.createElement("TextLabel", {
-					Text = "Camera Actions",
-					Size = UDim2.new(0.9, 0, 0, 30),
-					TextSize = 28,
-					FontFace = UIConfig.Font.Title,
-					TextColor3 = UIConfig.Color.Primary,
-					BackgroundTransparency = 1,
-					TextXAlignment = Enum.TextXAlignment.Left,
-					LayoutOrder = 9,
-				}),
-				Focus = self:createKeybindingRow("Focus", "Focus on Target", self.state.keybindings.Focus, 10, self.state.waitingForInput),
-				ResetCamera = self:createKeybindingRow("ResetCamera", "Reset Camera", self.state.keybindings.ResetCamera, 11, self.state.waitingForInput),
-				ToggleCameraMode = self:createKeybindingRow("ToggleCameraMode", "Toggle Camera Mode", self.state.keybindings.ToggleCameraMode, 12, self.state.waitingForInput),
-
-				-- Info text
-				InfoText = React.createElement("TextLabel", {
-					Text = "Right-click drag: Rotate camera (yaw & pitch)\nMiddle-click drag: Pan camera\nMouse wheel: Zoom in/out\n\nMobile: Use touch gestures\n\nClick a button and press any key to rebind",
-					Size = UDim2.new(0.9, 0, 0, 120),
-					TextSize = 18,
-					FontFace = UIConfig.Font.Default,
-					TextColor3 = Color3.fromRGB(200, 200, 200),
-					BackgroundTransparency = 1,
-					TextXAlignment = Enum.TextXAlignment.Left,
-					TextYAlignment = Enum.TextYAlignment.Top,
-					TextWrapped = true,
-					LayoutOrder = 13,
-				}),
+				-- Insert all the dynamic elements here
+				Elements = React.createElement(React.Fragment, {}, keybindingElements),
 			}),
 
 			Footer = React.createElement("Frame", {
@@ -354,24 +322,12 @@ function Keybindings:render()
 					BackgroundTransparency = 1,
 					TextSize = 28,
 					OnClick = function()
-						-- Reset all keybindings to defaults
-						local defaultKeybindings = {
-							PanUp = "W",
-							PanDown = "S",
-							PanLeft = "A",
-							PanRight = "D",
-							RotateLeft = "Q",
-							RotateRight = "E",
-							Focus = "F",
-							ResetCamera = "Home",
-							ToggleCameraMode = "Tab",
-						}
+						KeybindingsManager.ResetToDefaults()
 						self:setState({
-							keybindings = defaultKeybindings,
 							waitingForInput = nil,
 							conflictMessage = nil,
+							keybindings = KeybindingsManager.GetAllKeybindings(),
 						})
-						self:saveKeybindings(defaultKeybindings)
 					end,
 				}),
 				BackButton = React.createElement(Button, {

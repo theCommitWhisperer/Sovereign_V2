@@ -8,7 +8,7 @@ local SeasonManager = require(script.Parent.Parent.Managers.SeasonManager)
 local PlayerManager = require(script.Parent.Parent.Managers.PlayerManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local SeasonSystemDebug = DebugManager.createChannel("SeasonSystem", true)
+local SeasonSystemDebug = DebugManager.createChannel("SeasonSystem", false)
 
 local SeasonSystem = {}
 

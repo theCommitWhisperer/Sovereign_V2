@@ -9,7 +9,7 @@ local PlayerList = require(script.Parent.PlayerList)
 local MapPreview = require(script.Parent.MapPreview)
 local Row = require(script.Parent.Parent.Parent.components.Row)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local LobbyDebug = DebugManager.createChannel("Lobby", true)
+local LobbyDebug = DebugManager.createChannel("Lobby", false)
 
 local Lobby = React.Component:extend("Lobby")
 

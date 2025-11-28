@@ -8,7 +8,7 @@ local UnitManager = require(script.Parent.Parent.Managers.UnitManager)
 local CombatManager = require(script.Parent.Parent.Managers.CombatManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local VikingDebug = DebugManager.createChannel("Viking", true)
+local VikingDebug = DebugManager.createChannel("Viking", false)
 
 local VikingRaidSystem = {}
 
