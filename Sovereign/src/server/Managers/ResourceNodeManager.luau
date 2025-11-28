@@ -62,6 +62,22 @@ local function createNodeModel(nodeType: string, position: Vector3): Model
 		part.Size = Vector3.new(8, 2, 8)
 		part.Color = Color3.fromRGB(238, 232, 170) -- Pale yellow
 		part.Material = Enum.Material.Ground
+	elseif nodeType == "Iron_Ore" then
+		-- Iron ore deposit
+		part.Size = Vector3.new(5, 3, 5)
+		part.Color = Color3.fromRGB(139, 69, 19) -- Dark brown/rust
+		part.Material = Enum.Material.Slate
+
+		-- Add some rust-colored spots
+		local ore = Instance.new("Part")
+		ore.Name = "OreVein"
+		ore.Size = Vector3.new(3, 2, 3)
+		ore.Color = Color3.fromRGB(184, 115, 51) -- Rust color
+		ore.Material = Enum.Material.CorrodedMetal
+		ore.Anchored = true
+		ore.CanCollide = false
+		ore.Position = position + Vector3.new(0, 2, 0)
+		ore.Parent = model
 	end
 
 	part.Position = position + Vector3.new(0, part.Size.Y / 2, 0)

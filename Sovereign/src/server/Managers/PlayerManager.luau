@@ -16,6 +16,7 @@ export type PlayerData = {
 	Buildings: { Instance },
 	Units: { Instance },
 	Keep: Instance?,
+    Happiness: number?,
 }
 
 local PlayersData: { [number]: PlayerData } = {}
@@ -37,10 +38,14 @@ function PlayerManager.create(player: Player): PlayerData
 			Food = 0,
 			Weapons = 0,
 			Iron_Bars = 0,
+			Iron_Ore = 0,
+			Bread = 0,
+			Ale = 0,
 		},
 		Buildings = {},
 		Units = {},
 		Keep = nil,
+        Happiness = 50,
 	}
 
 	PlayersData[player.UserId] = data
@@ -142,6 +147,26 @@ function PlayerManager.deductResources(player: Player, cost: { [string]: number 
 			data.Resources[resource] = math.max(0, data.Resources[resource] - amount)
 		end
 	end
+end
+
+function PlayerManager.updatePlayerStats(player: Player)
+    local playerData = PlayerManager.get(player)
+    if not playerData then
+        return
+    end
+
+    local armySize = #playerData.Units
+
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local RemoteEvents = ReplicatedStorage:FindFirstChild("RemoteEvents")
+    if RemoteEvents then
+        local GameEvent = RemoteEvents:FindFirstChild("GameEvent")
+        if GameEvent then
+            GameEvent:FireClient(player, "UpdatePlayerStats", {
+                armySize = armySize,
+            })
+        end
+    end
 end
 
 return PlayerManager

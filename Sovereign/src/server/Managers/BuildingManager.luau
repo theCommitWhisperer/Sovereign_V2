@@ -6,6 +6,7 @@ local Workspace = game:GetService("Workspace")
 
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local PlayerManager = require(script.Parent.PlayerManager)
+local SpawnManager = require(script.Parent.SpawnManager)
 
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local StorageDebug = DebugManager.createChannel("Storage", false)
@@ -29,6 +30,17 @@ function BuildingManager.createBuilding(player: Player, buildingName: string, cf
 	if not buildingInfo then
 		channel:warn(`Unknown building: {buildingName}`)
 		return nil
+	end
+
+	-- Check if player can build in this location (territory check)
+	local quadrant = SpawnManager.getPlayerQuadrant(player.UserId)
+	if quadrant then
+		local buildPosition = cframe.Position
+		if not SpawnManager.isPositionInEstate(buildPosition, quadrant) then
+			channel:warn(`{player.Name} tried to build outside their estate (Quadrant {quadrant})`)
+			-- TODO: Send error message to client
+			return nil
+		end
 	end
 
 	channel:info(`Creating {buildingName} for {player.Name}`)

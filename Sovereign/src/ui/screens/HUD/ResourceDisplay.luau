@@ -3,7 +3,8 @@ local UIConfig = require(script.Parent.Parent.Parent.UIConfig)
 
 local ResourceDisplay = React.Component:extend("ResourceDisplay")
 
-local RESOURCE_ORDER = { "Wood", "Stone", "Food", "Gold", "Weapons", "Iron_Bars" }
+-- Stronghold-style resource order: HONOR | JUNK/ISO | GOLD | FOOD | POP | 3x6
+local RESOURCE_ORDER = { "Gold", "Food", "Wood", "Stone", "Weapons", "Iron_Bars" }
 
 local RESOURCE_ICONS = {
 	Wood = "🌲",
@@ -24,7 +25,7 @@ function ResourceDisplay:render()
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
-		Padding = UDim.new(0, 20),
+		Padding = UDim.new(0, 8),
 	})
 
 	-- Create a display for each resource
@@ -35,52 +36,46 @@ function ResourceDisplay:render()
 
 		resourceElements[resourceName] = React.createElement("Frame", {
 			Name = resourceName .. "Frame",
-			Size = UDim2.new(0, 100, 1, 0),
-			BackgroundTransparency = 1,
+			Size = UDim2.new(0, 85, 1, -6),
+			BackgroundColor3 = UIConfig.HUD.ResourceBackgroundColor,
+			BorderSizePixel = 0,
 			LayoutOrder = i,
 		}, {
+			Border = React.createElement("UIStroke", {
+				Color = UIConfig.HUD.ResourceBorderColor,
+				Thickness = UIConfig.HUD.BorderThickness,
+			}),
+
+			Padding = React.createElement("UIPadding", {
+				PaddingTop = UDim.new(0, 3),
+				PaddingBottom = UDim.new(0, 3),
+				PaddingLeft = UDim.new(0, 5),
+				PaddingRight = UDim.new(0, 5),
+			}),
+
 			Layout = React.createElement("UIListLayout", {
 				FillDirection = Enum.FillDirection.Horizontal,
 				VerticalAlignment = Enum.VerticalAlignment.Center,
-				Padding = UDim.new(0, 6),
+				Padding = UDim.new(0, 4),
 			}),
 
 			Icon = React.createElement("TextLabel", {
-				Size = UDim2.new(0, 24, 0, 24),
+				Size = UDim2.new(0, UIConfig.HUD.ResourceIconSize, 0, UIConfig.HUD.ResourceIconSize),
 				BackgroundTransparency = 1,
 				Text = icon,
-				Font = Enum.Font.Gotham,
-				TextSize = 20,
+				FontFace = UIConfig.Font.Default,
+				TextSize = 16,
 			}),
 
-			Info = React.createElement("Frame", {
-				Size = UDim2.new(1, -30, 1, 0),
+			Amount = React.createElement("TextLabel", {
+				Size = UDim2.new(1, -(UIConfig.HUD.ResourceIconSize + 4), 1, 0),
 				BackgroundTransparency = 1,
-			}, {
-				Layout = React.createElement("UIListLayout", {
-					FillDirection = Enum.FillDirection.Vertical,
-					VerticalAlignment = Enum.VerticalAlignment.Center,
-				}),
-
-				Name = React.createElement("TextLabel", {
-					Size = UDim2.new(1, 0, 0, 14),
-					BackgroundTransparency = 1,
-					Text = displayName,
-					Font = Enum.Font.GothamBold,
-					TextSize = 11,
-					TextColor3 = Color3.fromRGB(200, 200, 200),
-					TextXAlignment = Enum.TextXAlignment.Left,
-				}),
-
-				Amount = React.createElement("TextLabel", {
-					Size = UDim2.new(1, 0, 0, 18),
-					BackgroundTransparency = 1,
-					Text = tostring(math.floor(amount)),
-					Font = Enum.Font.Gotham,
-					TextSize = 16,
-					TextColor3 = Color3.fromRGB(255, 255, 255),
-					TextXAlignment = Enum.TextXAlignment.Left,
-				}),
+				Text = tostring(math.floor(amount)),
+				FontFace = UIConfig.Font.Title,
+				TextSize = 14,
+				TextColor3 = UIConfig.HUD.ResourceTextColor,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextYAlignment = Enum.TextYAlignment.Center,
 			}),
 		})
 	end

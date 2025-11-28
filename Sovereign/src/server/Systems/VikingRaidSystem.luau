@@ -33,7 +33,7 @@ function VikingRaidSystem.enableRaids(playerId: number, peaceTimeMinutes: number
 	activeRaids[playerId] = {
 		playerId = playerId,
 		enabled = true,
-		peaceTimeSeconds = peaceTimeSeconds,
+		peaceTimeSeconds = 30,
 		raidIntervalSeconds = 180, -- Changed from 120 to 180 (3 minutes between raids)
 		nextRaidTime = tick() + peaceTimeSeconds,
 		currentRaidNumber = 0,
@@ -122,16 +122,12 @@ local function spawnRaid(config: RaidConfig)
 	local spawnedVikings = {}
 	for i = 1, vikingCount do
 		local unitType = unitTypes[math.random(1, #unitTypes)]
-		local offset = Vector3.new(
-			math.random(-10, 10),
-			0, -- Keep this at 0, we'll set Y below
-			math.random(-10, 10)
-		)
+		local offset = Vector3.new(math.random(-10, 10), 0, math.random(-10, 10))
 
 		local vikingSpawnPos = spawnPosition + offset
-		vikingSpawnPos = Vector3.new(vikingSpawnPos.X, 20, vikingSpawnPos.Z) -- Ensure Y=20
-
-		local viking = UnitManager.createUnit(unitType, VIKING_OWNER_ID, vikingSpawnPos)
+		vikingSpawnPos = Vector3.new(vikingSpawnPos.X, 20, vikingSpawnPos.Z)
+		local viking = UnitManager.createUnit(unitType, VIKING_OWNER_ID, vikingSpawnPos, "Viking") -- Pass "Viking" faction
+		-- FIX: Pass the Viking Faction explicitly ("Viking")
 		if viking then
 			table.insert(spawnedVikings, viking)
 
@@ -154,7 +150,6 @@ local function spawnRaid(config: RaidConfig)
 	})
 
 	config.nextRaidTime = tick() + config.raidIntervalSeconds
-
 	-- Notify player
 	local player = game.Players:GetPlayerByUserId(config.playerId)
 	if player then

@@ -105,30 +105,56 @@ local function calculateFormationPositions(targetPosition: Vector3, unitCount: n
 end
 
 -- Send move command to server
-function MovementManager.moveUnitsTo(units: { Model }, targetPosition: Vector3)
+function MovementManager.moveUnitsTo(units: { Model }, targetPosition: Vector3, useFormation: boolean?)
 	if #units == 0 then
 		return
 	end
 
-	-- Calculate formation positions
-	local positions = calculateFormationPositions(targetPosition, #units)
+	-- If moving multiple units, use formation by default
+	local shouldUseFormation = useFormation ~= false and #units >= 2
 
-	-- Send command to server for each unit
-	for i, unit in units do
-		local unitId = unit:GetAttribute("UnitId") or unit.Name
-		GameEvent:FireServer("MoveUnit", {
-			unitId = unitId,
-			targetPosition = positions[i],
+	if shouldUseFormation then
+		-- Send formation move command to server
+		local unitIds = {}
+		for _, unit in units do
+			table.insert(unitIds, unit:GetAttribute("UnitId") or unit.Name)
+		end
+
+		-- Get selected formation type from SelectionManager
+		local formationType = SelectionManager.getFormationType() or "Line"
+
+		GameEvent:FireServer("MoveUnitsInFormation", {
+			unitIds = unitIds,
+			targetPosition = targetPosition,
+			formationType = formationType,
+		})
+
+		MovementDebug:info("Moving units in formation", {
+			count = #units,
+			targetPosition = targetPosition,
+			formationType = formationType,
+		})
+	else
+		-- Calculate formation positions for individual movement
+		local positions = calculateFormationPositions(targetPosition, #units)
+
+		-- Send command to server for each unit
+		for i, unit in units do
+			local unitId = unit:GetAttribute("UnitId") or unit.Name
+			GameEvent:FireServer("MoveUnit", {
+				unitId = unitId,
+				targetPosition = positions[i],
+			})
+		end
+
+		MovementDebug:info("Moving units individually", {
+			count = #units,
+			targetPosition = targetPosition,
 		})
 	end
 
 	-- Visual feedback
 	createMoveMarker(targetPosition)
-
-	MovementDebug:info("Moving units", {
-		count = #units,
-		targetPosition = targetPosition,
-	})
 end
 
 -- Send attack command to server

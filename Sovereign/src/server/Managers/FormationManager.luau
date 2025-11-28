@@ -105,7 +105,7 @@ local FORMATIONS = {
 		-- Basic line formation
 		shape = "line",
 		rows = 1,
-		spacing = 5,
+		spacing = 6,  -- Increased from 5 to reduce collisions
 		bonuses = {
 			attack = 1.0,
 			defense = 1.0,
@@ -116,10 +116,10 @@ local FORMATIONS = {
 		description = "Standard battle line",
 	},
 	Column = {
-		-- Marching formation
+		-- Marching formation - multiple files side-by-side
 		shape = "column",
 		rows = 1,
-		spacing = 3,
+		spacing = 4,  -- Increased from 3 to reduce collisions
 		bonuses = {
 			attack = 0.8,
 			defense = 0.8,
@@ -127,7 +127,7 @@ local FORMATIONS = {
 			morale = 1.0,
 		},
 		minUnits = 2,
-		description = "Column for rapid movement",
+		description = "Column formation for marching (2-4 files wide)",
 	},
 }
 
@@ -205,9 +205,25 @@ local function calculateFormationPositions(
 			positions[unit] = center + offset
 		end
 	elseif config.shape == "column" then
+		-- Column formation: multiple files (columns) marching together
+		-- For example, 6 units = 2 columns of 3, 12 units = 3 columns of 4
+		local columnsWide = math.min(math.ceil(math.sqrt(unitCount / 2)), 4) -- Max 4 columns wide
+		local unitsPerColumn = math.ceil(unitCount / columnsWide)
+
+		FormationDebug:info(`Column formation: {unitCount} units = {columnsWide} columns × {unitsPerColumn} rows`)
+
 		for i, unit in ipairs(units) do
-			local offset = facing * (-(i - 1) * config.spacing)
-			positions[unit] = center + offset
+			-- Which column (0 to columnsWide-1)
+			local columnIndex = (i - 1) % columnsWide
+			-- Which row (0 to unitsPerColumn-1)
+			local rowIndex = math.floor((i - 1) / columnsWide)
+
+			-- Offset perpendicular to facing (columns side-by-side)
+			local lateralOffset = rightVector * ((columnIndex - (columnsWide - 1) / 2) * config.spacing)
+			-- Offset along facing direction (rows front-to-back)
+			local depthOffset = facing * (-(rowIndex * config.spacing))
+
+			positions[unit] = center + lateralOffset + depthOffset
 		end
 	elseif config.shape == "scatter" then
 		-- Random scatter within area
@@ -282,25 +298,27 @@ function createFormationVisual(formation: Formation)
 		return
 	end
 
-	-- Create a temporary visual effect
-	local part = Instance.new("Part")
-	part.Name = "FormationIndicator"
-	part.Anchored = true
-	part.CanCollide = false
-	part.Transparency = 0.8
-	part.Material = Enum.Material.ForceField
-	part.Size = Vector3.new(20, 0.2, 20) -- Adjust based on formation
-	part.Position = formation.center
-	part.Color = Color3.fromRGB(100, 200, 100)
-	part.Parent = workspace
+	-- Create a temporary visual effect in a separate task (non-blocking)
+	task.spawn(function()
+		local part = Instance.new("Part")
+		part.Name = "FormationIndicator"
+		part.Anchored = true
+		part.CanCollide = false
+		part.Transparency = 0.8
+		part.Material = Enum.Material.ForceField
+		part.Size = Vector3.new(20, 0.2, 20) -- Adjust based on formation
+		part.Position = formation.center
+		part.Color = Color3.fromRGB(100, 200, 100)
+		part.Parent = workspace
 
-	-- Fade out effect
-	TweenService:Create(part, TweenInfo.new(2), {
-		Transparency = 1,
-	}):Play()
+		-- Fade out effect
+		TweenService:Create(part, TweenInfo.new(2), {
+			Transparency = 1,
+		}):Play()
 
-	task.wait(2)
-	part:Destroy()
+		task.wait(2)
+		part:Destroy()
+	end)
 end
 
 -- Move formation to new position

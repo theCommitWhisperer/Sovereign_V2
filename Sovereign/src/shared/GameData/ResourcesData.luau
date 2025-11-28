@@ -52,4 +52,25 @@ ResourcesData.Weapons = {
 	max_carry_amount = 50,
 } :: ResourceData
 
+ResourcesData.Iron_Ore = {
+	display_name = "Iron Ore",
+	icon = "⛏️",
+	is_tradeable = true,
+	max_carry_amount = 100,
+} :: ResourceData
+
+ResourcesData.Bread = {
+	display_name = "Bread",
+	icon = "🍞",
+	is_tradeable = true,
+	max_carry_amount = 200,
+} :: ResourceData
+
+ResourcesData.Ale = {
+	display_name = "Ale",
+	icon = "🍺",
+	is_tradeable = true,
+	max_carry_amount = 150,
+} :: ResourceData
+
 return ResourcesData
