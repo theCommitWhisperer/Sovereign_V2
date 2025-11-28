@@ -33,16 +33,20 @@ local DIRECTIONS = {
 -- Corner: Oriented to match straight wall connections
 -- 3Way: Oriented to match straight wall connections
 local ADJACENCY_LOOKUP = {
-	[0] = { "Wall Segment", 90 }, -- Isolated (Default to Horizontal)
-	[1] = { "Wall Segment", 0 }, -- N (Vertical)
-	[2] = { "Wall Segment", 90 }, -- E (Horizontal)
+	[0] = { "Wall Segment", 0 }, -- Isolated (Default to Horizontal)
+	[1] = { "Wall Segment", 90 }, -- N (Vertical)
+	[2] = { "Wall Segment", 0 }, -- E (Horizontal)
 	[3] = { "Wall Corner", 0 }, -- N + E (NE Corner)
+	[4] = { "Wall Segment", 90 }, -- S (Vertical)
+	[5] = { "Wall Segment", 90 }, -- N + S (Straight Vertical)
 	[4] = { "Wall Segment", 0 }, -- S (Vertical)
 	[5] = { "Wall Segment", 0 }, -- N + S (Straight Vertical)
 	[6] = { "Wall Corner", 270 }, -- E + S (SE Corner)
 	[7] = { "Tower", 0 }, -- N + E + S (East T)
+	[8] = { "Wall Segment", 0 }, -- W (Horizontal)
 	[8] = { "Wall Segment", 90 }, -- W (Horizontal)
 	[9] = { "Wall Corner", 90 }, -- N + W (NW Corner)
+	[10] = { "Wall Segment", 0 }, -- E + W (Straight Horizontal)
 	[10] = { "Wall Segment", 90 }, -- E + W (Straight Horizontal)
 	[11] = { "Tower", 180 }, -- N + W + E (North T)
 	[12] = { "Wall Corner", 180 }, -- S + W (SW Corner)
