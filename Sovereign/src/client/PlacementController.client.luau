@@ -116,36 +116,83 @@ local function getWallAssetName(bitmask)
 	return "Wall Segment", 0
 end
 
--- Finds all ConnectionPoints at floor level, sorted by orientation for predictable snapping
--- Finds all ConnectionPoints (supports ConnectionPoint_1, ConnectionPoint_2, etc.) at floor level, sorted by orientation for predictable snapping
+-- Finds all floor-level ConnectionPoints on a model.
+--
+-- Contract for wall assets:
+--   * Each model has one or more BaseParts named "ConnectionPoint" (or "ConnectionPoint_1", etc.)
+--   * These parts sit at the desired floor level for that model.
+--   * Their LookVector should point OUTWARD from the model along the connection direction.
+--
+-- This helper:
+--   * Collects all matching parts (optionally inside a "ConnectionPoints" folder)
+--   * Keeps only those at the lowest local Y ("floor" level) with a small tolerance
+--   * Sorts them deterministically by local X/Z so index 1 is stable across runs
 local function findConnectionPoints(model: Model): { BasePart }
 	if not model or not model:IsA("Model") then
 		return {}
 	end
-	local points = {}
-	local minY = math.huge
-	for _, part in model:GetDescendants() do
-		if part:IsA("BasePart") then
-			minY = math.min(minY, part.Position.Y - part.Size.Y / 2)
-		end
-	end
-	for _, child in model:GetDescendants() do
-		if child:IsA("BasePart") and string.match(child.Name, "^ConnectionPoint[_%d]*$") then
-			if math.abs((child.Position.Y - child.Size.Y / 2) - minY) < 0.2 then
-				table.insert(points, child)
+
+	local allPoints = {} :: { BasePart }
+
+	-- 1) Prefer an explicit ConnectionPoints folder if present
+	local cpFolder = model:FindFirstChild("ConnectionPoints")
+	if cpFolder then
+		for _, child in cpFolder:GetDescendants() do
+			if child:IsA("BasePart") and string.match(child.Name, "^ConnectionPoint[_%d]*$") then
+				table.insert(allPoints, child)
 			end
 		end
 	end
-	-- Sort by LookVector (X/Z) for deterministic order
-	table.sort(points, function(a, b)
-		local av = a.CFrame.LookVector
-		local bv = b.CFrame.LookVector
-		if av.X ~= bv.X then
-			return av.X < bv.X
+
+	-- 2) Fallback: search entire model for ConnectionPoint parts
+	if #allPoints == 0 then
+		for _, descendant in model:GetDescendants() do
+			if descendant:IsA("BasePart") and string.match(descendant.Name, "^ConnectionPoint[_%d]*$") then
+				table.insert(allPoints, descendant)
+			end
 		end
-		return av.Z < bv.Z
+	end
+
+	if #allPoints == 0 then
+		return {}
+	end
+
+	local pivot = model:GetPivot()
+
+	-- 3) Find the lowest local Y among all connection points (their floor level)
+	local minLocalY = math.huge
+	for _, cp in allPoints do
+		local localPos = pivot:PointToObjectSpace(cp.Position)
+		if localPos.Y < minLocalY then
+			minLocalY = localPos.Y
+		end
+	end
+
+	-- 4) Keep only CPs that share this floor level (with tolerance).
+	local floorPoints = {} :: { BasePart }
+	for _, cp in allPoints do
+		local localPos = pivot:PointToObjectSpace(cp.Position)
+		if math.abs(localPos.Y - minLocalY) < 0.2 then
+			table.insert(floorPoints, cp)
+		end
+	end
+
+	if #floorPoints == 0 then
+		-- If our floor filter is too strict for some asset, fall back to all CPs
+		floorPoints = allPoints
+	end
+
+	-- 5) Sort deterministically by local X/Z for predictable primary CP selection
+	table.sort(floorPoints, function(a, b)
+		local aLocal = pivot:PointToObjectSpace(a.Position)
+		local bLocal = pivot:PointToObjectSpace(b.Position)
+		if math.abs(aLocal.X - bLocal.X) > 0.01 then
+			return aLocal.X < bLocal.X
+		end
+		return aLocal.Z < bLocal.Z
 	end)
-	return points
+
+	return floorPoints
 end
 
 -- // VISUAL DEBUGGING //
