@@ -11,6 +11,7 @@ local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
+local WallGridConfig = require(ReplicatedStorage.Shared.WallGridConfig)
 local PlacementDebug = DebugManager.createChannel("Placement", true)
 
 -- Events
@@ -26,7 +27,7 @@ local resetWallPieceFunc = ReplicatedStorage:FindFirstChild("ResetWallPiece")
 resetWallPieceFunc.Name = "ResetWallPiece"
 
 -- Configuration
-local SNAP_RADIUS = 15
+local SNAP_RADIUS = 20
 local CONNECTION_TOLERANCE = 4.0
 local WALL_GRID_SIZE = 1
 local CONNECTION_OFFSET = 0.05 -- A small offset to prevent wall meshes from overlapping/Z-fighting.
@@ -80,6 +81,24 @@ local function getSafeBounds(obj: Instance)
 		return obj.CFrame, obj.Size
 	end
 	return CFrame.new(), Vector3.new(1, 1, 1)
+end
+
+-- Walk up from a part to find the top-level building Model that actually
+-- carries the BuildingType attribute. Many visible wall parts live inside
+-- nested Models (e.g. "Visuals"), so part.Parent is often *not* the
+-- building instance we care about.
+local function findBuildingModelFromPart(part: BasePart): Model?
+	local current: Instance? = part
+	while current do
+		if current:IsA("Model") then
+			local bType = current:GetAttribute("BuildingType")
+			if bType ~= nil then
+				return current
+			end
+		end
+		current = current.Parent
+	end
+	return nil
 end
 
 local function getWallAssetName(bitmask)
@@ -236,30 +255,44 @@ local function updateDebugVisuals(ghostCP: Vector3?, neighborCP: Vector3?)
 	end
 end
 
--- Finds the best matching pair of connection points for snapping
+-- NOTE:
+--   We intentionally do NOT require ConnectionPoint normals to face directly
+--   toward each other here. Corners, towers, and T-junctions often have
+--   ConnectionPoints whose LookVectors are at 90° or otherwise not perfectly
+--   opposite, but their positions still represent valid joints.
+--
+--   To support all those shapes, we simply pick the closest pair of
+--   ConnectionPoints between the ghost model and a neighbor, as long as
+--   they are within a reasonable snapping radius. Orientation is handled
+--   separately by the wall bitmask / asset selection logic.
 local function findNearestConnectionPoints(ghostModel: Model, neighborModel: Model): (BasePart?, BasePart?)
 	local ghostCPs = findConnectionPoints(ghostModel)
 	local neighborCPs = findConnectionPoints(neighborModel)
 	if #ghostCPs == 0 or #neighborCPs == 0 then
 		return nil, nil
 	end
+
 	local minDistance = math.huge
 	local bestGCP, bestNCP = nil, nil
+
 	for _, gCP in ghostCPs do
 		for _, nCP in neighborCPs do
-			-- Snap if CPs are facing each other (dot product near -1)
-			local dot = gCP.CFrame.LookVector:Dot(-nCP.CFrame.LookVector)
-			if dot > 0.95 then
-				local dist = (gCP.Position - nCP.Position).Magnitude
-				if dist < minDistance then
-					minDistance = dist
-					bestGCP = gCP
-					bestNCP = nCP
-				end
+			local dist = (gCP.Position - nCP.Position).Magnitude
+			if dist < minDistance then
+				minDistance = dist
+				bestGCP = gCP
+				bestNCP = nCP
 			end
 		end
 	end
-	return bestGCP, bestNCP
+
+	-- Only treat as a valid candidate if the closest pair is reasonably near;
+	-- this prevents snapping to walls that are visually far away.
+	if minDistance <= SNAP_RADIUS * 2 then
+		return bestGCP, bestNCP
+	end
+
+	return nil, nil
 end
 
 local function areModelsConnected(ghost: Model, other: Model): boolean
@@ -302,7 +335,7 @@ local function updateGhostPosition()
 		or currentBuildingName == "Ladder_Wall_Segment"
 
 	-- Grid & Ground
-	local gridSize = isWallBuilding and 8 or 4
+	local gridSize = isWallBuilding and WallGridConfig.GRID_SIZE or 4
 	local snappedX = math.floor(pos.X / gridSize + 0.5) * gridSize
 	local snappedZ = math.floor(pos.Z / gridSize + 0.5) * gridSize
 
@@ -325,7 +358,8 @@ local function updateGhostPosition()
 		local checkParams = OverlapParams.new()
 		checkParams.FilterDescendantsInstances = groundIgnoreList
 		for _, dir in ipairs(DIRECTIONS) do
-			local checkPos = Vector3.new(snappedX, groundY, snappedZ) + Vector3.new(dir.x * 16, 0, dir.z * 16)
+			local checkPos = Vector3.new(snappedX, groundY, snappedZ)
+				+ Vector3.new(dir.x * WallGridConfig.GRID_SIZE, 0, dir.z * WallGridConfig.GRID_SIZE)
 			local parts = Workspace:GetPartBoundsInBox(CFrame.new(checkPos), Vector3.new(10, 10, 10), checkParams)
 			if #parts > 0 then
 				bitmask = bit32.bor(bitmask, dir.bit)
@@ -405,8 +439,8 @@ local function updateGhostPosition()
 			end
 
 			for _, part in ipairs(nearbyParts) do
-				local model = part.Parent
-				if model and model:IsA("Model") and model ~= ghostBuilding then
+				local model = findBuildingModelFromPart(part)
+				if model and model ~= ghostBuilding then
 					local bType = model:GetAttribute("BuildingType")
 					if bType and (bType == "Stone_Wall" or string.find(bType, "Wall") or bType == "Tower") then
 						print(
@@ -460,23 +494,50 @@ local function updateGhostPosition()
 			updateDebugVisuals(bestGCP.Position + diffVector + nudgeVector, bestNCP.Position)
 		else
 			-- GRID PLACEMENT: No neighbor to snap to.
-			if #ghostCPs > 0 then
-				local primaryCP = ghostCPs[1] -- The first CP after deterministic sorting
+			-- Use WallGridConfig to properly position the model based on its connection points
+			local gridX, gridZ = WallGridConfig.toGrid(Vector3.new(snappedX, 0, snappedZ))
+			local modelCFrame = WallGridConfig.getModelCFrame(assetName, gridX, gridZ, rotation)
+
+			if modelCFrame then
+				-- Use the precise CFrame from WallGridConfig
+				-- Adjust Y position to ground level
+				local adjustedCF = CFrame.new(
+					modelCFrame.Position.X,
+					groundY + modelCFrame.Position.Y - 10, -- Adjust from CP ground level (Y=10) to actual ground
+					modelCFrame.Position.Z
+				) * (modelCFrame - modelCFrame.Position)
+
+				ghostBuilding:PivotTo(adjustedCF)
+
+				print(
+					string.format(
+						"[Placement] Grid placement for %s at grid (%d, %d), rotation %d°\n  [Placement] Model CFrame: %s",
+						assetName,
+						gridX,
+						gridZ,
+						rotation,
+						tostring(adjustedCF)
+					)
+				)
+
+				if #ghostCPs > 0 then
+					updateDebugVisuals(ghostCPs[1].Position, nil)
+				end
+			elseif #ghostCPs > 0 then
+				-- Fallback to old method if WallGridConfig doesn't have this piece
+				local primaryCP = ghostCPs[1]
 				local targetPos = Vector3.new(snappedX, groundY, snappedZ)
 
-				-- First, orient the model correctly.
 				local rotatedCF = CFrame.new(ghostBuilding:GetPivot().Position)
 					* CFrame.Angles(0, math.rad(rotation), 0)
 				ghostBuilding:PivotTo(rotatedCF)
 
-				-- Now, the primaryCP is at its new rotated world position.
 				local currentCPPos = primaryCP.Position
-				-- Calculate the difference and move the ghost so the CP aligns with the grid target.
 				local diff = targetPos - currentCPPos
 
 				print(
 					string.format(
-						"[Placement] No snap neighbor. Using grid.\n  [Placement] Grid Target: %s\n  [Placement] Current CP World Pos: %s\n  [Placement] Final Position Delta: %s",
+						"[Placement] Fallback grid placement.\n  [Placement] Grid Target: %s\n  [Placement] Current CP: %s\n  [Placement] Delta: %s",
 						tostring(targetPos),
 						tostring(currentCPPos),
 						tostring(diff)
@@ -502,11 +563,23 @@ local function updateGhostPosition()
 		local collisionCF, size = getSafeBounds(ghostBuilding)
 		local collisions = Workspace:GetPartBoundsInBox(collisionCF, size * 0.8, collisionParams)
 
+		-- Allow wall pieces to collide/overlap with each other.
+		-- We only block placement if the ghost intersects with non-wall
+		-- geometry (e.g. other buildings, props, terrain).
 		canPlace = true
 		for _, p in ipairs(collisions) do
 			if p.Name ~= "Baseplate" and not p:IsA("Terrain") and p.Name ~= "ConnectionPoint" then
-				local pModel = p.Parent
-				if not (pModel and pModel:IsA("Model") and areModelsConnected(ghostBuilding, pModel)) then
+				local pModel = findBuildingModelFromPart(p)
+				local isWallNeighbor = false
+				if pModel then
+					local bType = pModel:GetAttribute("BuildingType")
+					if bType and (bType == "Stone_Wall" or string.find(bType, "Wall") or bType == "Tower") then
+						isWallNeighbor = true
+					end
+				end
+
+				-- If this collision is not another wall-type building, block placement.
+				if not isWallNeighbor then
 					canPlace = false
 					break
 				end

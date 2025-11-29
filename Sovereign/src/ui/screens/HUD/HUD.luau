@@ -19,6 +19,11 @@ local Policies = require(script.Parent.Parent.Policies.Policies)
 local Menu = require(script.Parent.Parent.Menu.Menu)
 local Stats = require(script.Parent.Parent.Stats.Stats)
 local TutorialModal = require(script.Parent.Parent.Parent.components.TutorialModal)
+local HeroAbilitiesPanel = require(script.Parent.HeroAbilitiesPanel)
+local UpgradePanel = require(script.Parent.UpgradePanel)
+local TechTree = require(script.Parent.TechTree)
+local QuestTracker = require(script.Parent.QuestTracker)
+local AchievementNotification = require(script.Parent.AchievementNotification)
 
 local player = Players.LocalPlayer
 
@@ -46,6 +51,10 @@ function HUD:init()
 		showMenuModal = false,
 		showStatsModal = false,
 		showPoliciesModal = false,
+		showTechTreeModal = false,
+		showHeroAbilities = false,
+		achievementData = nil,
+		buildingUpgradeInfo = nil,
 		selectedCategory = "Defense", -- Defense, Economy, Housing, Food, Culture
 		armySize = 0,
 		honor = 0,
@@ -81,6 +90,11 @@ function HUD:init()
 
 	self.statsConnection = self.getStatsEvent.OnClientEvent:Connect(function(stats)
 		self:setState({ stats = stats })
+	end)
+
+	-- Request initial quest data
+	task.delay(0.5, function()
+		self.gameEvent:FireServer("GetQuests")
 	end)
 
 	-- Initialize from gameStartData prop if available
@@ -171,6 +185,13 @@ function HUD:init()
 			if typeof(data) == "string" then
 				HUDDebug:info("Camera mode changed", { mode = data })
 				self:setState({ cameraMode = data })
+				-- Request hero abilities when entering King mode
+				if data == "King" then
+					self.gameEvent:FireServer("GetAbilities")
+					self:setState({ showHeroAbilities = true })
+				else
+					self:setState({ showHeroAbilities = false })
+				end
 			end
 		elseif action == "KingHealthUpdate" then
 			-- King health changed
@@ -188,6 +209,59 @@ function HUD:init()
 
 				-- TODO: Show notification UI
 				-- For now, just log it
+		elseif action == "AchievementUnlocked" then
+			-- Achievement notification
+			HUDDebug:info("Achievement Unlocked!", data)
+			self:setState({ achievementData = data })
+			-- Auto-clear after component handles it
+			task.delay(6, function()
+				self:setState({ achievementData = nil })
+			end)
+		elseif action == "BuildingUpgraded" then
+			-- Building was upgraded
+			HUDDebug:info("Building Upgraded", data)
+		elseif action == "ResearchStarted" then
+			-- Research started
+			HUDDebug:info("Research Started", data)
+		elseif action == "ResearchCompleted" then
+			-- Research completed
+			HUDDebug:info("Research Completed", data)
+		elseif action == "QuestCompleted" then
+			-- Quest completed
+			HUDDebug:info("Quest Completed", data)
+			-- Refresh quest list
+			self.gameEvent:FireServer("GetQuests")
+		elseif action == "QuestProgress" then
+			-- Quest progress updated
+			HUDDebug:info("Quest Progress", data)
+			-- Refresh quest list
+			self.gameEvent:FireServer("GetQuests")
+		elseif action == "QuestsData" then
+			-- Quest data received
+			HUDDebug:info("Received quests data", data)
+			self:setState({ activeQuests = data.activeQuests or {} })
+		elseif action == "AbilitiesData" then
+			-- Hero abilities data received
+			HUDDebug:info("Received abilities data", data)
+			self:setState({ heroAbilities = data.abilities or {} })
+		elseif action == "AbilityCooldownUpdate" then
+			-- Ability cooldown updated
+			HUDDebug:info("Ability cooldown update", data)
+			-- Update specific ability cooldown
+			if self.state.heroAbilities and data.abilityId then
+				local abilities = table.clone(self.state.heroAbilities)
+				for _, ability in abilities do
+					if ability.id == data.abilityId then
+						ability.remainingCooldown = data.remainingCooldown
+						ability.isOnCooldown = data.isOnCooldown
+						break
+					end
+				end
+				self:setState({ heroAbilities = abilities })
+			end
+		elseif action == "KingRespawned" then
+			-- King respawned
+			HUDDebug:info("King Respawned", data)
 				HUDDebug:warn(`VIKING RAID #${data.raidNumber}! {data.vikingCount} Vikings are attacking!`)
 			end
 		end
@@ -737,10 +811,26 @@ function HUD:render()
 				end,
 			}),
 
-			-- Camera Mode Indicator (next to STATS)
-			CameraModeIndicator = React.createElement("Frame", {
+			-- TECH button (next to STATS)
+			TechButton = React.createElement("TextButton", {
 				Size = UDim2.new(0, UIConfig.HUD.TopButtonWidth, 0, UIConfig.HUD.TopButtonHeight),
 				Position = UDim2.new(0, (UIConfig.HUD.TopButtonWidth + 5) * 2 + 5, 0, 5),
+				BackgroundColor3 = UIConfig.HUD.TopButtonBackground,
+				BorderSizePixel = 1,
+				BorderColor3 = UIConfig.HUD.TopButtonBorder,
+				Text = "TECH",
+				Font = Enum.Font.GothamBold,
+				TextSize = 14,
+				TextColor3 = UIConfig.HUD.PanelTextColor,
+				[React.Event.MouseButton1Click] = function()
+					self:setState({ showTechTreeModal = not self.state.showTechTreeModal })
+				end,
+			}),
+
+			-- Camera Mode Indicator (next to TECH)
+			CameraModeIndicator = React.createElement("Frame", {
+				Size = UDim2.new(0, UIConfig.HUD.TopButtonWidth, 0, UIConfig.HUD.TopButtonHeight),
+				Position = UDim2.new(0, (UIConfig.HUD.TopButtonWidth + 5) * 3 + 5, 0, 5),
 				BackgroundColor3 = self.state.cameraMode == "King" and Color3.fromRGB(90, 60, 40) or UIConfig.HUD.TopButtonBackground,
 				BorderSizePixel = 2,
 				BorderColor3 = self.state.cameraMode == "King" and UIConfig.HUD.AccentGold or UIConfig.HUD.TopButtonBorder,
@@ -1038,7 +1128,7 @@ function HUD:render()
 				BorderSizePixel = 1,
 				BorderColor3 = UIConfig.HUD.ContentAreaBorder,
 			}, {
-				-- Content priority: Training Panel > Production Panel > Unit Selection > Building Menu
+				-- Content priority: Training Panel > Production Panel > Hero Abilities > Upgrade Panel > Unit Selection > Building Menu
 				Content = hasTrainingBuildingSelected and React.createElement(TrainingPanel, {
 					selectedBuilding = self.state.selectedTrainingBuilding,
 					queue = self.state.trainingQueue,
@@ -1068,6 +1158,22 @@ function HUD:render()
 						self:setState({
 							selectedProductionBuilding = React.None,
 						})
+					end,
+				}) or (self.state.cameraMode == "King" and self.state.showHeroAbilities) and React.createElement(HeroAbilitiesPanel, {
+					abilities = self.state.heroAbilities,
+					onAbilityUsed = function(abilityId)
+						HUDDebug:info(`Using hero ability: {abilityId}`)
+						self.gameEvent:FireServer("UseAbility", abilityId)
+					end,
+				}) or self.state.buildingUpgradeInfo and React.createElement(UpgradePanel, {
+					buildingInfo = self.state.buildingUpgradeInfo,
+					playerResources = self.state.resources,
+					onUpgrade = function()
+						HUDDebug:info(`Upgrading building: {self.state.buildingUpgradeInfo.buildingId}`)
+						self.gameEvent:FireServer("UpgradeBuilding", self.state.buildingUpgradeInfo.buildingId)
+					end,
+					onClose = function()
+						self:setState({ buildingUpgradeInfo = React.None })
 					end,
 				}) or hasUnitsSelected and React.createElement(UnitSelectionPanel, {
 					selectedUnits = self.state.selectedUnits,
@@ -1323,6 +1429,32 @@ function HUD:render()
 					economySnapshot = self.state.economySnapshot,
 				})
 			or nil,
+
+		-- Tech Tree Modal (conditionally rendered)
+		TechTreeModal = self.state.showTechTreeModal and React.createElement(TechTree, {
+			visible = self.state.showTechTreeModal,
+			playerResources = self.state.resources,
+			onClose = function()
+				self:setState({ showTechTreeModal = false })
+			end,
+			onResearchStarted = function(techId)
+				HUDDebug:info(`Starting research: {techId}`)
+				self.gameEvent:FireServer("StartResearch", techId)
+			end,
+		}) or nil,
+
+		-- Quest Tracker (right side panel, always visible)
+		QuestTrackerPanel = React.createElement(QuestTracker, {
+			quests = self.state.activeQuests or {},
+		}),
+
+		-- Achievement Notification (overlay, conditionally rendered)
+		AchievementNotificationOverlay = self.state.achievementData and React.createElement(AchievementNotification, {
+			achievementData = self.state.achievementData,
+			onDismiss = function()
+				self:setState({ achievementData = React.None })
+			end,
+		}) or nil,
 
 		-- Tutorial Modal (required buildings guide)
 		-- Step 1 (Keep) always shows, Steps 2-3 only if tutorialEnabled

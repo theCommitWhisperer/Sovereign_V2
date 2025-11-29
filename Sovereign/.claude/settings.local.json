@@ -3,7 +3,8 @@
     "allow": [
       "Bash(grep:*)",
       "Bash(cat:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(roblox-cli analyze:*)"
     ],
     "deny": [],
     "ask": []

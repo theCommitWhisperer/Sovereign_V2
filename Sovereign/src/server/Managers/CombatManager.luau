@@ -13,6 +13,11 @@ local PlayerManager = require(script.Parent.PlayerManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local MoraleManager = require(script.Parent.MoraleManager)
 local FactionManager = require(script.Parent.FactionManager)
+local RevoltManager = require(script.Parent.RevoltManager)
+
+-- Lazy-load to avoid circular dependencies
+local AchievementManager = nil
+local QuestManager = nil
 
 local CombatDebug = DebugManager.createChannel("Combat", false)
 local DamageDebug = DebugManager.createChannel("Damage", false)
@@ -614,12 +619,32 @@ function handleUnitDeath(unit: CombatUnit)
 		RevoltManager.recordUnitLoss(owner)
 	end
 
-	-- Morale boost for enemies
+	-- Morale boost for enemies and track kills
 	for enemyModel, enemyUnit in ActiveCombatUnits do
 		if areEnemies(unit, enemyUnit) then
 			local distance = getDistance(unit.model, enemyModel)
 			if distance and distance <= 30 then
 				MoraleManager.modifyMorale(enemyModel, 5, "Enemy killed")
+
+				-- Track achievement/quest for the killer (lazy-load to avoid circular deps)
+				local killerPlayer = game.Players:GetPlayerByUserId(enemyUnit.owner)
+				if killerPlayer then
+					-- Lazy-load managers on first use
+					if not AchievementManager then
+						AchievementManager = require(script.Parent.AchievementManager)
+					end
+					if not QuestManager then
+						QuestManager = require(script.Parent.QuestManager)
+					end
+
+					AchievementManager.incrementStat(killerPlayer, "EnemiesKilled", 1)
+
+					-- Track Viking kills specifically
+					if unit.unitType == "Viking" then
+						AchievementManager.incrementStat(killerPlayer, "VikingsKilled", 1)
+						QuestManager.updateQuestProgress(killerPlayer, "KillEnemies", "Viking", 1)
+					end
+				end
 			end
 		end
 	end

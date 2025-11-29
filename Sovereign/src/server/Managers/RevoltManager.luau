@@ -5,11 +5,14 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local PlayerManager = require(script.Parent.PlayerManager)
-local HappinessManager = require(script.Parent.HappinessManager)
-local TaxManager = require(script.Parent.TaxManager)
-local UnitManager = require(script.Parent.UnitManager)
-local WorkerManager = require(script.Parent.WorkerManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
+
+-- Lazy-load to avoid circular dependencies
+local HappinessManager = nil
+local TaxManager = nil
+local UnitManager = nil
+local WorkerManager = nil
+local FactionManager = nil
 
 local RevoltDebug = DebugManager.createChannel("RevoltManager", false)
 
@@ -33,6 +36,14 @@ function RevoltManager.get(player: Player)
 end
 
 function RevoltManager.calculateRevoltRisk(player: Player): number
+    -- Lazy-load managers on first use
+    if not HappinessManager then
+        HappinessManager = require(script.Parent.HappinessManager)
+    end
+    if not TaxManager then
+        TaxManager = require(script.Parent.TaxManager)
+    end
+
     local risk = 0
     local playerData = PlayerManager.get(player)
     local happinessInfo = HappinessManager.get(player)
@@ -110,6 +121,17 @@ function RevoltManager.checkRevoltStage(player: Player)
 end
 
 function RevoltManager.triggerRevoltStage(player: Player, stage: number)
+    -- Lazy-load managers on first use
+    if not WorkerManager then
+        WorkerManager = require(script.Parent.WorkerManager)
+    end
+    if not UnitManager then
+        UnitManager = require(script.Parent.UnitManager)
+    end
+    if not FactionManager then
+        FactionManager = require(script.Parent.FactionManager)
+    end
+
     local playerData = PlayerManager.get(player)
     if not playerData then
         return

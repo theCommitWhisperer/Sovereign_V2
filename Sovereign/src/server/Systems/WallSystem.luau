@@ -4,10 +4,11 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
+local WallGridConfig = require(ReplicatedStorage.Shared.WallGridConfig)
+
 local WallSystem = {}
 
--- Configuration
-local WALL_GRID_SIZE = 1
+-- Grid storage
 local wallGrid: { [number]: { [number]: Instance } } = {}
 
 -- Assets
@@ -74,12 +75,12 @@ local function getConnectionPointCenter(model: Model): Vector3
 end
 
 local function toGrid(position: Vector3)
-	return math.floor(position.X / WALL_GRID_SIZE + 0.5), math.floor(position.Z / WALL_GRID_SIZE + 0.5)
+	return WallGridConfig.toGrid(position)
 end
 
 -- Converts Grid Coordinates back to World Position (Assuming Y=0 or existing Y)
 local function fromGrid(gx: number, gz: number, yLevel: number)
-	return Vector3.new(gx * WALL_GRID_SIZE, yLevel, gz * WALL_GRID_SIZE)
+	return WallGridConfig.fromGrid(gx, gz, yLevel)
 end
 
 local function updateWallVisuals(x: number, z: number)
@@ -133,21 +134,21 @@ local function updateWallVisuals(x: number, z: number)
 	local newModel = originalAsset:Clone()
 
 	-- 5. Calculate Absolute Target Position
-	-- We want the Center of the new model's ConnectionPoints to align with the Grid Center
+	-- We want the new model to stay exactly where the placed wall currently is
+	-- (i.e. keep the ConnectionPoint center in the same world position).
 
-	-- A. Get the Grid World Position (Absolute Truth)
-	-- Use the current wall's Y level to maintain height
+	-- A. Use the current wall's ConnectionPoint center as the absolute truth.
 	local oldCPCenter = getConnectionPointCenter(currentWall)
-	local targetWorldCenter = fromGrid(x, z, oldCPCenter.Y)
+	local targetWorldCenter = oldCPCenter
 
-	-- B. Rotate the new model in a void to measure it
+	-- B. Rotate the new model around that world-space center.
 	newModel:PivotTo(CFrame.new(targetWorldCenter) * CFrame.Angles(0, math.rad(rotation), 0))
 
-	-- C. Calculate offset of the new model's connection points relative to its pivot
+	-- C. Calculate offset of the new model's connection points relative to its pivot.
 	local newCPCenter = getConnectionPointCenter(newModel)
 	local diff = targetWorldCenter - newCPCenter
 
-	-- D. Apply offset to align CP Center to Grid Center
+	-- D. Apply offset so the new model's CP center matches the original CP center.
 	newModel:PivotTo(newModel:GetPivot() + diff)
 
 	-- 6. Setup Properties
