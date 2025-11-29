@@ -382,12 +382,7 @@ local function updateGhostPosition()
 							end
 						else
 							local neighborCPs = findConnectionPoints(model)
-							print(
-								string.format(
-									"[Placement]   No matching CPs (neighbor has %d CPs)",
-									#neighborCPs
-								)
-							)
+							print(string.format("[Placement]   No matching CPs (neighbor has %d CPs)", #neighborCPs))
 						end
 					end
 				end
