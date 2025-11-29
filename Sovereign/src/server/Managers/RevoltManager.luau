@@ -11,7 +11,7 @@ local UnitManager = require(script.Parent.UnitManager)
 local WorkerManager = require(script.Parent.WorkerManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local RevoltDebug = DebugManager.createChannel("RevoltManager", true)
+local RevoltDebug = DebugManager.createChannel("RevoltManager", false)
 
 local RevoltManager = {}
 

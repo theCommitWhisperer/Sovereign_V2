@@ -16,7 +16,7 @@ local BoundsManager = require(script.Parent.BoundsManager)
 local KeybindingsManager = require(script.Parent.KeybindingsManager)
 
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local CameraDebug = DebugManager.createChannel("StudioCamera", true)
+local CameraDebug = DebugManager.createChannel("StudioCamera", false)
 
 -- Camera mode
 local CameraMode = {

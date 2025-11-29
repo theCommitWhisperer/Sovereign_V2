@@ -9,7 +9,7 @@ local PlayerManager = require(script.Parent.Parent.Managers.PlayerManager)
 local NotificationManager = require(script.Parent.Parent.Managers.NotificationManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local ConsumptionSystemDebug = DebugManager.createChannel("ConsumptionSystem", true)
+local ConsumptionSystemDebug = DebugManager.createChannel("ConsumptionSystem", false)
 
 local ConsumptionSystem = {}
 

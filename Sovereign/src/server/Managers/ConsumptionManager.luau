@@ -11,7 +11,7 @@ local SeasonManager = require(script.Parent.SeasonManager)
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local ConsumptionDebug = DebugManager.createChannel("ConsumptionManager", true)
+local ConsumptionDebug = DebugManager.createChannel("ConsumptionManager", false)
 
 local ConsumptionManager = {}
 

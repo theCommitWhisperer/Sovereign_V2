@@ -9,7 +9,7 @@ local PlayerManager = require(script.Parent.PlayerManager)
 local TradeManager = require(script.Parent.TradeManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local CaravanDebug = DebugManager.createChannel("CaravanManager", true)
+local CaravanDebug = DebugManager.createChannel("CaravanManager", false)
 
 local CaravanManager = {}
 

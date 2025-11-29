@@ -6,7 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local FogDebug = DebugManager.createChannel("FogOfWar", true) -- Enable debug
+local FogDebug = DebugManager.createChannel("FogOfWar", false) -- Enable debug
 
 local FogOfWarManager = {}
 

@@ -11,8 +11,8 @@ local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
 local WorkerManager = {}
 -- Create debug channels
-local WorkerDebug = DebugManager.createChannel("Worker", true) -- Workers gathering (disabled by default)
-local HaulerDebug = DebugManager.createChannel("Hauler", true) -- Haulers transporting (enabled)
+local WorkerDebug = DebugManager.createChannel("Worker", false) -- Workers gathering (disabled by default)
+local HaulerDebug = DebugManager.createChannel("Hauler", false) -- Haulers transporting (enabled)
 local MovementDebug = DebugManager.createChannel("Movement", false) -- Movement (disabled, very spammy)
 
 -- Job type mapping

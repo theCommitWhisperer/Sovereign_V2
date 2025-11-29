@@ -5,7 +5,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local SpawnManagerDebug = DebugManager.createChannel("SpawnManager", true)
+local SpawnManagerDebug = DebugManager.createChannel("SpawnManager", false)
 
 local SpawnManager = {}
 

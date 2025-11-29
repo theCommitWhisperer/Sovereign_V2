@@ -7,7 +7,7 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local FormationDebug = DebugManager.createChannel("Formation", true)
+local FormationDebug = DebugManager.createChannel("Formation", false)
 
 local FormationManager = {}
 

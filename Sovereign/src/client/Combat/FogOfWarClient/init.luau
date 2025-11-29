@@ -12,7 +12,7 @@ local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
 local CheckVisibility = RemoteEvents:WaitForChild("CheckVisibility")
 
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local FogClientDebug = DebugManager.createChannel("FogOfWarClient", true)  -- Enable debug
+local FogClientDebug = DebugManager.createChannel("FogOfWarClient", false)  -- Enable debug
 
 local FogOfWarClient = {}
 

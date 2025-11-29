@@ -10,7 +10,7 @@ local BuildingManager = require(script.Parent.BuildingManager)
 local UnitManager = require(script.Parent.UnitManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local EventDebug = DebugManager.createChannel("EventManager", true)
+local EventDebug = DebugManager.createChannel("EventManager", false)
 
 local EventManager = {}
 

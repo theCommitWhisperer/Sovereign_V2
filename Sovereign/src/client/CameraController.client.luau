@@ -10,7 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
 
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local CameraDebug = DebugManager.createChannel("Camera", true)
+local CameraDebug = DebugManager.createChannel("Camera", false)
 
 -- Import the new Studio Camera Controller
 local StudioCameraController = require(script.Parent.Camera.StudioCameraController)

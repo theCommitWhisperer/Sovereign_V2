@@ -10,7 +10,7 @@ local StarterPlayer = game:GetService("StarterPlayer")
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local GameManagerDebug = DebugManager.createChannel("GameManager", true) -- Corrected to be off by default
+local GameManagerDebug = DebugManager.createChannel("GameManager", false) -- Corrected to be off by default
 
 GameManagerDebug:info("Loading server-side managers...")
 
@@ -519,7 +519,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 								local owner = unit:GetAttribute("Owner")
 								if unitType == "Peasant" and not isWorking and owner == player.UserId then
 									WorkerManager.assignWorkerToBuilding(unit, building, player.UserId)
-									print(`[GameManager] Auto-assigned worker to {buildingInfo.type}`)
+				
 									break
 								end
 							end
@@ -540,7 +540,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 								or unitType == "Ox" and not isHauling and not isWorking and owner == player.UserId
 							then
 								WorkerManager.assignHauler(unit, player.UserId)
-								print(`[GameManager] Auto-assigned hauler`)
+				
 								break
 							end
 						end

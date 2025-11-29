@@ -5,7 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local MapData = require(ReplicatedStorage.Shared.GameData.MapData)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local MapManagerDebug = DebugManager.createChannel("MapManager", true)
+local MapManagerDebug = DebugManager.createChannel("MapManager", false)
 
 local MapManager = {}
 

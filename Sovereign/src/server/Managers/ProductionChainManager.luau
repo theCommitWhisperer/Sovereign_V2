@@ -9,7 +9,7 @@ local GameData = require(ReplicatedStorage.Shared.GameData)
 local BuildingTypeHelper = require(ReplicatedStorage.Shared.BuildingTypeHelper)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local ProductionChainDebug = DebugManager.createChannel("ProductionChain", true)
+local ProductionChainDebug = DebugManager.createChannel("ProductionChain", false)
 
 local ProductionChainManager = {}
 

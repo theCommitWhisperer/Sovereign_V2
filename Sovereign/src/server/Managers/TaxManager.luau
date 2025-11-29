@@ -8,7 +8,7 @@ local PlayerManager = require(script.Parent.PlayerManager)
 local TaxSystem = require(script.Parent.Parent.Systems.TaxSystem)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local TaxDebug = DebugManager.createChannel("TaxManager", true)
+local TaxDebug = DebugManager.createChannel("TaxManager", false)
 
 local TaxManager = {}
 

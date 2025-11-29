@@ -33,26 +33,18 @@ local TUTORIAL_STEPS = {
 local TutorialModal = React.Component:extend("TutorialModal")
 
 function TutorialModal:init()
-	print("[TutorialModal] init called")
 	self.hasTriggeredBuild = false
 end
 
 function TutorialModal:didMount()
-	print("[TutorialModal] didMount called", {
-		currentStep = self.props.currentStep,
-		hasAutoTrigger = TUTORIAL_STEPS[self.props.currentStep] and TUTORIAL_STEPS[self.props.currentStep].autoTrigger,
-		hasTriggeredBuild = self.hasTriggeredBuild,
-	})
 
 	-- Auto-trigger building placement for steps that have autoTrigger=true
 	local currentStep = TUTORIAL_STEPS[self.props.currentStep]
 	if currentStep and currentStep.autoTrigger and not self.hasTriggeredBuild then
-		print("[TutorialModal] Auto-triggering build for", currentStep.buildingType)
 		self.hasTriggeredBuild = true
 		if self.props.onBuildRequested then
 			-- Small delay to let the modal render first
 			task.wait(0.5)
-			print("[TutorialModal] Calling onBuildRequested for", currentStep.buildingType)
 			self.props.onBuildRequested(currentStep.buildingType, true) -- Pass true for isAutoTriggered
 		end
 	end
@@ -75,24 +67,17 @@ function TutorialModal:didUpdate(prevProps)
 end
 
 function TutorialModal:render()
-	print("[TutorialModal] render called", {
-		visible = self.props.visible,
-		currentStep = self.props.currentStep,
-		hasCurrentStep = TUTORIAL_STEPS[self.props.currentStep] ~= nil,
-	})
 
 	if not self.props.visible then
-		print("[TutorialModal] Not visible, returning nil")
 		return nil
 	end
 
 	local currentStep = TUTORIAL_STEPS[self.props.currentStep]
 	if not currentStep then
-		print("[TutorialModal] No current step found, returning nil")
 		return nil
 	end
 
-	print("[TutorialModal] Rendering modal for step:", currentStep.title)
+
 
 	return React.createElement(Modal, {
 		visible = true,

@@ -9,7 +9,7 @@ local BuildingManager = require(script.Parent.BuildingManager)
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local PopulationDebug = DebugManager.createChannel("PopulationManager", true)
+local PopulationDebug = DebugManager.createChannel("PopulationManager", false)
 
 local PopulationManager = {}
 

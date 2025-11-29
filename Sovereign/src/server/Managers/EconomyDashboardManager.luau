@@ -16,7 +16,7 @@ local CaravanManager = require(script.Parent.CaravanManager)
 local HappinessManager = require(script.Parent.HappinessManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local DashboardDebug = DebugManager.createChannel("EconomyDashboard", true)
+local DashboardDebug = DebugManager.createChannel("EconomyDashboard", false)
 
 local EconomyDashboardManager = {}
 

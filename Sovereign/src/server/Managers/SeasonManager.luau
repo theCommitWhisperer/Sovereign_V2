@@ -7,7 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local PlayerManager = require(script.Parent.PlayerManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local SeasonDebug = DebugManager.createChannel("SeasonManager", true)
+local SeasonDebug = DebugManager.createChannel("SeasonManager", false)
 
 local SeasonManager = {}
 

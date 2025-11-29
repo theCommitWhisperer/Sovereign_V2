@@ -10,7 +10,7 @@ local UnitManager = require(script.Parent.UnitManager)
 local HappinessSystem = require(script.Parent.Parent.Systems.HappinessSystem)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local HappinessDebug = DebugManager.createChannel("HappinessManager", true)
+local HappinessDebug = DebugManager.createChannel("HappinessManager", false)
 
 local HappinessManager = {}
 

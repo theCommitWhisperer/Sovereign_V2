@@ -1,5 +1,5 @@
 --!strict
--- PlacementController: Handles building placement preview and validation
+-- PlacementController: Robust Logic & Safe Snapping
 
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -13,28 +13,41 @@ local camera = Workspace.CurrentCamera
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local PlacementDebug = DebugManager.createChannel("Placement", true)
 
--- Create BindableEvent for wall piece updates to HUD
+-- Events
+local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
+local gameEvent = RemoteEvents:WaitForChild("GameEvent")
+
 local wallPieceEvent = ReplicatedStorage:FindFirstChild("WallPieceChanged")
-if not wallPieceEvent then
-	wallPieceEvent = Instance.new("BindableEvent")
-	wallPieceEvent.Name = "WallPieceChanged"
-	wallPieceEvent.Parent = ReplicatedStorage
-end
+	or Instance.new("BindableEvent", ReplicatedStorage)
+wallPieceEvent.Name = "WallPieceChanged"
 
--- Create BindableFunction for reset wall piece
 local resetWallPieceFunc = ReplicatedStorage:FindFirstChild("ResetWallPiece")
-if not resetWallPieceFunc then
-	resetWallPieceFunc = Instance.new("BindableFunction")
-	resetWallPieceFunc.Name = "ResetWallPiece"
-	resetWallPieceFunc.Parent = ReplicatedStorage
-end
+	or Instance.new("BindableFunction", ReplicatedStorage)
+resetWallPieceFunc.Name = "ResetWallPiece"
 
--- [ADD] At the top with other requires
-local WallSystemVals = {
-	Grid = 8,
-	Dist = 8.1, -- Slightly larger than grid to catch neighbors
-}
--- Bitmask directions (Same as server)
+-- Configuration
+local SNAP_RADIUS = 15
+local CONNECTION_TOLERANCE = 4.0
+local WALL_GRID_SIZE = 1
+local CONNECTION_OFFSET = 0.05 -- A small offset to prevent wall meshes from overlapping/Z-fighting.
+
+-- State
+local isPlacing = false
+local currentBuildingName = nil
+local ghostBuilding = nil
+local canPlace = false
+local manualRotation = 0
+local wallPieceIndex = 1
+local lastPlacedWallPosition = nil
+local lastPlacedWallRotation = 0
+local wallChainDirection = Vector3.new(1, 0, 0)
+local lastGridTargetPos = nil
+
+-- Debug Visuals
+local debugFolder = workspace:FindFirstChild("PlacementDebug") or Instance.new("Folder")
+debugFolder.Name = "PlacementDebug"
+debugFolder.Parent = workspace
+
 local DIRECTIONS = {
 	{ x = 0, z = -1, bit = 1 }, -- North
 	{ x = 1, z = 0, bit = 2 }, -- East
@@ -42,8 +55,33 @@ local DIRECTIONS = {
 	{ x = -1, z = 0, bit = 8 }, -- West
 }
 
--- [ADD] Helper to get wall model name based on bitmask (Must match server logic)
--- NOTE: Assuming "Wall Segment" asset is VERTICAL (N-S) at 0 rotation.
+local WALL_PIECES = {
+	{ name = "Wall Segment", rotation = 0 },
+	{ name = "Wall Corner", rotation = 0 },
+	{ name = "Wall Corner Reverse", rotation = 0 },
+	{ name = "Tower", rotation = 0 },
+	{ name = "Gatehouse", rotation = 0 },
+	{ name = "Ladder Wall Segment", rotation = 0 },
+}
+
+local GameData = require(ReplicatedStorage.Shared.GameData)
+local KeybindingsManager = require(script.Parent.Camera.KeybindingsManager)
+
+-- // HELPER FUNCTIONS //
+
+local function getSafeBounds(obj: Instance)
+	if obj:IsA("Model") then
+		local cf, size = obj:GetBoundingBox()
+		if size.Magnitude == 0 and obj.PrimaryPart then
+			size = obj.PrimaryPart.Size
+		end
+		return cf, size
+	elseif obj:IsA("BasePart") then
+		return obj.CFrame, obj.Size
+	end
+	return CFrame.new(), Vector3.new(1, 1, 1)
+end
+
 local function getWallAssetName(bitmask)
 	if bitmask == 15 then
 		return "Tower", 0
@@ -73,555 +111,522 @@ local function getWallAssetName(bitmask)
 		return "Wall Corner", 180
 	end
 	if bitmask == 1 or bitmask == 4 or bitmask == 5 then
-		return "Wall Segment", 90 -- Vertical (N-S connection)
+		return "Wall Segment", 90
 	end
-	return "Wall Segment", 0 -- Horizontal (E-W connection or default)
+	return "Wall Segment", 0
 end
 
--- Wait for RemoteEvents
-local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
-local gameEvent = RemoteEvents:WaitForChild("GameEvent")
-
--- State
-local isPlacing = false
-local currentBuildingName = nil
-local ghostBuilding = nil
-local canPlace = false
-local manualRotation = 0 -- Manual rotation offset in degrees (for R key)
-local wallPieceIndex = 1 -- Which wall piece to show (1=straight, 2=corner, 3=3way, 4=4way)
-local pivotIndex = 1 -- 1=center, 2=right, 3=left
-local PIVOT_MODES = { 0, 1, -1 } -- Center, Right, Left (corresponds to half-length multiplier)
-
--- Wall piece cycle for manual selection
-local WALL_PIECES = {
-	{ name = "Wall Segment", rotation = 0 },
-	{ name = "Wall Corner", rotation = 0 },
-	{ name = "Wall Corner Reverse", rotation = 0 },
-	{ name = "Tower", rotation = 0 },
-	{ name = "Gatehouse", rotation = 0 },
-	{ name = "Ladder Wall Segment", rotation = 0 },
-}
-
--- Load building data
-local GameData = require(ReplicatedStorage.Shared.GameData)
-local KeybindingsManager = require(script.Parent.Camera.KeybindingsManager)
-
--- Function to reset wall piece selection (called when clicking HUD)
-local function resetWallPieceSelection()
-	wallPieceIndex = 1
-	PlacementDebug:info("Wall piece selection reset to straight segment")
-
-	-- Notify HUD of the change
-	wallPieceEvent:Fire({
-		currentPiece = WALL_PIECES[wallPieceIndex].name,
-		isPlacingWalls = isPlacing and (currentBuildingName == "Stone_Wall"
-			or currentBuildingName == "Wall_Segment"
-			or currentBuildingName == "Wall_Corner"
-			or currentBuildingName == "Wall_Corner_Reverse"
-			or currentBuildingName == "Wall_Tower"
-			or currentBuildingName == "Wall_Gatehouse"
-			or currentBuildingName == "Ladder_Wall_Segment"),
-	})
-end
-
--- Connect the BindableFunction
-resetWallPieceFunc.OnInvoke = resetWallPieceSelection
-
--- Clean up ghost building
-local function cleanup()
-	if ghostBuilding then
-		ghostBuilding:Destroy()
-		ghostBuilding = nil
+-- Finds all ConnectionPoints at floor level, sorted by orientation for predictable snapping
+-- Finds all ConnectionPoints (supports ConnectionPoint_1, ConnectionPoint_2, etc.) at floor level, sorted by orientation for predictable snapping
+local function findConnectionPoints(model: Model): { BasePart }
+	if not model or not model:IsA("Model") then
+		return {}
 	end
-	isPlacing = false
-	currentBuildingName = nil
-	manualRotation = 0 -- Reset rotation
-	-- DON'T reset wallPieceIndex - keep it persistent!
-	-- wallPieceIndex = 1 -- Reset wall piece selection
-	pivotIndex = 1 -- Reset pivot to center
-
-	-- Notify HUD that placement ended
-	gameEvent:FireServer("PlacementEnded")
-
-	-- Notify HUD that we're no longer placing walls
-	wallPieceEvent:Fire({
-		currentPiece = WALL_PIECES[wallPieceIndex].name,
-		isPlacingWalls = false,
-	})
+	local points = {}
+	local minY = math.huge
+	for _, part in model:GetDescendants() do
+		if part:IsA("BasePart") then
+			minY = math.min(minY, part.Position.Y - part.Size.Y / 2)
+		end
+	end
+	for _, child in model:GetDescendants() do
+		if child:IsA("BasePart") and string.match(child.Name, "^ConnectionPoint[_%d]*$") then
+			if math.abs((child.Position.Y - child.Size.Y / 2) - minY) < 0.2 then
+				table.insert(points, child)
+			end
+		end
+	end
+	-- Sort by LookVector (X/Z) for deterministic order
+	table.sort(points, function(a, b)
+		local av = a.CFrame.LookVector
+		local bv = b.CFrame.LookVector
+		if av.X ~= bv.X then
+			return av.X < bv.X
+		end
+		return av.Z < bv.Z
+	end)
+	return points
 end
 
--- Start placement mode
-local function startPlacement(buildingName: string)
-	cleanup() -- Clean up any existing ghost
+-- // VISUAL DEBUGGING //
+local function updateDebugVisuals(ghostCP: Vector3?, neighborCP: Vector3?)
+	debugFolder:ClearAllChildren()
+	if ghostCP then
+		local gPart = Instance.new("Part")
+		gPart.Name = "GhostCP"
+		gPart.Size = Vector3.new(1.5, 0.5, 1.5)
+		gPart.Shape = Enum.PartType.Ball
+		gPart.Color = Color3.new(1, 0, 0)
+		gPart.Material = Enum.Material.Neon
+		gPart.Anchored = true
+		gPart.CanCollide = false
+		gPart.Position = ghostCP
+		gPart.Parent = debugFolder
+	end
+	if neighborCP then
+		local nPart = Instance.new("Part")
+		nPart.Name = "NeighborCP"
+		nPart.Size = Vector3.new(1.5, 0.5, 1.5)
+		nPart.Shape = Enum.PartType.Ball
+		nPart.Color = Color3.new(0, 1, 0)
+		nPart.Material = Enum.Material.Neon
+		nPart.Anchored = true
+		nPart.CanCollide = false
+		nPart.Position = neighborCP
+		nPart.Parent = debugFolder
+		local dist = (ghostCP - neighborCP).Magnitude
+		if dist > 0.05 then
+			local line = Instance.new("Part")
+			line.Name = "SnapLine"
+			line.Anchored = true
+			line.CanCollide = false
+			line.Color = Color3.new(0, 0, 1)
+			line.Material = Enum.Material.Neon
+			line.Size = Vector3.new(0.2, 0.2, dist)
+			line.CFrame = CFrame.lookAt(ghostCP, neighborCP) * CFrame.new(0, 0, -dist / 2)
+			line.Parent = debugFolder
+		end
+	end
+end
 
-	local buildingInfo = GameData.Buildings[buildingName]
-	if not buildingInfo then
-		PlacementDebug:warn("Unknown building:", { buildingName = buildingName })
+-- Finds the best matching pair of connection points for snapping
+local function findNearestConnectionPoints(ghostModel: Model, neighborModel: Model): (BasePart?, BasePart?)
+	local ghostCPs = findConnectionPoints(ghostModel)
+	local neighborCPs = findConnectionPoints(neighborModel)
+	if #ghostCPs == 0 or #neighborCPs == 0 then
+		return nil, nil
+	end
+	local minDistance = math.huge
+	local bestGCP, bestNCP = nil, nil
+	for _, gCP in ghostCPs do
+		for _, nCP in neighborCPs do
+			-- Snap if CPs are facing each other (dot product near -1)
+			local dot = gCP.CFrame.LookVector:Dot(-nCP.CFrame.LookVector)
+			if dot > 0.95 then
+				local dist = (gCP.Position - nCP.Position).Magnitude
+				if dist < minDistance then
+					minDistance = dist
+					bestGCP = gCP
+					bestNCP = nCP
+				end
+			end
+		end
+	end
+	return bestGCP, bestNCP
+end
+
+local function areModelsConnected(ghost: Model, other: Model): boolean
+	local gCP, nCP = findNearestConnectionPoints(ghost, other)
+	if gCP and nCP then
+		if (gCP.Position - nCP.Position).Magnitude < CONNECTION_TOLERANCE then
+			return true
+		end
+	end
+	return false
+end
+
+-- // CORE LOGIC //
+
+local function updateGhostPosition()
+	print("[Placement] updateGhostPosition tick")
+	if not (isPlacing and ghostBuilding) then
 		return
 	end
 
-	PlacementDebug:info("Starting placement for:", buildingName)
+	local mouseLocation = UserInputService:GetMouseLocation()
+	local mouseRay = camera:ScreenPointToRay(mouseLocation.X, mouseLocation.Y)
 
-	isPlacing = true
-	currentBuildingName = buildingName
+	local rayParams = RaycastParams.new()
+	rayParams.FilterDescendantsInstances = { ghostBuilding, player.Character, debugFolder }
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
 
-	-- Notify HUD if placing a wall
-	local isWallBuilding = buildingName == "Stone_Wall"
-		or buildingName == "Wall_Segment"
-		or buildingName == "Wall_Corner"
-		or buildingName == "Wall_Corner_Reverse"
-		or buildingName == "Wall_Tower"
-		or buildingName == "Wall_Gatehouse"
-		or buildingName == "Ladder_Wall_Segment"
-
-	if isWallBuilding then
-		wallPieceEvent:Fire({
-			currentPiece = WALL_PIECES[wallPieceIndex].name,
-			isPlacingWalls = true,
-		})
+	local result = Workspace:Raycast(mouseRay.Origin, mouseRay.Direction * 1000, rayParams)
+	if not result then
+		return
 	end
 
-	-- Create ghost building
-	local buildingTemplate
-	-- Use the isWallBuilding variable from above (already defined)
+	local pos = result.Position
+	local isWallBuilding = currentBuildingName == "Stone_Wall"
+		or currentBuildingName == "Wall_Segment"
+		or currentBuildingName == "Wall_Corner"
+		or currentBuildingName == "Wall_Corner_Reverse"
+		or currentBuildingName == "Wall_Tower"
+		or currentBuildingName == "Wall_Gatehouse"
+		or currentBuildingName == "Ladder_Wall_Segment"
+
+	-- Grid & Ground
+	local gridSize = isWallBuilding and 8 or 4
+	local snappedX = math.floor(pos.X / gridSize + 0.5) * gridSize
+	local snappedZ = math.floor(pos.Z / gridSize + 0.5) * gridSize
+
+	local groundRaycastStart = Vector3.new(snappedX, 1000, snappedZ)
+	local groundRaycastDir = Vector3.new(0, -2000, 0)
+	local groundRaycastParams = RaycastParams.new()
+	local groundIgnoreList = { player.Character, ghostBuilding, debugFolder }
+	groundRaycastParams.FilterDescendantsInstances = groundIgnoreList
+	groundRaycastParams.FilterType = Enum.RaycastFilterType.Exclude
+
+	local groundResult = Workspace:Raycast(groundRaycastStart, groundRaycastDir, groundRaycastParams)
+	local groundY = pos.Y
+	if groundResult then
+		groundY = groundResult.Position.Y
+	end
+
+	-- Determine Asset/Rotation
+	local bitmask = 0
 	if isWallBuilding then
-		local assets = ReplicatedStorage:WaitForChild("Assets")
-		if assets then
-			local buildings = assets:WaitForChild("Buildings")
-			if buildings then
-				-- Map building name to asset name
-				local assetName = "Wall Segment" -- default
-				if buildingName == "Wall_Corner" then
-					assetName = "Wall Corner"
-				elseif buildingName == "Wall_Corner_Reverse" then
-					assetName = "Wall Corner Reverse"
-				elseif buildingName == "Wall_Tower" then
-					assetName = "Tower"
-				elseif buildingName == "Wall_Gatehouse" then
-					assetName = "Gatehouse"
-				elseif buildingName == "Ladder_Wall_Segment" then
-					assetName = "Ladder Wall Segment"
-				end
-				buildingTemplate = buildings:FindFirstChild(assetName)
+		local checkParams = OverlapParams.new()
+		checkParams.FilterDescendantsInstances = groundIgnoreList
+		for _, dir in ipairs(DIRECTIONS) do
+			local checkPos = Vector3.new(snappedX, groundY, snappedZ) + Vector3.new(dir.x * 16, 0, dir.z * 16)
+			local parts = Workspace:GetPartBoundsInBox(CFrame.new(checkPos), Vector3.new(10, 10, 10), checkParams)
+			if #parts > 0 then
+				bitmask = bit32.bor(bitmask, dir.bit)
 			end
 		end
 	end
 
-	if buildingTemplate then
-		ghostBuilding = buildingTemplate:Clone()
-		ghostBuilding.Name = "Wall Segment"
+	local assetName, rotation
+	if wallPieceIndex > 1 then
+		assetName = WALL_PIECES[wallPieceIndex].name
+		rotation = WALL_PIECES[wallPieceIndex].rotation + manualRotation
+	else
+		assetName, rotation = getWallAssetName(bitmask)
+		rotation = rotation + manualRotation
+	end
+
+	-- Swap Ghost Mesh
+	local assets = ReplicatedStorage:FindFirstChild("Assets") and ReplicatedStorage.Assets:FindFirstChild("Buildings")
+	if assets and isWallBuilding then
+		local template = assets:FindFirstChild(assetName)
+		if template and ghostBuilding.Name ~= assetName then
+			ghostBuilding:Destroy()
+			ghostBuilding = template:Clone()
+			ghostBuilding.Name = assetName
+			ghostBuilding.Parent = Workspace
+			for _, v in ghostBuilding:GetDescendants() do
+				if v:IsA("BasePart") then
+					v.Transparency = 0.5
+					v.CanCollide = false
+					v.Anchored = true
+					v.Color = Color3.new(0, 1, 0)
+					if v.Name == "ConnectionPoint" then
+						v.Anchored = true
+						v.Transparency = 0.5
+						v.Color = Color3.new(1, 0, 1) -- Debug Pink
+					end
+				end
+			end
+		end
+	end
+
+	-- // SNAP LOGIC //
+	if isWallBuilding then
+		local ghostCPs = findConnectionPoints(ghostBuilding)
+		local connectedNeighbor = nil
+		local bestGCP = nil
+		local bestNCP = nil
+
+		-- 1. Initial Grid Placement (Establish Orientation)
+		local startHeight = 5
+		if #ghostCPs > 0 then
+			local pivot = ghostBuilding:GetPivot()
+			if ghostCPs[1] then
+				local relY = (pivot:Inverse() * ghostCPs[1].CFrame).Y
+				startHeight = -relY
+			end
+		elseif ghostBuilding.PrimaryPart then
+			startHeight = ghostBuilding.PrimaryPart.Size.Y / 2
+		end
+
+		ghostBuilding:PivotTo(
+			CFrame.new(snappedX, groundY + startHeight, snappedZ) * CFrame.Angles(0, math.rad(rotation), 0)
+		)
+
+		if #ghostCPs > 0 then
+			-- 2. Scan for neighbors
+			local neighborParams = OverlapParams.new()
+			neighborParams.FilterDescendantsInstances = { ghostBuilding, player.Character, debugFolder }
+			neighborParams.FilterType = Enum.RaycastFilterType.Exclude
+
+			local searchBox = Vector3.new(35, 35, 35)
+			local nearbyParts = Workspace:GetPartBoundsInBox(ghostBuilding:GetPivot(), searchBox, neighborParams)
+			local minDist = SNAP_RADIUS
+
+			if #nearbyParts > 0 then
+				print(string.format("[Placement] Found %d nearby parts", #nearbyParts))
+			end
+
+			for _, part in ipairs(nearbyParts) do
+				local model = part.Parent
+				if model and model:IsA("Model") and model ~= ghostBuilding then
+					local bType = model:GetAttribute("BuildingType")
+					if bType and (bType == "Stone_Wall" or string.find(bType, "Wall") or bType == "Tower") then
+						print(
+							string.format(
+								"[Placement] Checking neighbor: %s (Type: %s). Ghost CPs: %d",
+								model.Name,
+								bType,
+								#ghostCPs
+							)
+						)
+						local gCP, nCP = findNearestConnectionPoints(ghostBuilding, model)
+						if gCP and nCP then
+							local d = (gCP.Position - nCP.Position).Magnitude
+							print(string.format("[Placement]   Found matching CPs, distance: %.2f", d))
+							if d < minDist then
+								minDist = d
+								connectedNeighbor = model
+								bestGCP = gCP
+								bestNCP = nCP
+							end
+						else
+							local neighborCPs = findConnectionPoints(model)
+							print(
+								string.format(
+									"[Placement]   No matching CPs (neighbor has %d CPs)",
+									#neighborCPs
+								)
+							)
+						end
+					end
+				end
+			end
+		end
+
+		-- 3. EXECUTE SNAP
+		if connectedNeighbor and bestGCP and bestNCP then
+			local snapDist = (bestGCP.Position - bestNCP.Position).Magnitude
+			print(
+				string.format(
+					"[Placement] Snapping to %s. Distance: %.2f\n  [Placement] Ghost CP at %s\n  [Placement] Neighbor CP at %s",
+					connectedNeighbor.Name,
+					snapDist,
+					tostring(bestGCP.Position),
+					tostring(bestNCP.Position)
+				)
+			)
+
+			-- A. Calculate Vector Diff for perfect alignment.
+			local diffVector = bestNCP.Position - bestGCP.Position
+			-- B. Add a small "nudge" to prevent Z-fighting/overlap.
+			-- This moves the ghost slightly away from the neighbor along the connection axis.
+			local nudgeVector = bestGCP.CFrame.LookVector * CONNECTION_OFFSET
+			-- C. Shift Ghost by the combined vector.
+			ghostBuilding:PivotTo(ghostBuilding:GetPivot() + diffVector + nudgeVector)
+			-- D. Debug
+			updateDebugVisuals(bestGCP.Position + diffVector + nudgeVector, bestNCP.Position)
+		else
+			-- GRID PLACEMENT: No neighbor to snap to.
+			if #ghostCPs > 0 then
+				local primaryCP = ghostCPs[1] -- The first CP after deterministic sorting
+				local targetPos = Vector3.new(snappedX, groundY, snappedZ)
+
+				-- First, orient the model correctly.
+				local rotatedCF = CFrame.new(ghostBuilding:GetPivot().Position)
+					* CFrame.Angles(0, math.rad(rotation), 0)
+				ghostBuilding:PivotTo(rotatedCF)
+
+				-- Now, the primaryCP is at its new rotated world position.
+				local currentCPPos = primaryCP.Position
+				-- Calculate the difference and move the ghost so the CP aligns with the grid target.
+				local diff = targetPos - currentCPPos
+
+				print(
+					string.format(
+						"[Placement] No snap neighbor. Using grid.\n  [Placement] Grid Target: %s\n  [Placement] Current CP World Pos: %s\n  [Placement] Final Position Delta: %s",
+						tostring(targetPos),
+						tostring(currentCPPos),
+						tostring(diff)
+					)
+				)
+
+				ghostBuilding:PivotTo(ghostBuilding:GetPivot() + diff)
+				updateDebugVisuals(primaryCP.Position, nil)
+			else
+				-- No CPs, just place the pivot on the grid.
+				debugFolder:ClearAllChildren()
+			end
+		end -- Collision Logic
+		local collisionIgnore = { ghostBuilding, player.Character, debugFolder }
+		if connectedNeighbor then
+			table.insert(collisionIgnore, connectedNeighbor)
+		end
+
+		local collisionParams = OverlapParams.new()
+		collisionParams.FilterDescendantsInstances = collisionIgnore
+		collisionParams.FilterType = Enum.RaycastFilterType.Exclude
+
+		local collisionCF, size = getSafeBounds(ghostBuilding)
+		local collisions = Workspace:GetPartBoundsInBox(collisionCF, size * 0.8, collisionParams)
+
+		canPlace = true
+		for _, p in ipairs(collisions) do
+			if p.Name ~= "Baseplate" and not p:IsA("Terrain") and p.Name ~= "ConnectionPoint" then
+				local pModel = p.Parent
+				if not (pModel and pModel:IsA("Model") and areModelsConnected(ghostBuilding, pModel)) then
+					canPlace = false
+					break
+				end
+			end
+		end
+	else
+		-- Non-wall placement
+		local _, size = getSafeBounds(ghostBuilding)
+		local snappedPos = Vector3.new(snappedX, groundY + size.Y / 2, snappedZ)
+		ghostBuilding:PivotTo(CFrame.new(snappedPos) * CFrame.Angles(0, math.rad(manualRotation), 0))
+
+		local collisionParams = OverlapParams.new()
+		collisionParams.FilterDescendantsInstances = { ghostBuilding, player.Character, debugFolder }
+		collisionParams.FilterType = Enum.RaycastFilterType.Exclude
+
+		local collisionCF, newSize = getSafeBounds(ghostBuilding)
+		canPlace = #Workspace:GetPartBoundsInBox(collisionCF, newSize * 0.9, collisionParams) == 0
+	end
+
+	local color = canPlace and Color3.new(0, 1, 0) or Color3.new(1, 0, 0)
+	for _, v in ghostBuilding:GetDescendants() do
+		if v:IsA("BasePart") then
+			v.Color = color
+		end
+	end
+end
+
+-- Input & Cleanup
+local function cleanup()
+	if ghostBuilding then
+		ghostBuilding:Destroy()
+	end
+	ghostBuilding = nil
+	isPlacing = false
+	currentBuildingName = nil
+	lastGridTargetPos = nil
+	debugFolder:ClearAllChildren()
+	gameEvent:FireServer("PlacementEnded")
+	wallPieceEvent:Fire({ currentPiece = WALL_PIECES[wallPieceIndex].name, isPlacingWalls = false })
+end
+
+local function startPlacement(buildingName: string)
+	cleanup()
+	local info = GameData.Buildings[buildingName]
+	if not info then
+		return
+	end
+
+	isPlacing = true
+	currentBuildingName = buildingName
+	manualRotation = 0
+
+	local isWallBuilding = buildingName == "Stone_Wall" or string.find(buildingName, "Wall")
+	if isWallBuilding then
+		wallPieceEvent:Fire({ currentPiece = WALL_PIECES[wallPieceIndex].name, isPlacingWalls = true })
+	end
+
+	local assetName = buildingName
+	if isWallBuilding then
+		assetName = "Wall Segment"
+		if buildingName == "Wall_Corner" then
+			assetName = "Wall Corner"
+		end
+	end
+
+	local assets = ReplicatedStorage:FindFirstChild("Assets") and ReplicatedStorage.Assets:FindFirstChild("Buildings")
+	local template = (assets and assets:FindFirstChild(assetName)) or (assets and assets:FindFirstChild(buildingName))
+
+	if template then
+		ghostBuilding = template:Clone()
+		ghostBuilding.Name = assetName
+		ghostBuilding.Parent = Workspace
 		for _, v in ghostBuilding:GetDescendants() do
 			if v:IsA("BasePart") then
 				v.Anchored = true
 				v.CanCollide = false
 				v.Transparency = 0.5
 				v.Color = Color3.new(0, 1, 0)
+				if v.Name == "ConnectionPoint" then
+					v.Transparency = 0.5
+					v.Color = Color3.new(1, 0, 1)
+				end
 			end
 		end
 	else
 		ghostBuilding = Instance.new("Part")
-		ghostBuilding.Name = "GhostBuilding"
-		ghostBuilding.Size = buildingInfo.size
+		ghostBuilding.Name = "Ghost"
+		ghostBuilding.Size = info.size
 		ghostBuilding.Anchored = true
 		ghostBuilding.CanCollide = false
 		ghostBuilding.Transparency = 0.5
-		ghostBuilding.Material = Enum.Material.SmoothPlastic
-	end
-
-	ghostBuilding.Parent = Workspace
-end
-
-local function updateGhostPosition()
-	if not (isPlacing and ghostBuilding) then
-		return
-	end
-
-	-- Raycast from mouse to find placement position
-	local mouseLocation = UserInputService:GetMouseLocation()
-	local mouseRay = camera:ScreenPointToRay(mouseLocation.X, mouseLocation.Y)
-
-	local ignoreList = { ghostBuilding, player.Character }
-	local baseplate = Workspace:FindFirstChild("Baseplate")
-	if baseplate then
-		table.insert(ignoreList, baseplate)
-	end
-
-	local raycastParams = RaycastParams.new()
-	raycastParams.FilterDescendantsInstances = ignoreList
-	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-
-	local result = Workspace:Raycast(mouseRay.Origin, mouseRay.Direction * 1000, raycastParams)
-
-	if result then
-		-- Snap to grid
-		local gridSize = currentBuildingName == "Stone_Wall" and 8 or 4
-		local pos = result.Position
-
-		local snappedX = math.floor(pos.X / gridSize + 0.5) * gridSize
-		local snappedZ = math.floor(pos.Z / gridSize + 0.5) * gridSize
-
-		-- New raycast to find ground height accurately
-		local groundRaycastStart = Vector3.new(snappedX, 1000, snappedZ)
-		local groundRaycastDir = Vector3.new(0, -2000, 0)
-
-		-- For this raycast, we need to ignore all existing buildings to find the terrain.
-		local groundRaycastParams = RaycastParams.new()
-		local groundIgnoreList = { player.Character, ghostBuilding }
-		local buildingsFolder = Workspace:FindFirstChild("Buildings")
-		if buildingsFolder then
-			for _, b in ipairs(buildingsFolder:GetChildren()) do
-				table.insert(groundIgnoreList, b)
-			end
-		end
-		groundRaycastParams.FilterDescendantsInstances = groundIgnoreList
-		groundRaycastParams.FilterType = Enum.RaycastFilterType.Exclude
-
-		local groundResult = Workspace:Raycast(groundRaycastStart, groundRaycastDir, groundRaycastParams)
-
-		local groundY = pos.Y -- fallback to original
-		if groundResult then
-			groundY = groundResult.Position.Y
-		end
-
-		local distance_from_pivot_to_floor = 0
-		if ghostBuilding:IsA("Model") then
-			local lowestY = 0
-			for _, descendant in ipairs(ghostBuilding:GetDescendants()) do
-				if descendant:IsA("BasePart") then
-					local part_cframe_relative_to_pivot = ghostBuilding:GetPivot():ToObjectSpace(descendant.CFrame)
-					local part_size = descendant.Size
-					for i = 0, 7 do
-						local x = (bit32.band(i, 1) == 0) and -part_size.X / 2 or part_size.X / 2
-						local y = (bit32.band(i, 2) == 0) and -part_size.Y / 2 or part_size.Y / 2
-						local z = (bit32.band(i, 4) == 0) and -part_size.Z / 2 or part_size.Z / 2
-						local corner_in_part_space = Vector3.new(x, y, z)
-						local corner_in_model_space = part_cframe_relative_to_pivot * corner_in_part_space
-						if corner_in_model_space.Y < lowestY then
-							lowestY = corner_in_model_space.Y
-						end
-					end
-				end
-			end
-			distance_from_pivot_to_floor = -lowestY
-		else
-			distance_from_pivot_to_floor = ghostBuilding.Size.Y / 2
-		end
-
-		local snappedPos = Vector3.new(snappedX, groundY + distance_from_pivot_to_floor, snappedZ)
-
-		-- [NEW] Wall Smart Preview Logic
-		local isWallBuilding = currentBuildingName == "Stone_Wall"
-			or currentBuildingName == "Wall_Segment"
-			or currentBuildingName == "Wall_Corner"
-			or currentBuildingName == "Wall_Corner_Reverse"
-			or currentBuildingName == "Wall_Tower"
-			or currentBuildingName == "Wall_Gatehouse"
-			or currentBuildingName == "Ladder_Wall_Segment"
-
-		if isWallBuilding then
-			local bitmask = 0
-			local params = OverlapParams.new()
-			params.FilterDescendantsInstances = { ghostBuilding, player.Character }
-			params.FilterType = Enum.RaycastFilterType.Exclude
-
-			-- Check 4 directions for neighbors
-			for _, dir in ipairs(DIRECTIONS) do
-				local checkPos = snappedPos + Vector3.new(dir.x * WallSystemVals.Grid, 0, dir.z * WallSystemVals.Grid)
-
-				-- Check for existing walls at neighbor coordinates
-				local checkSize = Vector3.new(4, 20, 4) -- Use a larger box to find neighbors
-				local checkCenter = checkPos + Vector3.new(0, checkSize.Y / 2, 0) -- Center the box above the ground
-				PlacementDebug:info("Checking for neighbor at", { center = checkCenter, size = checkSize })
-				local parts = Workspace:GetPartBoundsInBox(CFrame.new(checkCenter), checkSize, params)
-				PlacementDebug:info("Found parts:", #parts)
-
-				for i, p in ipairs(parts) do
-					local parentName = p.Parent and p.Parent.Name or "nil"
-					local buildingType = p.Parent and p.Parent:GetAttribute("BuildingType") or "nil"
-					PlacementDebug:info("Part " .. i, { name = p.Name, parent = parentName, type = buildingType })
-					-- Check if it's any wall type
-					if p.Parent then
-						local isNeighborWall = buildingType == "Stone_Wall"
-							or buildingType == "Wall_Segment"
-							or buildingType == "Wall_Corner"
-							or buildingType == "Wall_Corner_Reverse"
-							or buildingType == "Wall_Tower"
-							or buildingType == "Wall_Gatehouse"
-							or buildingType == "Ladder_Wall_Segment"
-
-						if isNeighborWall then
-							bitmask = bitmask + dir.bit
-							PlacementDebug:info("Found neighbor wall, bitmask is now", bitmask)
-							break
-						end
-					end
-				end
-			end
-			PlacementDebug:info("Final bitmask", bitmask)
-
-			-- Use manually selected piece if user pressed R, otherwise auto-select
-			local assetName, rotation
-			if wallPieceIndex > 1 then
-				-- Manual piece selection via R key
-				assetName = WALL_PIECES[wallPieceIndex].name
-				rotation = WALL_PIECES[wallPieceIndex].rotation + manualRotation -- Combine manual rotation
-				PlacementDebug:info("Using manual wall piece", { asset = assetName, index = wallPieceIndex, rotation = rotation })
-			else
-				-- Automatic piece selection based on neighbors
-				assetName, rotation = getWallAssetName(bitmask)
-				rotation = rotation + manualRotation -- Add manual rotation to auto-selected piece
-				PlacementDebug:info("Auto-selected wall piece", { asset = assetName, rot = rotation })
-			end
-
-			-- Swap Ghost Mesh if needed
-			if ReplicatedStorage:FindFirstChild("Assets") and ReplicatedStorage.Assets:FindFirstChild("Buildings") then
-				local assets = ReplicatedStorage.Assets.Buildings
-				local template = assets:FindFirstChild(assetName)
-
-				if template and ghostBuilding.Name ~= assetName then
-					ghostBuilding:Destroy()
-					ghostBuilding = template:Clone()
-					ghostBuilding.Name = assetName
-					ghostBuilding.Parent = Workspace
-					-- Re-apply ghost visual properties
-					for _, v in ghostBuilding:GetDescendants() do
-						if v:IsA("BasePart") then
-							v.Transparency = 0.5
-							v.CanCollide = false
-							v.Color = Color3.new(0, 1, 0)
-						end
-					end
-				end
-			end
-
-			-- Calculate final position with pivot offset
-			local finalPosition = snappedPos
-			local pivotMode = PIVOT_MODES[pivotIndex]
-			-- Only apply pivot offset to the basic straight wall piece
-			if wallPieceIndex == 1 and pivotMode ~= 0 then
-				local wallLength = 8
-				local halfLength = wallLength / 2
-				local offsetVector = Vector3.new(halfLength * pivotMode, 0, 0)
-
-				-- Rotate the offset vector by the current manual rotation
-				local rotatedOffset = CFrame.Angles(0, math.rad(manualRotation), 0):VectorToWorldSpace(offsetVector)
-
-				finalPosition = snappedPos - rotatedOffset
-				PlacementDebug:info("Applying pivot offset", { offset = rotatedOffset })
-			end
-
-			-- Apply Position and Rotation
-			-- Note: rotation already includes manualRotation from above
-			ghostBuilding:PivotTo(CFrame.new(finalPosition) * CFrame.Angles(0, math.rad(rotation), 0))
-		else
-			-- Standard non-wall behavior (apply manual rotation)
-			if ghostBuilding:IsA("Model") then
-				ghostBuilding:PivotTo(CFrame.new(snappedPos) * CFrame.Angles(0, math.rad(manualRotation), 0))
-			else
-				ghostBuilding.CFrame = CFrame.new(snappedPos) * CFrame.Angles(0, math.rad(manualRotation), 0)
-			end
-		end
-
-		-- Simple validation - check if overlapping with other parts
-		local overlapParams = OverlapParams.new()
-		overlapParams.FilterDescendantsInstances = { ghostBuilding }
-		overlapParams.FilterType = Enum.RaycastFilterType.Exclude
-
-		local boundsCFrame = ghostBuilding:IsA("Model")
-				and ghostBuilding.PrimaryPart
-				and ghostBuilding.PrimaryPart.CFrame
-			or ghostBuilding.CFrame
-		local boundsSize = ghostBuilding:IsA("Model") and ghostBuilding.PrimaryPart and ghostBuilding.PrimaryPart.Size
-			or ghostBuilding.Size
-		local overlappingParts = Workspace:GetPartBoundsInBox(boundsCFrame, boundsSize, overlapParams)
-
-		-- Check collisions
-		local hasCollision = false
-		if isWallBuilding then
-			local ghostGridX = math.floor(snappedPos.X / 8 + 0.5)
-			local ghostGridZ = math.floor(snappedPos.Z / 8 + 0.5)
-
-			for _, part in ipairs(overlappingParts) do
-				local parent = part.Parent
-				if parent then
-					local buildingType = parent:GetAttribute("BuildingType")
-					-- Check if it's any wall type
-					local isParentWall = buildingType == "Stone_Wall"
-						or buildingType == "Wall_Segment"
-						or buildingType == "Wall_Corner"
-						or buildingType == "Wall_Corner_Reverse"
-						or buildingType == "Wall_Tower"
-						or buildingType == "Wall_Gatehouse"
-						or buildingType == "Ladder_Wall_Segment"
-
-					if isParentWall then
-						-- It's a wall. Check if it's on the same grid cell.
-						local wallPos = parent:GetPivot().Position
-						local wallGridX = math.floor(wallPos.X / 8 + 0.5)
-						local wallGridZ = math.floor(wallPos.Z / 8 + 0.5)
-
-						if wallGridX == ghostGridX and wallGridZ == ghostGridZ then
-							-- Overlapping with a wall on the same cell. This is not allowed.
-							hasCollision = true
-							break
-						end
-						-- If it's on a different cell, it's a neighbor, so we ignore the collision and continue to the next part.
-					elseif part.Name ~= "Baseplate" and not part:IsA("Terrain") then
-						-- It's not a wall and not the ground. This is a collision.
-						hasCollision = true
-						break
-					end
-				elseif part.Name ~= "Baseplate" and not part:IsA("Terrain") then
-					-- No parent or it's not a wall and not the ground. This is a collision.
-					hasCollision = true
-					break
-				end
-			end
-		else
-			-- Standard non-wall buildings use standard collision
-			for _, part in ipairs(overlappingParts) do
-				if part.Name ~= "Baseplate" and not part:IsA("Terrain") then
-					hasCollision = true
-					break
-				end
-			end
-		end
-
-		canPlace = not hasCollision
-
-		local color = canPlace and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
-		if ghostBuilding:IsA("BasePart") then
-			ghostBuilding.Color = color
-		else
-			for _, v in ghostBuilding:GetDescendants() do
-				if v:IsA("BasePart") then
-					v.Color = color
-				end
-			end
-		end
+		ghostBuilding.Parent = Workspace
 	end
 end
 
--- Handle input
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
+local function resetWallPieceSelection()
+	wallPieceIndex = 1
+	wallPieceEvent:Fire({
+		currentPiece = WALL_PIECES[wallPieceIndex].name,
+		isPlacingWalls = isPlacing and (currentBuildingName == "Stone_Wall" or currentBuildingName == "Wall_Segment"),
+	})
+end
+resetWallPieceFunc.OnInvoke = resetWallPieceSelection
+
+UserInputService.InputBegan:Connect(function(input, gp)
 	if not isPlacing then
 		return
 	end
-
-	-- Check for customizable actions first, allow even if game processed
 	if input.KeyCode == KeybindingsManager.GetKeybinding("RotatePlacement") then
 		manualRotation = (manualRotation + 90) % 360
-		PlacementDebug:info("Rotated building", { rotation = manualRotation })
-		return
-	end
-
-	if input.KeyCode == KeybindingsManager.GetKeybinding("CyclePlacementType") then
-		local isWallBuilding = currentBuildingName == "Stone_Wall"
-			or currentBuildingName == "Wall_Segment"
-			or currentBuildingName == "Wall_Corner"
-			or currentBuildingName == "Wall_Corner_Reverse"
-			or currentBuildingName == "Wall_Tower"
-			or currentBuildingName == "Wall_Gatehouse"
-			or currentBuildingName == "Ladder_Wall_Segment"
-
-		if isWallBuilding then
-			-- Cycle through wall piece types
+		if currentBuildingName and (currentBuildingName == "Stone_Wall" or currentBuildingName == "Wall_Segment") then
+			local rad = math.rad(manualRotation)
+			wallChainDirection = Vector3.new(math.cos(rad), 0, math.sin(rad))
+		end
+	elseif input.KeyCode == KeybindingsManager.GetKeybinding("CyclePlacementType") then
+		if currentBuildingName and (currentBuildingName == "Stone_Wall" or currentBuildingName == "Wall_Segment") then
 			wallPieceIndex = (wallPieceIndex % #WALL_PIECES) + 1
-			PlacementDebug:info(
-				"Changed wall piece",
-				{ index = wallPieceIndex, piece = WALL_PIECES[wallPieceIndex].name }
-			)
-
-			-- Notify HUD of the change
-			wallPieceEvent:Fire({
-				currentPiece = WALL_PIECES[wallPieceIndex].name,
-				isPlacingWalls = true,
-			})
+			wallPieceEvent:Fire({ currentPiece = WALL_PIECES[wallPieceIndex].name, isPlacingWalls = true })
 		end
-		return
-	end
-
-	if input.KeyCode == KeybindingsManager.GetKeybinding("CyclePivot") then
-		pivotIndex = (pivotIndex % #PIVOT_MODES) + 1
-		local pivotName = "Center"
-		if pivotIndex == 2 then
-			pivotName = "Right"
-		end
-		if pivotIndex == 3 then
-			pivotName = "Left"
-		end
-		PlacementDebug:info("Changed pivot mode", { pivot = pivotName })
-		return
-	end
-
-	if gameProcessed then
-		return
-	end
-
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		-- Left click - place building
+	elseif input.UserInputType == Enum.UserInputType.MouseButton1 and not gp then
 		if canPlace and ghostBuilding then
 			local pivot = ghostBuilding:GetPivot()
-			PlacementDebug:info("Placing building at:", pivot.Position)
-
-			-- Send to server (include manual piece selection for walls)
-			local placementData = {
+			local pieceType = (wallPieceIndex > 1) and WALL_PIECES[wallPieceIndex].name or nil
+			local data = {
 				buildingName = currentBuildingName,
 				position = pivot.Position,
 				cframe = pivot,
-				manualRotation = manualRotation, -- Send manual rotation offset
+				manualRotation = manualRotation,
+				wallPieceType = pieceType,
 			}
+			print(
+				string.format(
+					"[Placement] FINAL PLACEMENT. Type: %s, CFrame: %s",
+					pieceType or currentBuildingName,
+					tostring(pivot)
+				)
+			)
+			gameEvent:FireServer("PlaceBuilding", data)
 
-			-- Check if this is a wall building
-			local isWallBuilding = currentBuildingName == "Stone_Wall"
-				or currentBuildingName == "Wall_Segment"
-				or currentBuildingName == "Wall_Corner"
-				or currentBuildingName == "Wall_Corner_Reverse"
-				or currentBuildingName == "Wall_Tower"
-				or currentBuildingName == "Wall_Gatehouse"
-				or currentBuildingName == "Ladder_Wall_Segment"
-
-			-- For walls, send the selected piece type
-			if isWallBuilding and wallPieceIndex > 1 then
-				placementData.wallPieceType = WALL_PIECES[wallPieceIndex].name
-			end
-
-			gameEvent:FireServer("PlaceBuilding", placementData)
-
-			-- For walls, keep placement mode active to allow continuous building
-			if isWallBuilding then
-				-- Don't cleanup - just reset the ghost for the next placement
-				-- Keep wallPieceIndex, manualRotation, and isPlacing state
-				PlacementDebug:info("Continuing wall placement mode")
+			local isWall = currentBuildingName == "Stone_Wall" or currentBuildingName == "Wall_Segment"
+			if isWall then
+				lastPlacedWallPosition = pivot.Position
+				lastPlacedWallRotation = pivot.Rotation.Y
+				local rad = math.rad(manualRotation)
+				wallChainDirection = Vector3.new(math.cos(rad), 0, math.sin(rad))
 			else
-				-- For other buildings, cleanup as normal
 				cleanup()
 			end
 		end
-	elseif input.UserInputType == Enum.UserInputType.MouseButton2 or input.KeyCode == Enum.KeyCode.Escape then
-		-- Right click or ESC - cancel
-		PlacementDebug:info("Placement cancelled")
+	elseif input.KeyCode == Enum.KeyCode.Escape or input.UserInputType == Enum.UserInputType.MouseButton2 then
 		cleanup()
 	end
 end)
 
--- Listen for server requests to start placement
-gameEvent.OnClientEvent:Connect(function(action, data)
-	if action == "StartPlacement" and typeof(data) == "string" then
+gameEvent.OnClientEvent:Connect(function(act, data)
+	if act == "StartPlacement" then
 		startPlacement(data)
 	end
 end)
 
--- Update ghost every frame
-RunService.RenderStepped:Connect(function()
-	if isPlacing then
-		updateGhostPosition()
-	end
-end)
+RunService.RenderStepped:Connect(updateGhostPosition)
 
-PlacementDebug:info("Initialized")
-
--- Export functions for external use (e.g., HUD can call to reset wall selection)
 return {
 	resetWallPieceSelection = resetWallPieceSelection,
 	getCurrentWallPiece = function()
@@ -631,13 +636,6 @@ return {
 		return wallPieceIndex
 	end,
 	isPlacingWalls = function()
-		local isWallBuilding = currentBuildingName == "Stone_Wall"
-			or currentBuildingName == "Wall_Segment"
-			or currentBuildingName == "Wall_Corner"
-			or currentBuildingName == "Wall_Corner_Reverse"
-			or currentBuildingName == "Wall_Tower"
-			or currentBuildingName == "Wall_Gatehouse"
-			or currentBuildingName == "Ladder_Wall_Segment"
-		return isPlacing and isWallBuilding
+		return isPlacing
 	end,
 }

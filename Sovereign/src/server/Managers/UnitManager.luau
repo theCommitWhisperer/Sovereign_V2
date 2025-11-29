@@ -7,7 +7,7 @@ local ServerStorage = game:GetService("ServerStorage")
 
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local UnitManagerDebug = DebugManager.createChannel("UnitManager", true)
+local UnitManagerDebug = DebugManager.createChannel("UnitManager", false)
 local Managers = script.Parent
 local CombatManager = require(Managers.CombatManager)
 local MoraleManager = require(Managers.MoraleManager)
@@ -234,7 +234,7 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 
 	-- NOW initialize systems that read attributes
 	-- DEBUG: Print faction before passing to MoraleManager
-	print(`[UnitManager DEBUG] About to init morale. Faction = {faction}, Type = {type(faction)}`)
+
 
 	-- Initialize morale
 	MoraleManager.initializeUnit(unit, faction)

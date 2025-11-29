@@ -45,14 +45,13 @@ function BuildingManager.createBuilding(
 		local buildPosition = cframe.Position
 		if not SpawnManager.isPositionInEstate(buildPosition, quadrant) then
 			channel:warn(`{player.Name} tried to build outside their estate (Quadrant {quadrant})`)
-			-- TODO: Send error message to client
 			return nil
 		end
 	end
 
 	channel:info(`Creating {buildingName} for {player.Name}`)
 
-	-- [MODIFIED] Check for Assets first
+	-- Check for Assets first
 	local Assets = ReplicatedStorage:FindFirstChild("Assets")
 	local buildingAssets = Assets and Assets:FindFirstChild("Buildings")
 	local modelAsset = nil
@@ -74,11 +73,30 @@ function BuildingManager.createBuilding(
 	elseif isWallBuilding and buildingInfo.model_asset_name then
 		assetName = buildingInfo.model_asset_name
 	end
-	
+
 	if buildingAssets then
 		local foundTemplate = buildingAssets:FindFirstChild(assetName)
 		if foundTemplate then
 			modelAsset = foundTemplate:Clone()
+
+			-- Ensure all ConnectionPoints are non-collidable and NOT anchored so they move with the model pivot.
+			local connectionPointsFolder = modelAsset:FindFirstChild("ConnectionPoints")
+			if connectionPointsFolder then
+				for _, cp in connectionPointsFolder:GetChildren() do
+					if cp:IsA("BasePart") and cp.Name == "ConnectionPoint" then
+						cp.Anchored = false
+						cp.CanCollide = false
+					end
+				end
+			else
+				-- Fallback: search descendants for ConnectionPoints
+				for _, descendant in modelAsset:GetDescendants() do
+					if descendant:IsA("BasePart") and descendant.Name == "ConnectionPoint" then
+						descendant.Anchored = false
+						descendant.CanCollide = false
+					end
+				end
+			end
 		end
 	end
 
@@ -87,32 +105,40 @@ function BuildingManager.createBuilding(
 		-- Use the actual model
 		building = modelAsset
 		building.Name = `{buildingName}_{player.UserId}`
+
+		if isWallBuilding then
+			channel:info(
+				string.format(
+					"Placing %s at CFrame pos (%.1f, %.1f, %.1f)",
+					buildingName,
+					cframe.Position.X,
+					cframe.Position.Y,
+					cframe.Position.Z
+				)
+			)
+		end
+
 		building:PivotTo(cframe)
 	else
-		-- Fallback to generic part (your existing code)
-		building = Instance.new("Part")
+		-- [FIXED] Fallback logic to ensure it creates a Model with a PrimaryPart
+		building = Instance.new("Model")
 		building.Name = `{buildingName}_{player.UserId}`
-		building.Size = buildingInfo.size
-		building.CFrame = cframe
-		building.Anchored = true
-		building.Material = Enum.Material.Wood
-		-- ... (Keep existing color logic for fallbacks)
+
+		local part = Instance.new("Part")
+		part.Name = "MainPart"
+		part.Size = buildingInfo.size
+		part.CFrame = cframe
+		part.Anchored = true
+		part.Material = Enum.Material.Wood
+		part.Parent = building
+		building.PrimaryPart = part
+
 		if buildingInfo.subtype == "Castle Core" then
-			building.Color = Color3.fromRGB(139, 69, 19) -- Brown
+			part.Color = Color3.fromRGB(139, 69, 19)
 		elseif buildingInfo.subtype == "Storage" then
-			building.Color = Color3.fromRGB(205, 133, 63) -- Peru/tan
-		elseif buildingInfo.subtype == "Resource Gathering" then
-			building.Color = Color3.fromRGB(160, 82, 45) -- Sienna
-		elseif
-			buildingInfo.subtype == "Food Production"
-			or buildingInfo.subtype == "Food Processing"
-			or buildingInfo.subtype == "Food Service"
-		then
-			building.Color = Color3.fromRGB(244, 164, 96) -- Sandy brown
-		elseif buildingInfo.subtype == "Housing" then
-			building.Color = Color3.fromRGB(210, 180, 140) -- Tan
+			part.Color = Color3.fromRGB(205, 133, 63)
 		else
-			building.Color = Color3.fromRGB(139, 69, 19)
+			part.Color = Color3.fromRGB(139, 69, 19)
 		end
 	end
 
@@ -139,7 +165,7 @@ function BuildingManager.createBuilding(
 		end
 	end
 
-	-- [ADDED] Register with WallSystem if it's a wall
+	-- Register with WallSystem if it's a wall
 	building.Parent = BuildingsFolder
 	if isWallBuilding then
 		WallSystem.registerWall(building)
@@ -213,6 +239,7 @@ function BuildingManager.getStorageAmount(building: Instance, resourceType: stri
 	end
 	return BuildingStorage[building][resourceType]
 end
+
 -- Check if building has space for resources
 function BuildingManager.hasStorageSpace(building: Instance, resourceType: string, amount: number): boolean
 	if not BuildingStorage[building] or not BuildingStorage[building][resourceType] then

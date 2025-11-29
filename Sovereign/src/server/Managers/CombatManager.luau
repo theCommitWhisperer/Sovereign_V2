@@ -15,7 +15,7 @@ local MoraleManager = require(script.Parent.MoraleManager)
 local FactionManager = require(script.Parent.FactionManager)
 
 local CombatDebug = DebugManager.createChannel("Combat", false)
-local DamageDebug = DebugManager.createChannel("Damage", true)
+local DamageDebug = DebugManager.createChannel("Damage", false)
 
 local CombatManager = {}
 

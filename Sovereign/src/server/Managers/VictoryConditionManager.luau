@@ -9,7 +9,7 @@ local PopulationManager = require(script.Parent.PopulationManager)
 local CaravanManager = require(script.Parent.CaravanManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local VictoryDebug = DebugManager.createChannel("VictoryCondition", true)
+local VictoryDebug = DebugManager.createChannel("VictoryCondition", false)
 
 local VictoryConditionManager = {}
 

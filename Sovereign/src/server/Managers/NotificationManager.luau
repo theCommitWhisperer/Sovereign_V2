@@ -7,7 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local PlayerManager = require(script.Parent.PlayerManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local NotificationDebug = DebugManager.createChannel("NotificationManager", true)
+local NotificationDebug = DebugManager.createChannel("NotificationManager", false)
 
 local NotificationManager = {}
 

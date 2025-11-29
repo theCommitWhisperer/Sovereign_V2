@@ -8,7 +8,7 @@ local CaravanManager = require(script.Parent.Parent.Managers.CaravanManager)
 local PlayerManager = require(script.Parent.Parent.Managers.PlayerManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local CaravanSystemDebug = DebugManager.createChannel("CaravanSystem", true)
+local CaravanSystemDebug = DebugManager.createChannel("CaravanSystem", false)
 
 local CaravanSystem = {}
 

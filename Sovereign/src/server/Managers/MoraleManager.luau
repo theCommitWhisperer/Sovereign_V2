@@ -7,7 +7,7 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local MoraleDebug = DebugManager.createChannel("Morale", true)
+local MoraleDebug = DebugManager.createChannel("Morale", false)
 
 local MoraleManager = {}
 

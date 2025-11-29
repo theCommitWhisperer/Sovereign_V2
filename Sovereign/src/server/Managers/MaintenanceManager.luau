@@ -9,7 +9,7 @@ local BuildingManager = require(script.Parent.BuildingManager)
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local MaintenanceDebug = DebugManager.createChannel("MaintenanceManager", true)
+local MaintenanceDebug = DebugManager.createChannel("MaintenanceManager", false)
 
 local MaintenanceManager = {}
 

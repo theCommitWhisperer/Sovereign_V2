@@ -21,7 +21,7 @@ local BuildingManager = require(script.Parent.BuildingManager)
 local FogOfWarManager = require(script.Parent.FogOfWarManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local TestDebug = DebugManager.createChannel("TestCommands", true)
+local TestDebug = DebugManager.createChannel("TestCommands", false)
 
 local TestCommandManager = {}
 
@@ -316,9 +316,6 @@ function TestCommandManager.init()
 	end)
 
 	TestDebug:info("TestCommandManager initialized")
-	print("=== ECONOMY TEST COMMANDS ENABLED ===")
-	print("Add your Roblox User ID to ADMIN_USER_IDS in TestCommandManager.luau")
-	print("Then use /help in-game to see all test commands")
 end
 
 return TestCommandManager

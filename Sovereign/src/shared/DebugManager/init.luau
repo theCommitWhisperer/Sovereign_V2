@@ -2,6 +2,7 @@
 -- DebugManager: Centralized logging with channel support
 
 local DebugManager = {}
+DebugManager.Enabled = false
 
 export type LogLevel = "info" | "warn" | "error"
 
@@ -38,6 +39,8 @@ end
 
 -- Log with a specific level
 local function logWithLevel(level: LogLevel, channelName: string, message: string, data: any?)
+	if not DebugManager.Enabled then return end -- Check global enable flag
+
 	local prefix = if level == "error" then "❌" elseif level == "warn" then "⚠️" else "ℹ️"
 	local formattedData = formatData(data)
 	local fullMessage = `{prefix} [{channelName}] {message}{formattedData}`
