@@ -4,7 +4,8 @@
       "Bash(grep:*)",
       "Bash(cat:*)",
       "Bash(find:*)",
-      "Bash(roblox-cli analyze:*)"
+      "Bash(roblox-cli analyze:*)",
+      "Bash(luau-analyze:*)"
     ],
     "deny": [],
     "ask": []

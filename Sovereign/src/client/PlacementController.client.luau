@@ -736,7 +736,15 @@ end)
 
 gameEvent.OnClientEvent:Connect(function(act, data)
 	if act == "StartPlacement" then
-		startPlacement(data)
+		-- Check if this is a wall building - if so, let WallPlacementController handle it
+		local isWallBuilding = data == "Stone_Wall"
+			or string.find(tostring(data), "Wall")
+
+		if not isWallBuilding then
+			-- Only handle non-wall buildings in old system
+			startPlacement(data)
+		end
+		-- Wall buildings are handled by WallPlacementController.client.luau
 	end
 end)
 

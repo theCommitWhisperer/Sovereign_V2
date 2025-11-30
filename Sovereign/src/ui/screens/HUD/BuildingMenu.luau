@@ -11,19 +11,21 @@ function BuildingMenu:init()
 	})
 end
 
--- Map category names to buildings (5 main categories)
 local BUILDING_CATEGORIES = {
 	-- Defense: Walls, towers, military buildings
 	Defense = {
 		-- Keep is built during tutorial only, not available in menu
 		"Wooden_Palisade",
-		-- Wall pieces (all variations)
-		"Wall_Segment",
-		"Wall_Corner",
-		"Wall_Corner_Reverse",
-		"Wall_Tower",
-		"Wall_Gatehouse",
-		"Ladder_Wall_Segment",
+		-- Stone Wall system - shows all wall types for manual selection
+		"Stone_Wall", -- Main auto-tiling wall (use for drag-placement)
+		"Straight_Stone_Wall",
+		"Short_Straight_Stone_Wall",
+		"Corner_Stone_Wall",
+		"Ladder_Stone_Wall",
+		"Small_Tower_Stone_Wall",
+		"Large_Tower_Stone_Wall",
+		"Large_Keep_Stone",
+		"Gatehouse_Stone_Wall",
 		-- Other defense
 		"Watch_Tower",
 		"Arrow_Tower",
@@ -149,7 +151,10 @@ function BuildingMenu:render()
 
 				Name = React.createElement("TextLabel", {
 					Size = UDim2.new(1, 0, 0, 18),
-					Text = buildingName:gsub("_", " "),
+					-- Show a nicer name for the Stone Wall button; other
+					-- buildings still just use their ID with spaces.
+					Text = (buildingName == "Stone_Wall" and "Stone Walls")
+						or buildingName:gsub("_", " "),
 					FontFace = UIConfig.Font.Title,
 					TextSize = 11,
 					TextColor3 = UIConfig.HUD.PanelTextColor,

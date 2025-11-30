@@ -34,14 +34,22 @@ local function printModelInfo(model: Model)
 	-- Check for PrimaryPart
 	if model.PrimaryPart then
 		print("PrimaryPart: " .. model.PrimaryPart.Name)
-		print(string.format("  Position: (%.2f, %.2f, %.2f)",
-			model.PrimaryPart.Position.X,
-			model.PrimaryPart.Position.Y,
-			model.PrimaryPart.Position.Z))
-		print(string.format("  Size: (%.2f, %.2f, %.2f)",
-			model.PrimaryPart.Size.X,
-			model.PrimaryPart.Size.Y,
-			model.PrimaryPart.Size.Z))
+		print(
+			string.format(
+				"  Position: (%.2f, %.2f, %.2f)",
+				model.PrimaryPart.Position.X,
+				model.PrimaryPart.Position.Y,
+				model.PrimaryPart.Position.Z
+			)
+		)
+		print(
+			string.format(
+				"  Size: (%.2f, %.2f, %.2f)",
+				model.PrimaryPart.Size.X,
+				model.PrimaryPart.Size.Y,
+				model.PrimaryPart.Size.Z
+			)
+		)
 	else
 		print("PrimaryPart: NONE")
 	end
@@ -68,11 +76,19 @@ local function printModelInfo(model: Model)
 
 	if #parts > 0 then
 		for i, part in ipairs(parts) do
-			print(string.format("  %d. %s - Size: (%.2f, %.2f, %.2f), Pos: (%.2f, %.2f, %.2f)",
-				i,
-				part.Name,
-				part.Size.X, part.Size.Y, part.Size.Z,
-				part.Position.X, part.Position.Y, part.Position.Z))
+			print(
+				string.format(
+					"  %d. %s - Size: (%.2f, %.2f, %.2f), Pos: (%.2f, %.2f, %.2f)",
+					i,
+					part.Name,
+					part.Size.X,
+					part.Size.Y,
+					part.Size.Z,
+					part.Position.X,
+					part.Position.Y,
+					part.Position.Z
+				)
+			)
 		end
 	else
 		print("  No BaseParts found in model.")
