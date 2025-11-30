@@ -1,0 +1,45 @@
+  00:50:18.796  src is not a valid member of ReplicatedStorage "ReplicatedStorage"  -  Server - LogManager:5
+  00:50:18.815  [WallGridManager] Initializing...  -  Server - WallGridManager:42
+  00:50:18.815  [WallGridManager] Initialized with 0 existing walls  -  Server - WallGridManager:83
+  00:50:18.815  [WallGridManager] Initialization complete  -  Server - WallGridManager:92
+  00:50:19.384  [WallRenderer] Running on DESKTOP device  -  Client - WallRenderer:54
+  00:50:19.384  [WallRenderer] LOD distances: High=80, Medium=200, Low=400  -  Client - WallRenderer:55
+  00:50:19.384  [WallRenderer] Initializing...  -  Client - WallRenderer:73
+  00:50:19.384  [WallRenderer] Tracking 0 walls  -  Client - WallRenderer:104
+  00:50:19.384  [WallRenderer] LOD update loop started  -  Client - WallRenderer:234
+  00:50:19.933   ▶ [Placement] updateGhostPosition tick (x257)  -  Client - PlacementController:311
+  00:50:25.657  [Placement] FINAL PLACEMENT. Type: Keep, CFrame: -280, 17.499939, 236, 1, 0, 0, 0, 1, 0, 0, 0, 1  -  Client - PlacementController:713
+  00:50:25.657   ▶ [Placement] updateGhostPosition tick (x2)  -  Client - PlacementController:311
+  00:50:25.684  [DEBUG] Building placed: Keep at -280, 17.49993896484375, 236  -  Server - GameManager:581
+  00:50:25.688   ▶ [Placement] updateGhostPosition tick (x76)  -  Client - PlacementController:311
+  00:50:26.950  [WallPlacement] START: Straight_Stone_Wall  -  Client - WallPlacementController:810
+  00:50:26.951  [WallPlacement] READY: Ghost created with 31 parts. Move mouse to position.  -  Client - WallPlacementController:612
+  00:50:26.956   ▶ [Placement] updateGhostPosition tick (x25)  -  Client - PlacementController:311
+  00:50:27.370  [WallPlacement] Drag started at grid (-13, 15) with piece: Straight_Stone_Wall  -  Client - WallPlacementController:725
+  00:50:27.371   ▶ [Placement] updateGhostPosition tick (x5)  -  Client - PlacementController:311
+  00:50:27.453  [WallPlacement] PLACED 1 walls along path  -  Client - WallPlacementController:695
+  00:50:27.453  [WallPlacement] Drag ended  -  Client - WallPlacementController:770
+  00:50:27.454   ▶ [Placement] updateGhostPosition tick (x3)  -  Client - PlacementController:311
+  00:50:27.485  ToTranslation is not a valid member of CFrame  -  Server - WallGridManager:336
+  00:50:27.503   ▶ [Placement] updateGhostPosition tick (x79)  -  Client - PlacementController:311
+  00:50:28.818  [WallPlacement] START: Corner_Stone_Wall  -  Client - WallPlacementController:810
+  00:50:28.819  [WallPlacement] READY: Ghost created with 31 parts. Move mouse to position.  -  Client - WallPlacementController:612
+  00:50:28.827   ▶ [Placement] updateGhostPosition tick (x48)  -  Client - PlacementController:311
+  00:50:29.619  [WallPlacement] Piece cycled to: Ladder Wall (Ladder_Stone_Wall)  -  Client - WallPlacementController:71
+  00:50:29.623   ▶ [Placement] updateGhostPosition tick (x139)  -  Client - PlacementController:311
+  00:50:31.934  [WallPlacement] START: Corner_Stone_Wall  -  Client - WallPlacementController:810
+  00:50:31.936  [WallPlacement] READY: Ghost created with 31 parts. Move mouse to position.  -  Client - WallPlacementController:612
+  00:50:31.944   ▶ [Placement] updateGhostPosition tick (x145)  -  Client - PlacementController:311
+  00:50:34.352  [WallPlacement] Wall rotated to 90°  -  Client - WallPlacementController:743
+  00:50:34.353   ▶ [Placement] updateGhostPosition tick (x20)  -  Client - PlacementController:311
+  00:50:34.685  [WallPlacement] Wall rotated to 180°  -  Client - WallPlacementController:743
+  00:50:34.686   ▶ [Placement] updateGhostPosition tick (x23)  -  Client - PlacementController:311
+  00:50:35.067  [WallPlacement] Wall rotated to 270°  -  Client - WallPlacementController:743
+  00:50:35.068   ▶ [Placement] updateGhostPosition tick (x15)  -  Client - PlacementController:311
+  00:50:35.322  [WallPlacement] Drag started at grid (-11, 16) with piece: Corner_Stone_Wall  -  Client - WallPlacementController:725
+  00:50:35.322   ▶ [Placement] updateGhostPosition tick (x6)  -  Client - PlacementController:311
+  00:50:35.420  [WallPlacement] PLACED 1 walls along path  -  Client - WallPlacementController:695
+  00:50:35.420  [WallPlacement] Drag ended  -  Client - WallPlacementController:770
+  00:50:35.421   ▶ [Placement] updateGhostPosition tick (x3)  -  Client - PlacementController:311
+  00:50:35.453  ToTranslation is not a valid member of CFrame  -  Server - WallGridManager:336
+  00:50:35.467   ▶ [Placement] updateGhostPosition tick (x167)  -  Client - PlacementController:311
