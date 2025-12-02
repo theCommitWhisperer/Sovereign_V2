@@ -6,7 +6,7 @@
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 
-export type KeybindingAction =
+	export type KeybindingAction =
 	"PanUp"
 	| "PanDown"
 	| "PanLeft"
@@ -19,6 +19,7 @@ export type KeybindingAction =
 	| "RotatePlacement"
 	| "CyclePlacementType"
 	| "CyclePivot"
+	| "AdjustPlacementHeight"
 
 export type KeybindingsData = {
 	[KeybindingAction]: Enum.KeyCode,
@@ -37,6 +38,7 @@ local DEFAULT_KEYBINDINGS: KeybindingsData = {
 	RotatePlacement = Enum.KeyCode.R,
 	CyclePlacementType = Enum.KeyCode.T,
 	CyclePivot = Enum.KeyCode.F,
+	AdjustPlacementHeight = Enum.KeyCode.LeftShift,
 }
 
 local ACTION_DESCRIPTIONS = {
@@ -52,6 +54,7 @@ local ACTION_DESCRIPTIONS = {
 	RotatePlacement = "Rotate Building",
 	CyclePlacementType = "Cycle Wall Type",
 	CyclePivot = "Cycle Placement Pivot",
+	AdjustPlacementHeight = "Adjust Wall Height (hold + mouse wheel)",
 }
 
 local KeybindingsManager = {}

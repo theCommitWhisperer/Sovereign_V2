@@ -9,6 +9,10 @@ local PlayerManager = require(script.Parent.PlayerManager)
 local UnitManager = require(script.Parent.UnitManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
+-- Lazy-load to avoid circular dependencies
+local AchievementManager = nil
+local QuestManager = nil
+
 local TrainingDebug = DebugManager.createChannel("Training", false)
 
 local TrainingManager = {}
@@ -195,7 +199,6 @@ local function updateTraining(deltaTime: number)
 							+ Vector3.new(math.random(-10, 10), 5, math.random(-10, 10))
 
 						-- Get the player's faction
-						local PlayerManager = require(script.Parent.PlayerManager)
 						local playerData = PlayerManager.get(player)
 						local faction = playerData and playerData.Faction or "Kingdom"
 
@@ -206,6 +209,17 @@ local function updateTraining(deltaTime: number)
 						})
 
 						UnitManager.createUnit(currentEntry.unitType, currentEntry.ownerId, spawnPosition, faction)
+
+						-- Track achievements and quests (lazy-load to avoid circular deps)
+						if not AchievementManager then
+							AchievementManager = require(script.Parent.AchievementManager)
+						end
+						if not QuestManager then
+							QuestManager = require(script.Parent.QuestManager)
+						end
+
+						AchievementManager.incrementStat(player, "UnitsTrained", 1)
+						QuestManager.updateQuestProgress(player, "TrainUnits", "Any", 1)
 					end
 				end
 

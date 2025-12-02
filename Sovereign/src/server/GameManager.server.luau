@@ -9,6 +9,7 @@ local StarterPlayer = game:GetService("StarterPlayer")
 -- Require game data (safe - read-only configs)
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
+DebugManager.Enabled = true
 
 local GameManagerDebug = DebugManager.createChannel("GameManager", false) -- Corrected to be off by default
 
@@ -47,6 +48,11 @@ local TestCommandManager = require(Managers.TestCommandManager)
 local SpawnManager = require(Managers.SpawnManager)
 local MapManager = require(Managers.MapManager)
 local FogOfWarManager = require(Managers.FogOfWarManager)
+local AbilityManager = require(Managers.AbilityManager)
+local UpgradeManager = require(Managers.UpgradeManager)
+local ResearchManager = require(Managers.ResearchManager)
+local QuestManager = require(Managers.QuestManager)
+local AchievementManager = require(Managers.AchievementManager)
 
 CombatManager.init()
 FormationManager.init()
@@ -65,6 +71,11 @@ CaravanManager.init()
 EconomyDashboardManager.init()
 VictoryConditionManager.init()
 NotificationManager.init()
+AbilityManager.init()
+UpgradeManager.init()
+ResearchManager.init()
+QuestManager.init()
+AchievementManager.init()
 
 -- Require from Systems subfolder
 local Systems = script.Parent.Systems
@@ -81,6 +92,7 @@ local CaravanSystem = require(Systems.CaravanSystem)
 local DashboardSystem = require(Systems.DashboardSystem)
 local VictorySystem = require(Systems.VictorySystem)
 local WallSystem = require(Systems.WallSystem)
+local WallGridManager = require(Systems.WallGridManager)
 
 -- Initialize systems
 PopulationSystem.init()
@@ -93,6 +105,7 @@ TradeSystem.init()
 CaravanSystem.init()
 DashboardSystem.init()
 VictorySystem.init()
+WallGridManager.initialize()
 
 GameManagerDebug:info("Managers loaded successfully")
 GameManagerDebug:info("Server starting...")
@@ -171,7 +184,34 @@ local function setupKingHealthMonitoring(player: Player, character: Model)
 			health = 0,
 			maxHealth = humanoid.MaxHealth,
 		})
-		-- TODO: Implement death consequences (respawn, game over, etc.)
+
+		-- Respawn the King after 10 seconds
+		task.delay(10, function()
+			if player and player.Parent then
+				local playerData = PlayerManager.get(player)
+				if playerData and playerData.SpawnPoint then
+					GameManagerDebug:info(`Respawning King for {player.Name}`)
+
+					-- Respawn character
+					player:LoadCharacter()
+					local newCharacter = player.Character or player.CharacterAdded:Wait()
+					local humanoidRootPart = newCharacter:WaitForChild("HumanoidRootPart") :: BasePart
+					humanoidRootPart.CFrame = playerData.SpawnPoint * CFrame.new(0, 3, 0)
+
+					-- Re-tag as King
+					newCharacter:SetAttribute("Owner", player.UserId)
+					newCharacter:SetAttribute("UnitType", "King")
+					newCharacter:SetAttribute("IsKing", true)
+
+					-- Notify client of respawn
+					GameEvent:FireClient(player, "KingRespawned", {
+						message = "Your King has been resurrected!",
+					})
+
+					GameManagerDebug:info(`King respawned for {player.Name}`)
+				end
+			end
+		end)
 	end)
 
 	-- Clean up connections when character is removed
@@ -189,6 +229,8 @@ end
 Players.PlayerAdded:Connect(function(player)
 	PlayerManager.create(player)
 	FogOfWarManager.init(player)
+	QuestManager.initializePlayerQuests(player)
+	AchievementManager.initializePlayer(player)
 	GameManagerDebug:info(`{player.Name} joined - character will spawn when game starts`)
 
 	-- Monitor character respawns for health bar updates
@@ -280,9 +322,40 @@ local function spawnInitialSetup(player: Player, factionData: any, spawnPointOve
 			end
 			GameManagerDebug:info(`Spawned {troopCount} troops for {player.Name}`)
 		else
-			-- TODO: Queue troops to spawn after peace time ends
-			-- For now, just log that troops will spawn later
-			GameManagerDebug:info(`{troopCount} troops queued for {player.Name} (will spawn after peace time)`)
+			-- Queue troops to spawn after peace time ends
+			local peaceTimeMinutes = 0
+			local minutes = lobbySettings.peaceTime:match("(%d+)")
+			if minutes then
+				peaceTimeMinutes = tonumber(minutes) or 10
+			end
+
+			local peaceTimeSeconds = peaceTimeMinutes * 60
+
+			-- Schedule troop spawn after peace time
+			task.delay(peaceTimeSeconds, function()
+				if player and player.Parent then
+					local playerData = PlayerManager.get(player)
+					if playerData and playerData.SpawnPoint then
+						for i = 1, troopCount do
+							local troopType = troopTypes[((i - 1) % #troopTypes) + 1]
+							local angle = (math.pi * 2 * i) / troopCount
+							local offset = Vector3.new(math.cos(angle) * 20, 0, math.sin(angle) * 20)
+							local troopSpawnPos = playerData.SpawnPoint.Position + offset
+							UnitManager.createUnit(troopType, player.UserId, troopSpawnPos, factionData.Name)
+						end
+
+						GameManagerDebug:info(`Peace time ended - spawned {troopCount} queued troops for {player.Name}`)
+
+						-- Notify client
+						GameEvent:FireClient(player, "PeaceTimeEnded", {
+							message = "Peace time has ended - your troops have arrived!",
+							troopsSpawned = troopCount,
+						})
+					end
+				end
+			end)
+
+			GameManagerDebug:info(`{troopCount} troops queued for {player.Name} (will spawn after {peaceTimeMinutes} minutes)`)
 		end
 	end
 
@@ -503,6 +576,20 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				)
 
 				if building then
+					-- DEBUG: log final building position for ground alignment checks
+					if building.PrimaryPart then
+						print("[DEBUG] Building placed:", data.buildingName, "at", building.PrimaryPart.Position)
+					end
+
+					-- Track achievements and quests
+					AchievementManager.incrementStat(player, "BuildingsBuilt", 1)
+					QuestManager.updateQuestProgress(player, "BuildBuilding", data.buildingName, 1)
+
+					-- Track defensive buildings
+					if buildingInfo and buildingInfo.category == "Defense" then
+						AchievementManager.incrementStat(player, "DefensesBuilt", 1)
+					end
+
 					-- Notify client that building was placed (for tutorial progression)
 					GameEvent:FireClient(player, "BuildingPlaced", {
 						buildingType = data.buildingName,
@@ -559,6 +646,87 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				end
 			else
 				GameManagerDebug:warn(`{player.Name} cannot afford {data.buildingName} at placement time`)
+			end
+		end
+	elseif action == "PlaceWall" then
+		-- NEW: Handle wall placement using WallGridManager
+		GameManagerDebug:info(`{player.Name} placing wall:`, data)
+
+		if typeof(data) == "table" and data.gridX and data.gridZ and data.buildingType then
+			-- Get wall building info for cost
+			local buildingInfo = GameData.Buildings[data.buildingType]
+			if not buildingInfo then
+				GameManagerDebug:warn(`Unknown wall type: {data.buildingType}`)
+				return
+			end
+
+			-- Check if player has enough resources
+			if PlayerManager.hasEnoughResources(player, buildingInfo.cost) then
+				-- Check if position is already occupied
+				if WallGridManager.isOccupied(data.gridX, data.gridZ) then
+					GameManagerDebug:warn(`Grid position ({data.gridX}, {data.gridZ}) already occupied`)
+					return
+				end
+
+				-- Deduct resources
+				PlayerManager.deductResources(player, buildingInfo.cost)
+
+				-- Place wall using WallGridManager
+				local wall = WallGridManager.placeWall(
+					data.gridX,
+					data.gridZ,
+					player.UserId,
+					data.buildingType,
+					data.manualOverride,
+					data.manualRotation
+				)
+				
+				if wall then
+					-- DEBUG: log final wall position and lowest point for ground alignment checks
+					if wall.PrimaryPart then
+						local pos = wall.PrimaryPart.Position
+						print("[DEBUG] Stone_Wall placed at:", pos)
+
+						local minY = math.huge
+						for _, part in wall:GetDescendants() do
+							if part:IsA("BasePart") then
+								local bottomY = part.Position.Y - part.Size.Y / 2
+								if bottomY < minY then
+									minY = bottomY
+								end
+							end
+						end
+						print(string.format("[DEBUG] Stone_Wall lowest point Y ~= %.2f", minY))
+					end
+
+					-- Track achievements and quests
+					AchievementManager.incrementStat(player, "BuildingsBuilt", 1)
+					AchievementManager.incrementStat(player, "DefensesBuilt", 1)
+					QuestManager.updateQuestProgress(player, "BuildBuilding", data.buildingType, 1)
+
+					-- Notify client
+					GameEvent:FireClient(player, "BuildingPlaced", {
+						buildingType = data.buildingType,
+					})
+
+					-- Send updated resources
+					local playerData = PlayerManager.get(player)
+					if playerData then
+						GameEvent:FireClient(player, "UpdateResources", {
+							resources = playerData.Resources,
+						})
+					end
+
+					GameManagerDebug:info(
+						`{player.Name} successfully placed wall at ({data.gridX}, {data.gridZ})`
+					)
+				else
+					-- Refund if wall placement failed
+					PlayerManager.addResources(player, buildingInfo.cost)
+					GameManagerDebug:warn(`Failed to place wall, refunded resources`)
+				end
+			else
+				GameManagerDebug:warn(`{player.Name} cannot afford {data.buildingType}`)
 			end
 		end
 	elseif action == "MoveUnit" then
@@ -746,6 +914,57 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				end
 			end
 		end
+	elseif action == "UseAbility" then
+		-- Handle hero ability usage
+		if typeof(data) == "table" and data.abilityId then
+			GameManagerDebug:info(`{player.Name} using ability: {data.abilityId}`)
+			AbilityManager.useAbility(player, data.abilityId)
+		end
+	elseif action == "UpgradeBuilding" then
+		-- Handle building upgrade
+		if typeof(data) == "table" and data.buildingId then
+			GameManagerDebug:info(`{player.Name} upgrading building: {data.buildingId}`)
+
+			-- Find the building
+			for _, building in playerData.Buildings do
+				if building and building.Parent and building.Name == data.buildingId then
+					UpgradeManager.upgradeBuilding(player, building)
+					break
+				end
+			end
+		end
+	elseif action == "StartResearch" then
+		-- Handle research start
+		if typeof(data) == "table" and data.techId then
+			GameManagerDebug:info(`{player.Name} starting research: {data.techId}`)
+			ResearchManager.startResearch(player, data.techId)
+		end
+	elseif action == "GetAbilities" then
+		-- Send abilities to client
+		local abilities = AbilityManager.getAbilities()
+		local cooldowns = AbilityManager.getAllCooldowns(player)
+		GameEvent:FireClient(player, "AbilitiesData", {
+			abilities = abilities,
+			cooldowns = cooldowns,
+		})
+	elseif action == "GetQuests" then
+		-- Send quests to client
+		local activeQuests = QuestManager.getActiveQuests(player)
+		local completedQuests = QuestManager.getCompletedQuests(player)
+		GameEvent:FireClient(player, "QuestsData", {
+			activeQuests = activeQuests,
+			completedQuests = completedQuests,
+		})
+	elseif action == "GetAchievements" then
+		-- Send achievements to client
+		local unlocked = AchievementManager.getUnlockedAchievements(player)
+		local locked = AchievementManager.getLockedAchievements(player)
+		local stats = AchievementManager.getStats(player)
+		GameEvent:FireClient(player, "AchievementsData", {
+			unlocked = unlocked,
+			locked = locked,
+			stats = stats,
+		})
 	elseif action == "LeaveGame" then
 		-- Handle player leaving game and returning to main menu
 		GameManagerDebug:info(`{player.Name} leaving game and returning to main menu`)

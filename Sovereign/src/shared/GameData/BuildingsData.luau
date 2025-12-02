@@ -443,6 +443,122 @@ BuildingsData.Ladder_Wall_Segment = {
 	description = "Wall segment with ladder access",
 } :: BuildingData
 
+-- New Wall System Pieces (Auto-tiling)
+BuildingsData.Straight_Stone_Wall = {
+	model_asset_name = "Straight_Stone_Wall",
+	type = "Building",
+	subtype = "Defense",
+	cost = { Stone = 10 },
+	construction = { build_time_seconds = 8 },
+	size = Vector3.new(16, 36, 14),
+	storage_capacity = {},
+	components = {},
+	defense_value = 50,
+	deletion_confirmation_required = false,
+	description = "Standard stone wall segment",
+} :: BuildingData
+
+BuildingsData.Short_Straight_Stone_Wall = {
+	model_asset_name = "Short_Straight_Stone_Wall",
+	type = "Building",
+	subtype = "Defense",
+	cost = { Stone = 8 },
+	construction = { build_time_seconds = 6 },
+	size = Vector3.new(10, 35, 14),
+	storage_capacity = {},
+	components = {},
+	defense_value = 40,
+	deletion_confirmation_required = false,
+	description = "Shorter stone wall segment",
+} :: BuildingData
+
+BuildingsData.Corner_Stone_Wall = {
+	model_asset_name = "Corner_Stone_Wall",
+	type = "Building",
+	subtype = "Defense",
+	cost = { Stone = 10 },
+	construction = { build_time_seconds = 8 },
+	size = Vector3.new(16, 36, 14),
+	storage_capacity = {},
+	components = {},
+	defense_value = 50,
+	deletion_confirmation_required = false,
+	description = "Corner wall piece for 90-degree turns",
+} :: BuildingData
+
+BuildingsData.Ladder_Stone_Wall = {
+	model_asset_name = "Ladder_Stone_Wall",
+	type = "Building",
+	subtype = "Defense",
+	cost = { Stone = 10, Wood = 5 },
+	construction = { build_time_seconds = 10 },
+	size = Vector3.new(16, 36, 14),
+	storage_capacity = {},
+	components = {},
+	defense_value = 50,
+	deletion_confirmation_required = false,
+	description = "Wall with integrated ladder for access",
+} :: BuildingData
+
+BuildingsData.Small_Tower_Stone_Wall = {
+	model_asset_name = "Small_Tower_Stone_Wall",
+	type = "Building",
+	subtype = "Defense",
+	cost = { Stone = 25 },
+	construction = { build_time_seconds = 15 },
+	size = Vector3.new(24, 48, 24),
+	storage_capacity = {},
+	components = {},
+	defense_value = 100,
+	attack_damage = 5,
+	deletion_confirmation_required = false,
+	description = "Small defensive tower for corners and junctions",
+} :: BuildingData
+
+BuildingsData.Large_Tower_Stone_Wall = {
+	model_asset_name = "Large_Tower_Stone_Wall",
+	type = "Building",
+	subtype = "Defense",
+	cost = { Stone = 40 },
+	construction = { build_time_seconds = 20 },
+	size = Vector3.new(23, 74, 23),
+	storage_capacity = {},
+	components = {},
+	defense_value = 150,
+	attack_damage = 10,
+	deletion_confirmation_required = false,
+	description = "Large tower for major wall intersections",
+} :: BuildingData
+
+BuildingsData.Large_Keep_Stone = {
+	model_asset_name = "Large_Keep_Stone",
+	type = "Building",
+	subtype = "Defense",
+	cost = { Stone = 100, Wood = 50 },
+	construction = { build_time_seconds = 40 },
+	size = Vector3.new(94, 76, 110),
+	storage_capacity = {},
+	components = {},
+	defense_value = 300,
+	attack_damage = 20,
+	deletion_confirmation_required = false,
+	description = "Massive fortified keep",
+} :: BuildingData
+
+BuildingsData.Gatehouse_Stone_Wall = {
+	model_asset_name = "Gatehouse_Stone_Wall",
+	type = "Building",
+	subtype = "Defense",
+	cost = { Wood = 30, Stone = 40 },
+	construction = { build_time_seconds = 25 },
+	size = Vector3.new(40, 49, 59),
+	storage_capacity = {},
+	components = {},
+	defense_value = 150,
+	deletion_confirmation_required = false,
+	description = "Fortified gatehouse for wall entrances",
+} :: BuildingData
+
 BuildingsData.Wooden_Palisade = {
 	model_asset_name = nil,
 	type = "Building",

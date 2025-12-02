@@ -37,6 +37,8 @@ local function formatData(data: any): string
 	return " | " .. tostring(data)
 end
 
+local logHistory = {}
+
 -- Log with a specific level
 local function logWithLevel(level: LogLevel, channelName: string, message: string, data: any?)
 	if not DebugManager.Enabled then return end -- Check global enable flag
@@ -44,6 +46,7 @@ local function logWithLevel(level: LogLevel, channelName: string, message: strin
 	local prefix = if level == "error" then "❌" elseif level == "warn" then "⚠️" else "ℹ️"
 	local formattedData = formatData(data)
 	local fullMessage = `{prefix} [{channelName}] {message}{formattedData}`
+	table.insert(logHistory, fullMessage)
 
 	if level == "error" then
 		error(fullMessage, 2)
@@ -53,6 +56,11 @@ local function logWithLevel(level: LogLevel, channelName: string, message: strin
 		print(fullMessage)
 	end
 end
+
+function DebugManager.getLogHistory(): {string}
+	return logHistory
+end
+
 
 -- Create a new debug channel
 function DebugManager.createChannel(name: string, enabled: boolean?): Channel
