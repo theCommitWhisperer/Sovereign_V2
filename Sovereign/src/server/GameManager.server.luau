@@ -546,6 +546,10 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				GameManagerDebug:info(`Required:`, buildingInfo.cost)
 			end
 		end
+	elseif action == "PlacementEnded" then
+		-- Client canceled placement mode - notify all client systems
+		GameManagerDebug:info(`{player.Name} ended placement mode`)
+		GameEvent:FireClient(player, "PlacementEnded")
 	elseif action == "PlaceBuilding" then
 		GameManagerDebug:info(`{player.Name} placing building:`, data)
 

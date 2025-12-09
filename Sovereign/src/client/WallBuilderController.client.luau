@@ -26,7 +26,7 @@ local CONFIG = {
 	GridSize = 4,
 	MinCameraDistance = 20,
 	MaxCameraDistance = 300,
-	SnapDistance = 24, -- Increased from 16 to make snapping more pronounced
+	SnapDistance = 40, -- Increased from 24 to 40 for much more pronounced magnetic snapping
 
 	-- Dimensions (based on actual model sizes from debug)
 	WallLengthLong = 16, -- Stone_Wall_Straight is 16.0 studs wide
@@ -391,12 +391,22 @@ local function updatePreview()
 	local snapPos, _, isInt = getSmartSnap(rawPos)
 
 	if snapPos then
-		local color = isInt and Color3.new(0, 1, 1) or Color3.new(0, 1, 0)
+		-- Create larger, more visible snap indicator
+		local color = isInt and Color3.new(0, 1, 1) or Color3.new(0, 1, 0) -- Cyan for intersection, green for endpoint
+
+		-- Main indicator sphere - larger and brighter
 		local s = Instance.new("Part")
-		s.Shape, s.Size, s.Position = Enum.PartType.Ball, Vector3.new(2, 2, 2), snapPos
-		s.Anchored, s.CanCollide, s.Transparency = true, false, 0.3
+		s.Shape, s.Size, s.Position = Enum.PartType.Ball, Vector3.new(6, 6, 6), snapPos
+		s.Anchored, s.CanCollide, s.Transparency = true, false, 0.2
 		s.Color, s.Material, s.Parent = color, Enum.Material.Neon, Workspace
 		table.insert(snapIndicators, s)
+
+		-- Add pulsing outer ring for extra visibility
+		local ring = Instance.new("Part")
+		ring.Shape, ring.Size, ring.Position = Enum.PartType.Ball, Vector3.new(10, 10, 10), snapPos
+		ring.Anchored, ring.CanCollide, ring.Transparency = true, false, 0.7
+		ring.Color, ring.Material, ring.Parent = color, Enum.Material.ForceField, Workspace
+		table.insert(snapIndicators, ring)
 	end
 
 	local path, valid = getActivePath()
@@ -405,11 +415,22 @@ local function updatePreview()
 		local template = Buildings:FindFirstChild(modelName)
 		if template then
 			local ghost = template:Clone() :: Model
+
+			-- Determine if this piece is snapped (brighter cyan/green) or free-placed (normal green/red)
+			local isSnapped = snapPos ~= nil
+			local ghostColor
+			if valid then
+				-- Green for valid placement, brighter cyan when snapped
+				ghostColor = isSnapped and Color3.new(0, 1, 1) or Color3.new(0.4, 1, 0.4)
+			else
+				-- Red for invalid placement
+				ghostColor = Color3.new(1, 0.2, 0.2)
+			end
+
 			for _, p in ipairs(ghost:GetDescendants()) do
 				if p:IsA("BasePart") then
 					p.Transparency, p.CanCollide, p.Anchored = 0.5, false, true
-					p.Color, p.Material = valid and Color3.new(0.4, 1, 0.4) or Color3.new(1, 0.2, 0.2),
-						Enum.Material.Neon
+					p.Color, p.Material = ghostColor, Enum.Material.Neon
 				end
 			end
 			ghost.Parent = Workspace
@@ -552,13 +573,30 @@ mouse.Button1Up:Connect(function()
 	end
 end)
 
+-- Right-click to cancel
+mouse.Button2Down:Connect(function()
+	if isPlacingWalls then
+		cancelBuild()
+	end
+end)
+
 UserInputService.InputBegan:Connect(function(input, processed)
-	if processed or not isPlacingWalls then
+	if not isPlacingWalls then
 		return
 	end
+
+	-- ESC always works, even if UI has focus
 	if input.KeyCode == Enum.KeyCode.Escape then
 		cancelBuild()
-	elseif input.KeyCode == Enum.KeyCode.R then
+		return
+	end
+
+	-- Other keys only work if UI doesn't have focus
+	if processed then
+		return
+	end
+
+	if input.KeyCode == Enum.KeyCode.R then
 		-- Increment manual rotation offset (works even when snapped)
 		manualRotationOffset = (manualRotationOffset + math.rad(45)) % math.rad(360)
 		-- Also update base rotation for when not snapped
@@ -578,6 +616,13 @@ gameEvent.OnClientEvent:Connect(function(action, data)
 		-- Check if it's a wall building request
 		if data and (data == "Stone_Wall" or string.find(tostring(data), "Wall")) then
 			print("[WallBuilderController] Starting wall placement:", data)
+
+			-- Reset any existing wall placement state
+			isDragging = false
+			startPosition = nil
+			startIncomingDir = nil
+
+			-- Enter wall placement mode
 			isPlacingWalls = true
 			manualRotationOffset = 0 -- Reset rotation offset for new placement
 
@@ -595,15 +640,15 @@ gameEvent.OnClientEvent:Connect(function(action, data)
 
 			-- Notify player
 			local StarterGui = game:GetService("StarterGui")
-			local message = "[Wall System] Click and drag to build walls! Press R to rotate, C to continue from last wall, ESC to cancel."
+			local message = "[Wall System] Click and drag to build walls! Press R to rotate, C to continue. ESC or Right-Click to cancel."
 
 			-- Special message for single-piece placements
 			if selectedPiece == "Tower" then
-				message = "[Wall System] Click to place tower. Press R to rotate. Will snap to existing walls. ESC to cancel."
+				message = "[Wall System] Click to place tower. Press R to rotate. Snaps to walls. ESC or Right-Click to cancel."
 			elseif selectedPiece == "Gatehouse" then
-				message = "[Wall System] Click to place gatehouse. Press R to rotate. Will snap to existing walls. ESC to cancel."
+				message = "[Wall System] Click to place gatehouse. Press R to rotate. Snaps to walls. ESC or Right-Click to cancel."
 			elseif selectedPiece == "Ladder" then
-				message = "[Wall System] Click and drag to build ladder walls. Press R to rotate. ESC to cancel."
+				message = "[Wall System] Click and drag to build ladder walls. Press R to rotate. ESC or Right-Click to cancel."
 			end
 
 			StarterGui:SetCore("ChatMakeSystemMessage", {

@@ -746,8 +746,19 @@ gameEvent.OnClientEvent:Connect(function(act, data)
 			or string.find(tostring(data), "Wall")
 
 		if not isWallBuilding then
-			-- Only handle non-wall buildings in old system
+			-- Cancel any active wall placement before starting regular building placement
+			gameEvent:FireServer("PlacementEnded")
+			-- Start regular building placement
 			startPlacement(data)
+		else
+			-- Cancel regular placement before starting wall placement
+			if isPlacing then
+				isPlacing = false
+				if ghostBuilding then
+					ghostBuilding:Destroy()
+					ghostBuilding = nil
+				end
+			end
 		end
 		-- Wall buildings are handled by WallBuilderController.client.luau
 	end
