@@ -26,7 +26,7 @@ local CONFIG = {
 	GridSize = 4,
 	MinCameraDistance = 20,
 	MaxCameraDistance = 300,
-	SnapDistance = 16,
+	SnapDistance = 24, -- Increased from 16 to make snapping more pronounced
 
 	-- Dimensions (based on actual model sizes from debug)
 	WallLengthLong = 16, -- Stone_Wall_Straight is 16.0 studs wide
@@ -50,6 +50,7 @@ local isDragging = false
 local startPosition: Vector3? = nil
 local startIncomingDir: Vector3? = nil
 local currentRotation = 0
+local manualRotationOffset = 0 -- Manual rotation adjustment on top of snap rotation
 local previewModels: { Model } = {}
 local snapIndicators: { Part } = {}
 local wallEndpoints: { { position: Vector3, incomingDir: Vector3 } } = {}
@@ -150,7 +151,7 @@ local function findWallIntersection(): (Vector3?, Vector3?, boolean)
 
 	if result and result.Instance then
 		local model = result.Instance:FindFirstAncestor("Buildings") and result.Instance:FindFirstAncestorOfClass("Model")
-		if model then
+		if model and model.PrimaryPart then
 			local cf = model:GetPrimaryPartCFrame()
 			local wallLine = cf.RightVector
 			local toHit = result.Position - cf.Position
@@ -329,11 +330,30 @@ local function getActivePath(): ({ PathPoint }, boolean)
 	-- Single Click / Hover
 	if not isDragging or not startPosition or dist < CONFIG.GridSize then
 		local rot = currentRotation
+		local finalPos = currentPos
+
 		if snapDir then
+			-- Calculate base rotation from snap direction
 			rot = math.atan2(snapDir.X, snapDir.Z) + math.rad(90)
+
+			-- Apply manual rotation offset on top of snap rotation
+			rot = rot + manualRotationOffset
+
+			-- Offset large pieces so they align with wall endpoints
+			if selectedPiece == "Gatehouse" then
+				-- Gatehouse is 58.5 studs wide with pivot at walkway (like regular walls)
+				-- Regular wall is 16 studs wide
+				-- Offset = (gatehouse_width - wall_width) / 2 to align the gatehouse edge with wall edge
+				local offset = (CONFIG.GatehouseSpacing - CONFIG.WallLengthLong) / 2
+				finalPos = currentPos + snapDir * offset
+			elseif selectedPiece == "Tower" then
+				-- Tower is 24 studs wide (radius 12)
+				-- No offset needed - tower center should be at wall endpoint for proper corner placement
+				finalPos = currentPos
+			end
 		end
 
-		return { { position = currentPos, type = selectedPiece, rotation = rot } }, true
+		return { { position = finalPos, type = selectedPiece, rotation = rot } }, true
 	end
 
 	-- Dragging
@@ -473,6 +493,7 @@ local function cancelBuild()
 	startPosition = nil
 	startIncomingDir = nil
 	isPlacingWalls = false
+	manualRotationOffset = 0 -- Reset rotation offset
 
 	-- Clear all previews
 	for _, g in ipairs(previewModels) do
@@ -538,6 +559,9 @@ UserInputService.InputBegan:Connect(function(input, processed)
 	if input.KeyCode == Enum.KeyCode.Escape then
 		cancelBuild()
 	elseif input.KeyCode == Enum.KeyCode.R then
+		-- Increment manual rotation offset (works even when snapped)
+		manualRotationOffset = (manualRotationOffset + math.rad(45)) % math.rad(360)
+		-- Also update base rotation for when not snapped
 		currentRotation = (currentRotation + math.rad(45)) % math.rad(360)
 	elseif input.KeyCode == Enum.KeyCode.C and lastWallEndpoint then
 		startPosition = lastWallEndpoint
@@ -555,12 +579,35 @@ gameEvent.OnClientEvent:Connect(function(action, data)
 		if data and (data == "Stone_Wall" or string.find(tostring(data), "Wall")) then
 			print("[WallBuilderController] Starting wall placement:", data)
 			isPlacingWalls = true
-			selectedPiece = "Straight" -- Default to straight walls
+			manualRotationOffset = 0 -- Reset rotation offset for new placement
+
+			-- Map building type to piece type
+			if data == "Wall_Tower" then
+				selectedPiece = "Tower"
+			elseif data == "Wall_Gatehouse" then
+				selectedPiece = "Gatehouse"
+			elseif data == "Wall_Ladder" then
+				selectedPiece = "Ladder"
+			else
+				-- Default for "Stone_Wall" and others
+				selectedPiece = "Straight"
+			end
 
 			-- Notify player
 			local StarterGui = game:GetService("StarterGui")
+			local message = "[Wall System] Click and drag to build walls! Press R to rotate, C to continue from last wall, ESC to cancel."
+
+			-- Special message for single-piece placements
+			if selectedPiece == "Tower" then
+				message = "[Wall System] Click to place tower. Press R to rotate. Will snap to existing walls. ESC to cancel."
+			elseif selectedPiece == "Gatehouse" then
+				message = "[Wall System] Click to place gatehouse. Press R to rotate. Will snap to existing walls. ESC to cancel."
+			elseif selectedPiece == "Ladder" then
+				message = "[Wall System] Click and drag to build ladder walls. Press R to rotate. ESC to cancel."
+			end
+
 			StarterGui:SetCore("ChatMakeSystemMessage", {
-				Text = "[Wall System] Click and drag to build walls! Press R to rotate, C to continue from last wall, ESC to cancel.",
+				Text = message,
 				Color = Color3.fromRGB(100, 200, 255),
 			})
 		end

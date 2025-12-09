@@ -16,9 +16,11 @@ local BUILDING_CATEGORIES = {
 	Defense = {
 		-- Keep is built during tutorial only, not available in menu
 		"Wooden_Palisade",
-		-- The new wall system is initiated with this single button.
-		-- Players can then cycle through pieces with the 'T' key.
+		-- Wall System - Drag-and-build walls
 		"Stone_Wall",
+		"Wall_Tower",
+		"Wall_Gatehouse",
+		"Wall_Ladder",
 		-- Other defense
 		"Watch_Tower",
 		"Arrow_Tower",

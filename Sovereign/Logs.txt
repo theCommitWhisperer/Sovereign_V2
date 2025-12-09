@@ -1,0 +1,85 @@
+  03:27:11.799  ℹ️ [LogManager] LogManager initialized. Will save to log1.txt  -  Server - DebugManager:56
+  03:27:11.801  ℹ️ [GameManager] Loading server-side managers...  -  Server - DebugManager:56
+  03:27:11.801  ℹ️ [GameManager] CharacterAutoLoads disabled - players will spawn on game start  -  Server - DebugManager:56
+  03:27:11.813  ℹ️ [GameManager] Managers loaded successfully  -  Server - DebugManager:56
+  03:27:11.814  ℹ️ [GameManager] Server starting...  -  Server - DebugManager:56
+  03:27:11.814  ℹ️ [GameManager] RemoteEvents created  -  Server - DebugManager:56
+  03:27:11.814  [WallSystemServer] Wall System Ready (MaxSegmentLength: 128)  -  Server - WallSystemServer:233
+  03:27:11.814  [WallSystemServer] Initialized with RemoteEvents  -  Server - WallSystemServer:234
+  03:27:11.814  ℹ️ [GameManager] RemoteEvents-dependent systems initialized  -  Server - DebugManager:56
+  03:27:11.814  ℹ️ [GameManager] FogOfWarManager updates started  -  Server - DebugManager:56
+  03:27:11.814  ℹ️ [GameManager] Server ready!  -  Server - DebugManager:56
+  03:27:11.919  ℹ️ [GameManager] RiffetyRaff joined - character will spawn when game starts  -  Server - DebugManager:56
+  03:27:12.195  [WallBuilderController] Wall Builder Ready  -  Client - WallBuilderController:609
+  03:27:12.195  [WallRenderer] Running on DESKTOP device  -  Client - WallRenderer:54
+  03:27:12.195  [WallRenderer] LOD distances: High=80, Medium=200, Low=400  -  Client - WallRenderer:55
+  03:27:12.195  [WallRenderer] Initializing...  -  Client - WallRenderer:73
+  03:27:12.195  [WallRenderer] Tracking 0 walls  -  Client - WallRenderer:104
+  03:27:12.195  [WallRenderer] LOD update loop started  -  Client - WallRenderer:234
+  03:27:16.210  ℹ️ [GameManager] Received event from RiffetyRaff: StartGame  -  Server - DebugManager:56
+  03:27:16.210  ℹ️ [GameManager] RiffetyRaff starting game...  -  Server - DebugManager:56
+  03:27:16.211  ℹ️ [GameManager] Map loaded: Classic Plains (1000x1000)  -  Server - DebugManager:56
+  03:27:16.211  ℹ️ [GameManager] Viking Raids: false, Peace Time: 10 minutes  -  Server - DebugManager:56
+  03:27:16.211  ℹ️ [GameManager] Assigned RiffetyRaff to Quadrant 1 (Kingdom)  -  Server - DebugManager:56
+  03:27:16.211  ℹ️ [GameManager] Player RiffetyRaff will be the King (character-based)  -  Server - DebugManager:56
+  03:27:16.213  ℹ️ [GameManager] 4 troops queued for RiffetyRaff (will spawn after 10 minutes)  -  Server - DebugManager:56
+  03:27:16.216  ℹ️ [GameManager] Spawned 5 peasants and resource nodes for RiffetyRaff in The Kingdom  -  Server - DebugManager:56
+  03:27:16.643  ℹ️ [GameManager] Loading character for RiffetyRaff  -  Server - DebugManager:56
+  03:27:16.643  ℹ️ [GameManager] Character spawned and teleported RiffetyRaff to quadrant 1 (tagged as King)  -  Server - DebugManager:56
+  03:27:16.644   ▶ ℹ️ [GameManager] King health monitoring setup for RiffetyRaff (x2)  -  Server - DebugManager:56
+  03:27:16.644  ℹ️ [GameManager] RiffetyRaff character respawned and re-tagged as King  -  Server - DebugManager:56
+  03:27:16.730  ℹ️ [GameManager] Received event from RiffetyRaff: GetQuests  -  Server - DebugManager:56
+  03:27:16.744  ℹ️ [GameManager] RiffetyRaff spawned as Kingdom  -  Server - DebugManager:56
+  03:27:17.227  ℹ️ [GameManager] Received event from RiffetyRaff: GetQuests  -  Server - DebugManager:56
+  03:27:18.078  ℹ️ [GameManager] Received event from RiffetyRaff: StartPlacement  -  Server - DebugManager:56
+  03:27:18.078  ℹ️ [GameManager] RiffetyRaff wants to place: Keep  -  Server - DebugManager:56
+  03:27:18.080  ℹ️ [GameManager] Approving placement for RiffetyRaff: Keep  -  Server - DebugManager:56
+  03:27:18.358  ℹ️ [GameManager] Received event from RiffetyRaff: PlacementEnded  -  Server - DebugManager:56
+  03:27:22.062  [Placement] FINAL PLACEMENT. Type: Keep, CFrame: -232, 48.1081963, 112, 1, 0, 0, 0, 1, 0, 0, 0, 1  -  Client - PlacementController:718
+  03:27:22.143  ℹ️ [GameManager] Received event from RiffetyRaff: PlaceBuilding  -  Server - DebugManager:56
+  03:27:22.143  ℹ️ [GameManager] RiffetyRaff placing building: | manualRotation: 0, cframe: -232, 48.1081963, 112, 1, 0, 0, 0, 1, 0, 0, 0, 1, buildingName: Keep, position: (-232, 48.10819625854492, 112)  -  Server - DebugManager:56
+  03:27:22.275  [DEBUG] Building placed: Keep at -231.99998474121094, 48.10820007324219, 111.99999237060547  -  Server - GameManager:579
+  03:27:22.275  ℹ️ [GameManager] RiffetyRaff successfully placed Keep  -  Server - DebugManager:56
+  03:27:22.275  ℹ️ [GameManager] Received event from RiffetyRaff: PlacementEnded  -  Server - DebugManager:56
+  03:27:23.578  ℹ️ [GameManager] Received event from RiffetyRaff: StartPlacement  -  Server - DebugManager:56
+  03:27:23.578  ℹ️ [GameManager] RiffetyRaff wants to place: Storehouse  -  Server - DebugManager:56
+  03:27:23.578  ℹ️ [GameManager] Approving placement for RiffetyRaff: Storehouse  -  Server - DebugManager:56
+  03:27:23.627  ℹ️ [GameManager] Received event from RiffetyRaff: PlacementEnded  -  Server - DebugManager:56
+  03:27:24.263  [Placement] FINAL PLACEMENT. Type: Storehouse, CFrame: -156, 19.2066231, 168, 1, 0, 0, 0, 1, 0, 0, 0, 1  -  Client - PlacementController:718
+  03:27:24.294  ℹ️ [GameManager] Received event from RiffetyRaff: PlaceBuilding  -  Server - DebugManager:56
+  03:27:24.294  ℹ️ [GameManager] RiffetyRaff placing building: | manualRotation: 0, cframe: -156, 19.2066231, 168, 1, 0, 0, 0, 1, 0, 0, 0, 1, buildingName: Storehouse, position: (-156, 19.206623077392578, 168)  -  Server - DebugManager:56
+  03:27:24.298  [DEBUG] Building placed: Storehouse at -156, 19.206623077392578, 168  -  Server - GameManager:579
+  03:27:24.298  ℹ️ [GameManager] RiffetyRaff successfully placed Storehouse  -  Server - DebugManager:56
+  03:27:24.298  ℹ️ [GameManager] Received event from RiffetyRaff: PlacementEnded  -  Server - DebugManager:56
+  03:27:25.060  ℹ️ [GameManager] Received event from RiffetyRaff: StartPlacement  -  Server - DebugManager:56
+  03:27:25.060  ℹ️ [GameManager] RiffetyRaff wants to place: Granary  -  Server - DebugManager:56
+  03:27:25.061  ℹ️ [GameManager] Approving placement for RiffetyRaff: Granary  -  Server - DebugManager:56
+  03:27:25.093  ℹ️ [GameManager] Received event from RiffetyRaff: PlacementEnded  -  Server - DebugManager:56
+  03:27:25.330  [Placement] FINAL PLACEMENT. Type: Granary, CFrame: -212, 19.2066231, 196, 1, 0, 0, 0, 1, 0, 0, 0, 1  -  Client - PlacementController:718
+  03:27:25.360  ℹ️ [GameManager] Received event from RiffetyRaff: PlaceBuilding  -  Server - DebugManager:56
+  03:27:25.360  ℹ️ [GameManager] RiffetyRaff placing building: | manualRotation: 0, cframe: -212, 19.2066231, 196, 1, 0, 0, 0, 1, 0, 0, 0, 1, buildingName: Granary, position: (-212, 19.206623077392578, 196)  -  Server - DebugManager:56
+  03:27:25.363  [DEBUG] Building placed: Granary at -212, 19.206623077392578, 196  -  Server - GameManager:579
+  03:27:25.364  ℹ️ [GameManager] RiffetyRaff successfully placed Granary  -  Server - DebugManager:56
+  03:27:25.364  ℹ️ [GameManager] Received event from RiffetyRaff: PlacementEnded  -  Server - DebugManager:56
+  03:27:28.544  ℹ️ [GameManager] Received event from RiffetyRaff: StartPlacement  -  Server - DebugManager:56
+  03:27:28.545  ℹ️ [GameManager] RiffetyRaff wants to place: Stone_Wall  -  Server - DebugManager:56
+  03:27:28.545  ℹ️ [GameManager] Approving placement for RiffetyRaff: Stone_Wall  -  Server - DebugManager:56
+  03:27:28.594  [WallBuilderController] Starting wall placement: Stone_Wall  -  Client - WallBuilderController:571
+  03:27:31.617  [WallSystemServer] Placed 6 wall pieces for RiffetyRaff  -  Server - WallSystemServer:208
+  03:27:34.676  ℹ️ [GameManager] Received event from RiffetyRaff: StartPlacement  -  Server - DebugManager:56
+  03:27:34.677  ℹ️ [GameManager] RiffetyRaff wants to place: Wall_Gatehouse  -  Server - DebugManager:56
+  03:27:34.677  ℹ️ [GameManager] Approving placement for RiffetyRaff: Wall_Gatehouse  -  Server - DebugManager:56
+  03:27:34.694  [WallBuilderController] Starting wall placement: Wall_Gatehouse  -  Client - WallBuilderController:571
+  03:27:44.344   ▶ [WallSystemServer] Placed 1 wall pieces for RiffetyRaff (x2)  -  Server - WallSystemServer:208
+  03:28:10.599  ℹ️ [GameManager] Received event from RiffetyRaff: StartPlacement  -  Server - DebugManager:56
+  03:28:10.599  ℹ️ [GameManager] RiffetyRaff wants to place: Stone_Wall  -  Server - DebugManager:56
+  03:28:10.599  ℹ️ [GameManager] Approving placement for RiffetyRaff: Stone_Wall  -  Server - DebugManager:56
+  03:28:10.681  [WallBuilderController] Starting wall placement: Stone_Wall  -  Client - WallBuilderController:571
+  03:28:14.286  [WallSystemServer] Placed 9 wall pieces for RiffetyRaff  -  Server - WallSystemServer:208
+  03:28:20.409  ℹ️ [GameManager] Received event from RiffetyRaff: StartPlacement  -  Server - DebugManager:56
+  03:28:20.409  ℹ️ [GameManager] RiffetyRaff wants to place: Wall_Gatehouse  -  Server - DebugManager:56
+  03:28:20.409  ℹ️ [GameManager] Approving placement for RiffetyRaff: Wall_Gatehouse  -  Server - DebugManager:56
+  03:28:20.443  [WallBuilderController] Starting wall placement: Wall_Gatehouse  -  Client - WallBuilderController:571
+  03:28:33.320  [WallSystemServer] Placed 1 wall pieces for RiffetyRaff  -  Server - WallSystemServer:208
+  03:28:44.442  Disconnect from 127.0.0.1|65063  -  Studio
+  

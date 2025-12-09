@@ -344,16 +344,61 @@ BuildingsData.Trading_Post = {
 -- DEFENSIVE BUILDINGS
 -- ========================================
 
+-- Stone Wall System (Drag-and-Build)
 BuildingsData.Stone_Wall = {
-	model_asset_name = "Straight_Stone_Wall",
+	model_asset_name = "Stone_Wall_Straight", -- This is used as the default "starter" for wall building
 	type = "Building",
 	subtype = "Defense",
-	cost = { Stone = 10 },
-	construction = { build_time_seconds = 8 },
-	size = Vector3.new(8, 6, 2), -- Long and thin
+	description = "Build stone walls by clicking and dragging. Press R to rotate, C to continue from last wall.",
+	cost = { Stone = 2 }, -- Low cost since it's per piece
+	construction = { build_time_seconds = 3 },
+	size = Vector3.new(16, 8, 2),
 	storage_capacity = {},
 	components = {},
-	defense_value = 50, -- Provides defensive bonus
+	defense_value = 30,
+	deletion_confirmation_required = false,
+} :: BuildingData
+
+-- Individual Wall Pieces (for manual placement)
+BuildingsData.Wall_Tower = {
+	model_asset_name = "Stone_Wall_Small_Tower",
+	type = "Building",
+	subtype = "Defense",
+	description = "Fortified tower for wall corners and defensive positions.",
+	cost = { Stone = 15 },
+	construction = { build_time_seconds = 10 },
+	size = Vector3.new(24, 24, 24), -- Tower is 24 studs wide
+	storage_capacity = {},
+	components = {},
+	defense_value = 100,
+	deletion_confirmation_required = false,
+} :: BuildingData
+
+BuildingsData.Wall_Gatehouse = {
+	model_asset_name = "Stone_Wall_Gatehouse",
+	type = "Building",
+	subtype = "Defense",
+	description = "Grand gatehouse entrance for your walls. Snaps automatically to existing walls.",
+	cost = { Stone = 50, Wood = 20 },
+	construction = { build_time_seconds = 20 },
+	size = Vector3.new(58, 20, 16), -- Gatehouse is 58.5 studs wide
+	storage_capacity = {},
+	components = {},
+	defense_value = 150,
+	deletion_confirmation_required = false,
+} :: BuildingData
+
+BuildingsData.Wall_Ladder = {
+	model_asset_name = "Stone_Wall_Ladder",
+	type = "Building",
+	subtype = "Defense",
+	description = "Wall segment with ladder for defenders to reach the top.",
+	cost = { Stone = 5, Wood = 3 },
+	construction = { build_time_seconds = 5 },
+	size = Vector3.new(16, 8, 2),
+	storage_capacity = {},
+	components = {},
+	defense_value = 30,
 	deletion_confirmation_required = false,
 } :: BuildingData
 
