@@ -308,7 +308,6 @@ end
 -- // CORE LOGIC //
 
 local function updateGhostPosition()
-	print("[Placement] updateGhostPosition tick")
 	if not (isPlacing and ghostBuilding) then
 		return
 	end
@@ -632,25 +631,27 @@ local function startPlacement(buildingName: string)
 	currentBuildingName = buildingName
 	manualRotation = 0
 
-	local isWallBuilding = buildingName == "Stone_Wall" or string.find(buildingName, "Wall")
-	if isWallBuilding then
-		wallPieceEvent:Fire({ currentPiece = WALL_PIECES[wallPieceIndex].name, isPlacingWalls = true })
-	end
-
-	local assetName = buildingName
-	if isWallBuilding then
-		assetName = "Wall Segment"
-		if buildingName == "Wall_Corner" then
-			assetName = "Wall Corner"
-		end
-	end
+	-- This controller only handles non-wall buildings.
+	-- The model name should come directly from the building's data definition.
+	local assetName = info.model_asset_name
 
 	local assets = ReplicatedStorage:FindFirstChild("Assets") and ReplicatedStorage.Assets:FindFirstChild("Buildings")
-	local template = (assets and assets:FindFirstChild(assetName)) or (assets and assets:FindFirstChild(buildingName))
+	local template
+
+	if assets and assetName then
+		-- Use recursive find (true) to search the whole folder,
+		-- which supports asset names that are nested (e.g., "Houses/House_01").
+		template = assets:FindFirstChild(assetName, true)
+	end
+
+	-- Fallback for legacy buildings that might use their dictionary key as the model name.
+	if not template and assets then
+		template = assets:FindFirstChild(buildingName, true)
+	end
 
 	if template then
 		ghostBuilding = template:Clone()
-		ghostBuilding.Name = assetName
+		ghostBuilding.Name = "GhostBuildingPreview" -- Use a generic name to avoid conflicts
 		ghostBuilding.Parent = Workspace
 		for _, v in ghostBuilding:GetDescendants() do
 			if v:IsA("BasePart") then
@@ -658,6 +659,7 @@ local function startPlacement(buildingName: string)
 				v.CanCollide = false
 				v.Transparency = 0.5
 				v.Color = Color3.new(0, 1, 0)
+				-- ConnectionPoints aren't used by non-wall buildings, but keeping this is harmless.
 				if v.Name == "ConnectionPoint" then
 					v.Transparency = 0.5
 					v.Color = Color3.new(1, 0, 1)
@@ -665,9 +667,12 @@ local function startPlacement(buildingName: string)
 			end
 		end
 	else
+		-- If no model is found (either by assetName or buildingName), create a placeholder part.
+		-- This is the source of the "square" previews and is the expected behavior for
+		-- buildings that have `model_asset_name = nil` in their data.
 		ghostBuilding = Instance.new("Part")
 		ghostBuilding.Name = "Ghost"
-		ghostBuilding.Size = info.size
+		ghostBuilding.Size = info.size or Vector3.new(4, 4, 4) -- Use a default size if not defined
 		ghostBuilding.Anchored = true
 		ghostBuilding.CanCollide = false
 		ghostBuilding.Transparency = 0.5
@@ -736,7 +741,7 @@ end)
 
 gameEvent.OnClientEvent:Connect(function(act, data)
 	if act == "StartPlacement" then
-		-- Check if this is a wall building - if so, let WallPlacementController handle it
+		-- Check if this is a wall building - if so, let WallBuilderController handle it
 		local isWallBuilding = data == "Stone_Wall"
 			or string.find(tostring(data), "Wall")
 
@@ -744,7 +749,7 @@ gameEvent.OnClientEvent:Connect(function(act, data)
 			-- Only handle non-wall buildings in old system
 			startPlacement(data)
 		end
-		-- Wall buildings are handled by WallPlacementController.client.luau
+		-- Wall buildings are handled by WallBuilderController.client.luau
 	end
 end)
 

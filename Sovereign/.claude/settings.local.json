@@ -5,7 +5,10 @@
       "Bash(cat:*)",
       "Bash(find:*)",
       "Bash(roblox-cli analyze:*)",
-      "Bash(luau-analyze:*)"
+      "Bash(luau-analyze:*)",
+      "Bash(taskkill:*)",
+      "Bash(aftman add:*)",
+      "Bash(rojo serve:*)"
     ],
     "deny": [],
     "ask": []

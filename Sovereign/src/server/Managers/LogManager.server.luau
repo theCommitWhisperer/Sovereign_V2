@@ -2,12 +2,14 @@
 -- LogManager: Saves console logs to files at the end of a session.
 
 local Players = game:GetService("Players")
-local DebugManager = require(game.ReplicatedStorage.src.shared.DebugManager)
+local DebugManager = require(game.ReplicatedStorage.Shared.DebugManager)
 
 local LOG_DIRECTORY = "logs"
 local MAX_LOG_FILES = 3
 local currentLogIndex = 1
 
+-- DISABLED: File system operations not available in Roblox Studio/Server
+--[[
 -- Find the next log file index to use
 local function getNextLogIndex(): number
 	local highestIndex = 0
@@ -40,12 +42,15 @@ local function getNextLogIndex(): number
 	return oldestIndex
 end
 
-
 currentLogIndex = getNextLogIndex()
+]]--
+
+currentLogIndex = 1 -- Default value since file operations are disabled
 
 -- Function to save logs to a file
 local function saveLogs()
-	if not DebugManager.Enabled then return end
+	return -- DISABLED - Not saving logs to file anymore
+	--[[if not DebugManager.Enabled then return end
 
 	local logHistory = DebugManager.getLogHistory()
 	if #logHistory == 0 then
@@ -64,7 +69,7 @@ local function saveLogs()
 		print(string.format("LogManager: Successfully saved logs to %s", fileName))
 	else
 		warn(string.format("LogManager: Error saving logs to %s: %s", fileName, tostring(err)))
-	end
+	end]]--
 end
 
 -- Bind to game closing event

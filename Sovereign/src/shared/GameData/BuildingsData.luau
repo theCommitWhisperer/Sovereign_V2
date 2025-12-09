@@ -30,13 +30,13 @@ export type BuildingData = {
 }
 
 BuildingsData.Keep = {
-	model_asset_name = nil,
+	model_asset_name = "Stone_Wall_Large_Keep", -- Using the Large Keep model
 	type = "Building",
 	subtype = "Main Building",
 	description = "The heart of your settlement. If it's destroyed, you are defeated.",
 	cost = { Wood = 0 },
 	construction = { build_time_seconds = 0 },
-	size = Vector3.new(20, 15, 20),
+	size = Vector3.new(94, 76, 110), -- Updated size to match Stone_Wall_Large_Keep dimensions
 	storage_capacity = {
 		Wood = 1000,
 		Stone = 1000,
@@ -51,7 +51,7 @@ BuildingsData.Keep = {
 } :: BuildingData
 
 BuildingsData.Storehouse = {
-	model_asset_name = nil,
+	model_asset_name = "Storehouse",
 	type = "Building",
 	subtype = "Storage",
 	description = "Increases your storage capacity for building materials and weapons.",
@@ -68,7 +68,7 @@ BuildingsData.Storehouse = {
 } :: BuildingData
 
 BuildingsData.Granary = {
-	model_asset_name = nil,
+	model_asset_name = "Storehouse", -- Fallback to Storehouse if no specific Granary model
 	type = "Building",
 	subtype = "Storage",
 	cost = { Wood = 15, Stone = 5 },
@@ -81,7 +81,7 @@ BuildingsData.Granary = {
 } :: BuildingData
 
 BuildingsData.Hovel = {
-	model_asset_name = nil,
+	model_asset_name = "Houses/House", -- Mapped to available House model
 	type = "Building",
 	subtype = "Housing",
 	cost = { Wood = 10 },
@@ -93,7 +93,7 @@ BuildingsData.Hovel = {
 } :: BuildingData
 
 BuildingsData.Woodcutters_Post = {
-	model_asset_name = nil,
+	model_asset_name = "Lumberjack",
 	type = "Building",
 	subtype = "Resource Gathering",
 	cost = { Wood = 5 },
@@ -109,7 +109,7 @@ BuildingsData.Woodcutters_Post = {
 } :: BuildingData
 
 BuildingsData.Stone_Quarry = {
-	model_asset_name = nil,
+	model_asset_name = nil, -- No direct match found
 	type = "Building",
 	subtype = "Resource Gathering",
 	cost = { Wood = 10 },
@@ -125,7 +125,7 @@ BuildingsData.Stone_Quarry = {
 } :: BuildingData
 
 BuildingsData.Farm = {
-	model_asset_name = nil,
+	model_asset_name = "Pig_Farm", -- Defaulting to Pig Farm
 	type = "Building",
 	subtype = "Food Production",
 	cost = { Wood = 15 },
@@ -142,7 +142,7 @@ BuildingsData.Farm = {
 } :: BuildingData
 
 BuildingsData.Kitchen = {
-	model_asset_name = nil,
+	model_asset_name = "Kitchen",
 	type = "Building",
 	subtype = "Food Processing",
 	cost = { Wood = 10, Stone = 5 },
@@ -158,7 +158,7 @@ BuildingsData.Kitchen = {
 } :: BuildingData
 
 BuildingsData.Restaurant = {
-	model_asset_name = nil,
+	model_asset_name = "Restaurant",
 	type = "Building",
 	subtype = "Food Service",
 	cost = { Wood = 20, Stone = 10 },
@@ -175,7 +175,7 @@ BuildingsData.Restaurant = {
 } :: BuildingData
 
 BuildingsData.Barracks = {
-	model_asset_name = nil,
+	model_asset_name = "Siege_Camps/Red_Siege_Camp", -- Placeholder: Using Siege Camp as military structure
 	type = "Building",
 	subtype = "Military",
 	cost = { Wood = 30, Stone = 20 },
@@ -191,7 +191,7 @@ BuildingsData.Barracks = {
 -- PRODUCTION CHAIN BUILDINGS
 
 BuildingsData.Iron_Mine = {
-	model_asset_name = nil,
+	model_asset_name = nil, -- No direct match found
 	type = "Building",
 	subtype = "Resource Gathering",
 	cost = { Wood = 20, Stone = 15 },
@@ -208,7 +208,7 @@ BuildingsData.Iron_Mine = {
 } :: BuildingData
 
 BuildingsData.Smithy = {
-	model_asset_name = nil,
+	model_asset_name = "Weapon_Smith", -- Reusing Weapon Smith visual
 	type = "Building",
 	subtype = "Production",
 	cost = { Wood = 25, Stone = 20 },
@@ -228,7 +228,7 @@ BuildingsData.Smithy = {
 } :: BuildingData
 
 BuildingsData.Weaponsmith = {
-	model_asset_name = nil,
+	model_asset_name = "Weapon_Smith",
 	type = "Building",
 	subtype = "Production",
 	cost = { Wood = 30, Stone = 25, Iron_Bars = 10 },
@@ -248,7 +248,7 @@ BuildingsData.Weaponsmith = {
 } :: BuildingData
 
 BuildingsData.Bakery = {
-	model_asset_name = nil,
+	model_asset_name = "Bakery",
 	type = "Building",
 	subtype = "Food Processing",
 	cost = { Wood = 15, Stone = 10 },
@@ -269,7 +269,7 @@ BuildingsData.Bakery = {
 } :: BuildingData
 
 BuildingsData.Brewery = {
-	model_asset_name = nil,
+	model_asset_name = "Brewery",
 	type = "Building",
 	subtype = "Food Processing",
 	cost = { Wood = 20, Stone = 15 },
@@ -292,7 +292,7 @@ BuildingsData.Brewery = {
 -- TRADE & COMMERCE
 
 BuildingsData.Market = {
-	model_asset_name = nil,
+	model_asset_name = nil, -- No direct match, maybe use Storehouse or Tavern?
 	type = "Building",
 	subtype = "Commerce",
 	cost = { Wood = 40, Stone = 30, Gold = 20 },
@@ -345,7 +345,7 @@ BuildingsData.Trading_Post = {
 -- ========================================
 
 BuildingsData.Stone_Wall = {
-	model_asset_name = nil,
+	model_asset_name = "Straight_Stone_Wall",
 	type = "Building",
 	subtype = "Defense",
 	cost = { Stone = 10 },
@@ -357,9 +357,9 @@ BuildingsData.Stone_Wall = {
 	deletion_confirmation_required = false,
 } :: BuildingData
 
--- Individual Wall Piece Types
+-- Individual Wall Piece Types (Mapped to New Models)
 BuildingsData.Wall_Segment = {
-	model_asset_name = "Wall Segment",
+	model_asset_name = "Straight_Stone_Wall",
 	type = "Building",
 	subtype = "Defense",
 	cost = { Stone = 10 },
@@ -373,7 +373,7 @@ BuildingsData.Wall_Segment = {
 } :: BuildingData
 
 BuildingsData.Wall_Corner = {
-	model_asset_name = "Wall Corner",
+	model_asset_name = "Corner_Stone_Wall",
 	type = "Building",
 	subtype = "Defense",
 	cost = { Stone = 10 },
@@ -387,7 +387,7 @@ BuildingsData.Wall_Corner = {
 } :: BuildingData
 
 BuildingsData.Wall_Corner_Reverse = {
-	model_asset_name = "Wall Corner Reverse",
+	model_asset_name = "Corner_Stone_Wall",
 	type = "Building",
 	subtype = "Defense",
 	cost = { Stone = 10 },
@@ -401,7 +401,7 @@ BuildingsData.Wall_Corner_Reverse = {
 } :: BuildingData
 
 BuildingsData.Wall_Tower = {
-	model_asset_name = "Tower",
+	model_asset_name = "Small_Tower_Stone_Wall",
 	type = "Building",
 	subtype = "Defense",
 	cost = { Stone = 20 },
@@ -416,7 +416,7 @@ BuildingsData.Wall_Tower = {
 } :: BuildingData
 
 BuildingsData.Wall_Gatehouse = {
-	model_asset_name = "Gatehouse",
+	model_asset_name = "Gatehouse_Stone_Wall",
 	type = "Building",
 	subtype = "Defense",
 	cost = { Wood = 30, Stone = 40 },
@@ -430,7 +430,7 @@ BuildingsData.Wall_Gatehouse = {
 } :: BuildingData
 
 BuildingsData.Ladder_Wall_Segment = {
-	model_asset_name = "Ladder Wall Segment",
+	model_asset_name = "Ladder_Stone_Wall",
 	type = "Building",
 	subtype = "Defense",
 	cost = { Stone = 10, Wood = 5 },
@@ -573,7 +573,7 @@ BuildingsData.Wooden_Palisade = {
 } :: BuildingData
 
 BuildingsData.Gatehouse = {
-	model_asset_name = nil,
+	model_asset_name = "Gatehouse_Stone_Wall", -- Mapped to new Gatehouse
 	type = "Building",
 	subtype = "Defense",
 	cost = { Wood = 30, Stone = 40 },
@@ -588,7 +588,7 @@ BuildingsData.Gatehouse = {
 } :: BuildingData
 
 BuildingsData.Watch_Tower = {
-	model_asset_name = nil,
+	model_asset_name = "Small_Tower_Stone_Wall",
 	type = "Building",
 	subtype = "Defense",
 	cost = { Wood = 20, Stone = 15 },
@@ -603,7 +603,7 @@ BuildingsData.Watch_Tower = {
 } :: BuildingData
 
 BuildingsData.Arrow_Tower = {
-	model_asset_name = nil,
+	model_asset_name = "Large_Tower_Stone_Wall",
 	type = "Building",
 	subtype = "Defense",
 	cost = { Wood = 15, Stone = 25 },
@@ -619,7 +619,7 @@ BuildingsData.Arrow_Tower = {
 } :: BuildingData
 
 BuildingsData.Guard_House = {
-	model_asset_name = nil,
+	model_asset_name = "Siege_Camps/Blue_Siege_Camp", -- Placeholder
 	type = "Building",
 	subtype = "Military",
 	cost = { Wood = 25, Stone = 15 },
@@ -639,7 +639,7 @@ BuildingsData.Guard_House = {
 -- ========================================
 
 BuildingsData.Tavern = {
-	model_asset_name = nil,
+	model_asset_name = "Tavern",
 	type = "Building",
 	subtype = "Entertainment",
 	cost = { Wood = 25, Stone = 15 },
@@ -658,7 +658,7 @@ BuildingsData.Tavern = {
 } :: BuildingData
 
 BuildingsData.Inn = {
-	model_asset_name = nil,
+	model_asset_name = "Inn",
 	type = "Building",
 	subtype = "Entertainment",
 	cost = { Wood = 35, Stone = 25 },
@@ -679,7 +679,7 @@ BuildingsData.Inn = {
 } :: BuildingData
 
 BuildingsData.Windmill = {
-	model_asset_name = nil,
+	model_asset_name = "Windmill",
 	type = "Building",
 	subtype = "Food Processing",
 	cost = { Wood = 30, Stone = 20 },
@@ -700,7 +700,7 @@ BuildingsData.Windmill = {
 } :: BuildingData
 
 BuildingsData.Water_Mill = {
-	model_asset_name = nil,
+	model_asset_name = "Windmill", -- Fallback to Windmill
 	type = "Building",
 	subtype = "Food Processing",
 	cost = { Wood = 40, Stone = 30 },
@@ -720,7 +720,7 @@ BuildingsData.Water_Mill = {
 } :: BuildingData
 
 BuildingsData.Tannery = {
-	model_asset_name = nil,
+	model_asset_name = "Tannery",
 	type = "Building",
 	subtype = "Production",
 	cost = { Wood = 20, Stone = 10 },
@@ -738,7 +738,7 @@ BuildingsData.Tannery = {
 } :: BuildingData
 
 BuildingsData.Carpenter = {
-	model_asset_name = nil,
+	model_asset_name = "Carpenter",
 	type = "Building",
 	subtype = "Production",
 	cost = { Wood = 15, Stone = 5 },
@@ -758,7 +758,7 @@ BuildingsData.Carpenter = {
 } :: BuildingData
 
 BuildingsData.Fishermans_Hut = {
-	model_asset_name = nil,
+	model_asset_name = "Fisherman_Shop",
 	type = "Building",
 	subtype = "Food Production",
 	cost = { Wood = 10 },
@@ -778,7 +778,7 @@ BuildingsData.Fishermans_Hut = {
 -- ========================================
 
 BuildingsData.Church = {
-	model_asset_name = nil,
+	model_asset_name = "Church",
 	type = "Building",
 	subtype = "Religious",
 	cost = { Wood = 40, Stone = 60, Gold = 30 },
@@ -794,7 +794,7 @@ BuildingsData.Church = {
 } :: BuildingData
 
 BuildingsData.Chapel = {
-	model_asset_name = nil,
+	model_asset_name = "Church", -- Reuse Church model
 	type = "Building",
 	subtype = "Religious",
 	cost = { Wood = 20, Stone = 30 },
@@ -808,7 +808,7 @@ BuildingsData.Chapel = {
 } :: BuildingData
 
 BuildingsData.Monastery = {
-	model_asset_name = nil,
+	model_asset_name = "Scriptorium", -- Reuse Scriptorium or Church
 	type = "Building",
 	subtype = "Religious",
 	cost = { Wood = 50, Stone = 80, Gold = 50 },
@@ -829,7 +829,7 @@ BuildingsData.Monastery = {
 } :: BuildingData
 
 BuildingsData.Scriptorium = {
-	model_asset_name = nil,
+	model_asset_name = "Scriptorium",
 	type = "Building",
 	subtype = "Cultural",
 	cost = { Wood = 30, Stone = 20, Gold = 20 },
@@ -847,7 +847,7 @@ BuildingsData.Scriptorium = {
 } :: BuildingData
 
 BuildingsData.Town_Hall = {
-	model_asset_name = nil,
+	model_asset_name = "Mead_Hall", -- Reuse Mead Hall
 	type = "Building",
 	subtype = "Administrative",
 	cost = { Wood = 60, Stone = 80, Gold = 40 },
@@ -868,7 +868,7 @@ BuildingsData.Town_Hall = {
 -- ========================================
 
 BuildingsData.Round_Tower = {
-	model_asset_name = nil,
+	model_asset_name = "Large_Tower_Stone_Wall", -- Placeholder
 	type = "Building",
 	subtype = "Cultural",
 	cost = { Stone = 100, Gold = 50 },
@@ -887,7 +887,7 @@ BuildingsData.Round_Tower = {
 } :: BuildingData
 
 BuildingsData.Crannog = {
-	model_asset_name = nil,
+	model_asset_name = "Storehouse", -- Placeholder
 	type = "Building",
 	subtype = "Defense",
 	cost = { Wood = 50, Stone = 20 },
@@ -906,7 +906,7 @@ BuildingsData.Crannog = {
 } :: BuildingData
 
 BuildingsData.Brehon_Court = {
-	model_asset_name = nil,
+	model_asset_name = "Mead_Hall", -- Placeholder
 	type = "Building",
 	subtype = "Administrative",
 	cost = { Wood = 40, Stone = 50, Gold = 30 },
@@ -922,7 +922,7 @@ BuildingsData.Brehon_Court = {
 } :: BuildingData
 
 BuildingsData.Clachan = {
-	model_asset_name = nil,
+	model_asset_name = "Houses/House",
 	type = "Building",
 	subtype = "Housing",
 	cost = { Wood = 15, Stone = 10 },
@@ -935,7 +935,7 @@ BuildingsData.Clachan = {
 } :: BuildingData
 
 BuildingsData.Mead_Hall = {
-	model_asset_name = nil,
+	model_asset_name = "Mead_Hall",
 	type = "Building",
 	subtype = "Entertainment",
 	cost = { Wood = 60, Stone = 40, Gold = 30 },
@@ -951,13 +951,14 @@ BuildingsData.Mead_Hall = {
 	requires_worker = true,
 	consumes_resource = "Ale",
 	consumption_rate = 2.5,
-	can_train_units = { "Warrior" }, -- Recruit warriors at feast
+	can_train_units = { "Warrior" },
+	-- Recruit warriors at feast
 	max_queue_size = 5,
 	maintenance_cost = { Gold = 5, Food = 2 },
 } :: BuildingData
 
 BuildingsData.Dolmen = {
-	model_asset_name = nil,
+	model_asset_name = "Honor_Statue", -- Placeholder
 	type = "Building",
 	subtype = "Cultural",
 	cost = { Stone = 80 },
@@ -970,7 +971,7 @@ BuildingsData.Dolmen = {
 } :: BuildingData
 
 BuildingsData.Celtic_Cross = {
-	model_asset_name = nil,
+	model_asset_name = "Honor_Statue", -- Closest match
 	type = "Building",
 	subtype = "Religious",
 	cost = { Stone = 30, Gold = 15 },
@@ -983,7 +984,7 @@ BuildingsData.Celtic_Cross = {
 } :: BuildingData
 
 BuildingsData.Forge_of_the_Tuatha = {
-	model_asset_name = nil,
+	model_asset_name = "Weapon_Smith", -- Reuse Weapon Smith
 	type = "Building",
 	subtype = "Production",
 	cost = { Stone = 100, Iron_Bars = 50, Gold = 80 },
@@ -1006,7 +1007,7 @@ BuildingsData.Forge_of_the_Tuatha = {
 } :: BuildingData
 
 BuildingsData.Stone_Circle = {
-	model_asset_name = nil,
+	model_asset_name = "Honor_Statue", -- Placeholder
 	type = "Building",
 	subtype = "Cultural",
 	cost = { Stone = 120 },

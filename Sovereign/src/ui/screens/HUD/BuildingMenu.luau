@@ -16,16 +16,9 @@ local BUILDING_CATEGORIES = {
 	Defense = {
 		-- Keep is built during tutorial only, not available in menu
 		"Wooden_Palisade",
-		-- Stone Wall system - shows all wall types for manual selection
-		"Stone_Wall", -- Main auto-tiling wall (use for drag-placement)
-		"Straight_Stone_Wall",
-		"Short_Straight_Stone_Wall",
-		"Corner_Stone_Wall",
-		"Ladder_Stone_Wall",
-		"Small_Tower_Stone_Wall",
-		"Large_Tower_Stone_Wall",
-		"Large_Keep_Stone",
-		"Gatehouse_Stone_Wall",
+		-- The new wall system is initiated with this single button.
+		-- Players can then cycle through pieces with the 'T' key.
+		"Stone_Wall",
 		-- Other defense
 		"Watch_Tower",
 		"Arrow_Tower",

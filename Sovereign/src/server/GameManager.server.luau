@@ -9,9 +9,8 @@ local StarterPlayer = game:GetService("StarterPlayer")
 -- Require game data (safe - read-only configs)
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-DebugManager.Enabled = true
 
-local GameManagerDebug = DebugManager.createChannel("GameManager", false) -- Corrected to be off by default
+local GameManagerDebug = DebugManager.createChannel("GameManager", true) -- Enabled for debugging
 
 GameManagerDebug:info("Loading server-side managers...")
 
@@ -91,8 +90,7 @@ local TradeSystem = require(Systems.TradeSystem)
 local CaravanSystem = require(Systems.CaravanSystem)
 local DashboardSystem = require(Systems.DashboardSystem)
 local VictorySystem = require(Systems.VictorySystem)
-local WallSystem = require(Systems.WallSystem)
-local WallGridManager = require(Systems.WallGridManager)
+local WallSystemServer = require(Systems.WallSystemServer)
 
 -- Initialize systems
 PopulationSystem.init()
@@ -105,7 +103,6 @@ TradeSystem.init()
 CaravanSystem.init()
 DashboardSystem.init()
 VictorySystem.init()
-WallGridManager.initialize()
 
 GameManagerDebug:info("Managers loaded successfully")
 GameManagerDebug:info("Server starting...")
@@ -129,9 +126,10 @@ CheckVisibilityFunc.Parent = RemoteEvents
 
 GameManagerDebug:info("RemoteEvents created")
 
--- Initialize TestCommandManager after RemoteEvents are created
+-- Initialize systems that depend on RemoteEvents
+WallSystemServer.initialize()
 TestCommandManager.init()
-GameManagerDebug:info("TestCommandManager initialized")
+GameManagerDebug:info("RemoteEvents-dependent systems initialized")
 
 -- Start fog of war updates
 FogOfWarManager.startUpdates()
@@ -648,87 +646,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				GameManagerDebug:warn(`{player.Name} cannot afford {data.buildingName} at placement time`)
 			end
 		end
-	elseif action == "PlaceWall" then
-		-- NEW: Handle wall placement using WallGridManager
-		GameManagerDebug:info(`{player.Name} placing wall:`, data)
-
-		if typeof(data) == "table" and data.gridX and data.gridZ and data.buildingType then
-			-- Get wall building info for cost
-			local buildingInfo = GameData.Buildings[data.buildingType]
-			if not buildingInfo then
-				GameManagerDebug:warn(`Unknown wall type: {data.buildingType}`)
-				return
-			end
-
-			-- Check if player has enough resources
-			if PlayerManager.hasEnoughResources(player, buildingInfo.cost) then
-				-- Check if position is already occupied
-				if WallGridManager.isOccupied(data.gridX, data.gridZ) then
-					GameManagerDebug:warn(`Grid position ({data.gridX}, {data.gridZ}) already occupied`)
-					return
-				end
-
-				-- Deduct resources
-				PlayerManager.deductResources(player, buildingInfo.cost)
-
-				-- Place wall using WallGridManager
-				local wall = WallGridManager.placeWall(
-					data.gridX,
-					data.gridZ,
-					player.UserId,
-					data.buildingType,
-					data.manualOverride,
-					data.manualRotation
-				)
-				
-				if wall then
-					-- DEBUG: log final wall position and lowest point for ground alignment checks
-					if wall.PrimaryPart then
-						local pos = wall.PrimaryPart.Position
-						print("[DEBUG] Stone_Wall placed at:", pos)
-
-						local minY = math.huge
-						for _, part in wall:GetDescendants() do
-							if part:IsA("BasePart") then
-								local bottomY = part.Position.Y - part.Size.Y / 2
-								if bottomY < minY then
-									minY = bottomY
-								end
-							end
-						end
-						print(string.format("[DEBUG] Stone_Wall lowest point Y ~= %.2f", minY))
-					end
-
-					-- Track achievements and quests
-					AchievementManager.incrementStat(player, "BuildingsBuilt", 1)
-					AchievementManager.incrementStat(player, "DefensesBuilt", 1)
-					QuestManager.updateQuestProgress(player, "BuildBuilding", data.buildingType, 1)
-
-					-- Notify client
-					GameEvent:FireClient(player, "BuildingPlaced", {
-						buildingType = data.buildingType,
-					})
-
-					-- Send updated resources
-					local playerData = PlayerManager.get(player)
-					if playerData then
-						GameEvent:FireClient(player, "UpdateResources", {
-							resources = playerData.Resources,
-						})
-					end
-
-					GameManagerDebug:info(
-						`{player.Name} successfully placed wall at ({data.gridX}, {data.gridZ})`
-					)
-				else
-					-- Refund if wall placement failed
-					PlayerManager.addResources(player, buildingInfo.cost)
-					GameManagerDebug:warn(`Failed to place wall, refunded resources`)
-				end
-			else
-				GameManagerDebug:warn(`{player.Name} cannot afford {data.buildingType}`)
-			end
-		end
+	-- Old "PlaceWall" event removed - now handled by WallSystemServer with "PlaceWallPath" event
 	elseif action == "MoveUnit" then
 		-- Handle unit movement command
 		if typeof(data) == "table" and data.unitId and data.targetPosition then
@@ -1010,8 +928,3 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 end)
 
 GameManagerDebug:info("Server ready!")
-
--- Call this AFTER the map/buildings have been loaded
-task.delay(1, function()
-    WallSystem.initialize()
-end)

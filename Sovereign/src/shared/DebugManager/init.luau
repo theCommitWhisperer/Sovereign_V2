@@ -2,7 +2,7 @@
 -- DebugManager: Centralized logging with channel support
 
 local DebugManager = {}
-DebugManager.Enabled = false
+DebugManager.Enabled = false -- DISABLED - Use regular print() statements instead
 
 export type LogLevel = "info" | "warn" | "error"
 
@@ -41,7 +41,7 @@ local logHistory = {}
 
 -- Log with a specific level
 local function logWithLevel(level: LogLevel, channelName: string, message: string, data: any?)
-	if not DebugManager.Enabled then return end -- Check global enable flag
+	-- Note: Channel methods now handle the enabled check (global OR channel-specific)
 
 	local prefix = if level == "error" then "❌" elseif level == "warn" then "⚠️" else "ℹ️"
 	local formattedData = formatData(data)
@@ -49,7 +49,7 @@ local function logWithLevel(level: LogLevel, channelName: string, message: strin
 	table.insert(logHistory, fullMessage)
 
 	if level == "error" then
-		error(fullMessage, 2)
+		warn(fullMessage) -- Use warn instead of error to avoid halting execution
 	elseif level == "warn" then
 		warn(fullMessage)
 	else
@@ -72,17 +72,20 @@ function DebugManager.createChannel(name: string, enabled: boolean?): Channel
 		name = name,
 		enabled = if enabled ~= nil then enabled else true,
 		info = function(self: Channel, message: string, data: any?)
-			if self.enabled then
+			-- Log if global DebugManager is enabled OR if this specific channel is enabled
+			if DebugManager.Enabled or self.enabled then
 				logWithLevel("info", self.name, message, data)
 			end
 		end,
 		warn = function(self: Channel, message: string, data: any?)
-			if self.enabled then
+			-- Log if global DebugManager is enabled OR if this specific channel is enabled
+			if DebugManager.Enabled or self.enabled then
 				logWithLevel("warn", self.name, message, data)
 			end
 		end,
 		error = function(self: Channel, message: string, data: any?)
-			if self.enabled then
+			-- Log if global DebugManager is enabled OR if this specific channel is enabled
+			if DebugManager.Enabled or self.enabled then
 				logWithLevel("error", self.name, message, data)
 			end
 		end,
@@ -109,19 +112,27 @@ end
 
 -- Legacy support - default channel
 function DebugManager.log(message: string, data: any?)
-	logWithLevel("info", "General", message, data)
+	if DebugManager.Enabled then
+		logWithLevel("info", "General", message, data)
+	end
 end
 
 function DebugManager.info(message: string, data: any?)
-	logWithLevel("info", "General", message, data)
+	if DebugManager.Enabled then
+		logWithLevel("info", "General", message, data)
+	end
 end
 
 function DebugManager.warn(message: string, data: any?)
-	logWithLevel("warn", "General", message, data)
+	if DebugManager.Enabled then
+		logWithLevel("warn", "General", message, data)
+	end
 end
 
 function DebugManager.error(message: string, data: any?)
-	logWithLevel("error", "General", message, data)
+	if DebugManager.Enabled then
+		logWithLevel("error", "General", message, data)
+	end
 end
 
 return DebugManager
