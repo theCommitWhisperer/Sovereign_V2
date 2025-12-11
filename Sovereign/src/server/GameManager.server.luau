@@ -779,6 +779,36 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 							`Deleting building {building.Name} (type: {buildingType}) for {player.Name}`
 						)
 
+						-- Calculate resource refund (50% of original cost)
+						local buildingInfo = GameData.Buildings[buildingType]
+						if buildingInfo and buildingInfo.cost then
+							local refundAmount = {}
+							for resourceType, cost in pairs(buildingInfo.cost) do
+								local refund = math.floor(cost * 0.5) -- 50% refund
+								if refund > 0 then
+									refundAmount[resourceType] = refund
+									-- Add resources back to player
+									if playerData.Resources[resourceType] then
+										playerData.Resources[resourceType] = playerData.Resources[resourceType] + refund
+									end
+								end
+							end
+
+							-- Notify player about refund
+							if next(refundAmount) then
+								local refundText = {}
+								for resourceType, amount in pairs(refundAmount) do
+									table.insert(refundText, `{amount} {resourceType}`)
+								end
+								GameManagerDebug:info(
+									`Refunded 50% resources to {player.Name}: {table.concat(refundText, ", ")}`
+								)
+
+								-- Update client resources
+								GameEvent:FireClient(player, "UpdateResources", playerData.Resources)
+							end
+						end
+
 						-- Unassign any workers/haulers from this building
 						WorkerManager.unassignWorkersFromBuilding(building)
 

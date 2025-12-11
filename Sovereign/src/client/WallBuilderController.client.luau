@@ -57,6 +57,7 @@ local wallEndpoints: { { position: Vector3, incomingDir: Vector3 } } = {}
 local lastWallEndpoint: Vector3? = nil
 local lastWallDir: Vector3? = nil
 local isPlacingWalls = false
+local isDeleteModeActive = false -- Track delete mode from HUD
 
 -- === UTILITIES ===
 
@@ -538,11 +539,17 @@ end
 
 mouse.Button1Down:Connect(function()
 	if not isPlacingWalls or not selectedPiece then
-		-- Try to remove a wall piece
-		local target = mouse.Target
-		local model = target and target:FindFirstAncestorOfClass("Model")
-		if model and model:FindFirstChild("PlacedPiece") then
-			removePieceEvent:FireServer(model)
+		-- Only allow wall deletion when delete mode is active
+		if isDeleteModeActive then
+			local target = mouse.Target
+			local model = target and target:FindFirstAncestorOfClass("Model")
+			if model and model:FindFirstChild("PlacedPiece") then
+				-- Check if it's owned by the player
+				if model:GetAttribute("Owner") == player.UserId then
+					removePieceEvent:FireServer(model)
+					print("[WallBuilderController] Removing wall piece:", model.Name)
+				end
+			end
 		end
 		return
 	end
@@ -659,6 +666,19 @@ gameEvent.OnClientEvent:Connect(function(action, data)
 	elseif action == "PlacementEnded" then
 		cancelBuild()
 	end
+end)
+
+-- === LISTEN FOR DELETE MODE ===
+local deleteModeEvent = ReplicatedStorage:FindFirstChild("DeleteModeChanged")
+if not deleteModeEvent then
+	deleteModeEvent = Instance.new("BindableEvent")
+	deleteModeEvent.Name = "DeleteModeChanged"
+	deleteModeEvent.Parent = ReplicatedStorage
+end
+
+deleteModeEvent.Event:Connect(function(isActive: boolean)
+	isDeleteModeActive = isActive
+	print("[WallBuilderController] Delete mode:", isActive)
 end)
 
 print("[WallBuilderController] Wall Builder Ready")

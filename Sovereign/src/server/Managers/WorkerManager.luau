@@ -185,7 +185,8 @@ local function findStorageWithSpace(
 				local buildingInfo = GameData.Buildings[buildingType]
 				if buildingInfo and buildingInfo.storage_capacity and buildingInfo.storage_capacity[resourceType] then
 					if BuildingManager.hasStorageSpace(building, resourceType, 1) then
-						local distance = (building.Position - position).Magnitude
+						local buildingPos = building:GetPivot().Position
+						local distance = (buildingPos - position).Magnitude
 						if distance < nearestDistance then
 							nearest = building
 							nearestDistance = distance
@@ -227,7 +228,8 @@ local function findBuildingWithResources(position: Vector3, ownerId: number): (I
 					local stored = BuildingManager.getStorageAmount(building, buildingInfo.produces_resource)
 
 					if stored >= 10 then -- Minimum amount to transport
-						local distance = (building.Position - position).Magnitude
+						local buildingPos = building:GetPivot().Position
+						local distance = (buildingPos - position).Magnitude
 						if distance < nearestDistance then
 							nearest = building
 							nearestDistance = distance
@@ -491,7 +493,8 @@ local function updateWorkerTasks(deltaTime: number)
 			else
 				-- Traditional resource gathering from nodes
 				if not task.targetNode then
-					task.targetNode = ResourceNodeManager.findNearestNode(task.workplace.Position, task.resourceType)
+					local workplacePos = task.workplace:GetPivot().Position
+					task.targetNode = ResourceNodeManager.findNearestNode(workplacePos, task.resourceType)
 					if task.targetNode then
 						WorkerDebug:info(`{task.jobType} found {task.resourceType} node`, {
 							position = task.targetNode.Position,
@@ -730,11 +733,27 @@ function WorkerManager.unassignWorkersFromBuilding(building: Instance)
 				buildingType = task.workplaceType,
 			})
 
+			-- Transform worker back to Peasant
+			local idSuffix = task.worker.Name:match("_(%d+_%d+)$") or tostring(math.random(1000, 9999))
+			task.worker.Name = "Peasant_" .. idSuffix
+			task.worker:SetAttribute("UnitType", "Peasant")
+
+			-- Reset worker color back to default
+			for _, part in task.worker:GetDescendants() do
+				if part:IsA("BasePart") and part.Name == "Head" then
+					part.Color = Color3.fromRGB(255, 204, 153) -- Default peasant skin tone
+				end
+			end
+
 			-- Clear worker attributes
 			task.worker:SetAttribute("IsWorking", false)
 			task.worker:SetAttribute("AssignedTo", nil)
 			task.worker:SetAttribute("TargetPosition", nil)
 			task.worker:SetAttribute("IsMoving", false)
+
+			WorkerDebug:info(`Transformed worker back to Peasant`, {
+				workerName = task.worker.Name,
+			})
 
 			-- Remove task
 			table.remove(WorkerTasks, i)

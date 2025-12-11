@@ -8,7 +8,13 @@
       "Bash(luau-analyze:*)",
       "Bash(taskkill:*)",
       "Bash(aftman add:*)",
-      "Bash(rojo serve:*)"
+      "Bash(rojo serve:*)",
+      "Bash(rojo sourcemap:*)",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)",
+      "Bash(git mv:*)",
+      "Bash(move DeletionController.client.luau DeletionVisualFeedback.client.luau)",
+      "Bash(move DragDeleteController.client.luau DeletionInputHandler.client.luau)"
     ],
     "deny": [],
     "ask": []

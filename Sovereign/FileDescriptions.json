@@ -1,0 +1,1101 @@
+{
+  "src/client/CameraController.client.luau": {
+    "description": "Manages the camera system, providing a studio-style hybrid camera with RTS and King modes. It uses a modular StudioCameraController and allows toggling between modes with the Tab key.",
+    "purpose": "To provide a flexible camera system for the player, adapting to different game modes and input types (desktop/mobile).",
+    "files_called": [
+      "ReplicatedStorage.Shared.DebugManager",
+      "script.Parent.Camera.StudioCameraController",
+      "ReplicatedStorage:WaitForChild(\"RemoteEvents\")",
+      "RemoteEvents:WaitForChild(\"GameEvent\")"
+    ],
+    "key_code": "The script initializes a StudioCameraController, enables the camera on 'GameStarted' event, and handles 'Tab' for mode toggling and 'Home' for camera reset. Key methods are StudioCameraController.new(), cameraController:Initialize(), and cameraController:ToggleCameraMode()."
+  },
+  "src/client/DeletionVisualFeedback.client.luau": {
+    "description": "Provides real-time visual feedback when delete mode is active. Shows red highlights on deletable buildings, yellow on protected ones (like Keep), and changes the cursor to a crosshair. Only highlights buildings owned by the player.",
+    "purpose": "To give players immediate visual feedback about what they can and cannot delete, improving usability and preventing accidental deletion attempts on invalid targets.",
+    "files_called": [
+      "ReplicatedStorage:FindFirstChild(\"DeleteModeChanged\")"
+    ],
+    "key_code": "Runs updateHoverEffect on RenderStepped when delete mode is active. Uses mouse.Target to detect what's under cursor, then findBuildingModelFromPart to get the building model. Creates a SelectionBox with color based on canDeleteBuilding and isProtectedBuilding checks. Changes mouse.Icon to crosshair. Listens to DeleteModeChanged BindableEvent."
+  },
+  "src/client/DeletionInputHandler.client.luau": {
+    "description": "Handles both single-click and drag-to-select deletion of buildings and walls. For single clicks, uses mouse.Target to find the clicked building. For drags, draws a visual selection box and checks all 8 bounding box corners of buildings to determine if they're within the selection area.",
+    "purpose": "To provide flexible deletion options: quick single-click for individual buildings or drag-selection for efficiently deleting multiple structures at once. Works seamlessly with the MultiDeleteModal for confirmation.",
+    "files_called": [
+      "ReplicatedStorage:FindFirstChild(\"DeleteModeChanged\")",
+      "ReplicatedStorage:FindFirstChild(\"MultiDeleteRequested\")",
+      "workspace:FindFirstChild(\"Buildings\")",
+      "workspace:FindFirstChild(\"PlacedWalls\")",
+      "game:GetService(\"GuiService\"):GetGuiInset()"
+    ],
+    "key_code": "Listens for InputBegan, InputChanged, and InputEnded. Tracks dragStartPosition and isDragging state. For single clicks (no drag), uses player:GetMouse().Target directly to find clicked building. For drags beyond MIN_DRAG_DISTANCE (10px), creates visual selection box and uses getBuildingsInScreenBox with GUI inset compensation to find all buildings with any corner in the box. Fires MultiDeleteRequested BindableEvent with selected buildings array."
+  },
+  "src/client/init.client.luau": {
+    "description": "The main entry point for the client-side code. It initializes various client-side managers and systems by requiring them.",
+    "purpose": "To load and start all the necessary client-side scripts when a player joins the game, acting as a central initializer for the client.",
+    "files_called": [
+      "ReplicatedStorage.Shared.DebugManager",
+      "script.Selection.SelectionManager",
+      "script.Movement.MovementManager",
+      "script.Combat.HealthBarManager",
+      "script.Combat.DamageNumberManager",
+      "script.Combat.FogOfWarClient",
+      "script.Combat.ResourceCarryIndicator"
+    ],
+    "key_code": "Consists of a series of 'require' statements that load and execute different client-side modules. It also initializes a debug channel for client-side messages."
+  },
+  "src/client/PlacementController.client.luau": {
+    "description": "Handles the logic for placing buildings. It shows a 'ghost' of the building that follows the mouse, snaps to a grid, and indicates whether the placement is valid. It includes advanced features for placing walls, such as snapping to existing walls and automatically selecting the correct wall piece.",
+    "purpose": "To provide a user-friendly and robust system for players to place buildings and walls in the game world, with clear visual feedback and intelligent snapping behavior.",
+    "files_called": [
+      "ReplicatedStorage.Shared.DebugManager",
+      "ReplicatedStorage.Shared.WallGridConfig",
+      "ReplicatedStorage:WaitForChild(\"RemoteEvents\")",
+      "RemoteEvents:WaitForChild(\"GameEvent\")",
+      "ReplicatedStorage:FindFirstChild(\"WallPieceChanged\")",
+      "ReplicatedStorage:FindFirstChild(\"ResetWallPiece\")",
+      "ReplicatedStorage.Shared.GameData",
+      "script.Parent.Camera.KeybindingsManager",
+      "ReplicatedStorage:FindFirstChild(\"Assets\")"
+    ],
+    "key_code": "Listens for 'StartPlacement' event. The updateGhostPosition function, running on RenderStepped, raycasts from the mouse to determine placement. For walls, it uses a bitmask for piece selection and findNearestConnectionPoints for snapping. It checks for collisions to validate placement and fires a 'PlaceBuilding' event to the server on click."
+  },
+  "src/client/WallBuilderController.client.luau": {
+    "description": "A dedicated and advanced controller for building walls. It supports click-and-drag to build long sections of walls, automatically generating paths with straight segments, short segments, and towers at corners. It features a 'smart snapping' system that allows new walls to connect seamlessly to existing ones.",
+    "purpose": "To provide a powerful and intuitive wall-building experience for the player, abstracting away the complexity of placing individual wall pieces and allowing for the rapid construction of complex defensive structures.",
+    "files_called": [
+      "ReplicatedStorage:WaitForChild(\"RemoteEvents\")",
+      "RemoteEvents:WaitForChild(\"GameEvent\")",
+      "RemoteEvents:WaitForChild(\"PlaceWallPath\")",
+      "RemoteEvents:WaitForChild(\"RemoveWallPiece\")",
+      "ReplicatedStorage:WaitForChild(\"Assets\")",
+      "Assets:WaitForChild(\"Buildings\")",
+      "ReplicatedStorage:FindFirstChild(\"DeleteModeChanged\")"
+    ],
+    "key_code": "Listens for 'StartPlacement' event with wall data. 'updatePreview' on RenderStepped shows a preview of the wall path. 'getActivePath' and 'calculateSmartWallPath' generate the path with straights, shorts, and towers. 'getSmartSnap' enables connections to existing walls. 'placeCurrentPath' fires a 'PlaceWallPath' event to the server with the generated path. Also handles wall deletion."
+  },
+  "src/client/WallRenderer.client.luau": {
+    "description": "Implements a Level of Detail (LOD) system for walls to optimize rendering performance, especially on mobile devices. It dynamically changes the visual detail of walls based on their distance from the camera.",
+    "purpose": "To improve the game's performance and maintain a smooth frame rate by reducing the complexity of distant objects, which is particularly important in a game with potentially many player-built structures.",
+    "files_called": [
+      "Workspace:WaitForChild(\"Buildings\")"
+    ],
+    "key_code": "Detects if the game is on a mobile device to apply more aggressive LOD settings. The _trackWall function stores the initial state of each wall. The _applyLOD function changes a wall's appearance by adjusting transparency and other properties. The _updateLOD function, running in a throttled RenderStepped loop, calculates camera distance to each wall and applies the appropriate LOD."
+  },
+  "src/client/Camera/BoundsManager.luau": {
+    "description": "A class that manages the camera's boundaries. It can be used to define a playable area and ensure the camera stays within it. It supports both hard and soft clamping of the camera's position.",
+    "purpose": "To prevent the player from moving the camera outside of the intended game area, which is essential for maintaining immersion and preventing players from seeing unfinished or out-of-bounds areas.",
+    "files_called": [],
+    "key_code": "SetBoundsFromPart defines boundaries from a BasePart. ClampPosition enforces a hard limit on the camera's position, while SoftClampPosition provides a smoother boundary using Lerp. IsInBounds and GetDistanceFromBounds are utility functions for checking the camera's position relative to the boundaries."
+  },
+  "src/client/Camera/CameraAnimator.luau": {
+    "description": "A class responsible for creating smooth camera transitions and animations. It provides functionality for smooth damping, inertia, and scripted animations between camera states.",
+    "purpose": "To add a layer of polish to the camera movement, making it feel more natural and responsive by smoothly interpolating between different positions, rotations, and zoom levels.",
+    "files_called": [],
+    "key_code": "The 'ApplyInertia' function gives the camera a sense of momentum. 'AnimateFocusOn' and 'AnimateToRotation' create tweens for scripted animations. The 'Update' function, called every frame, applies these tweens to the camera rig using TweenService."
+  },
+  "src/client/Camera/CameraRig.luau": {
+    "description": "A class that manages the camera's transform (position, rotation, and zoom) using spherical coordinates (focal point, distance, yaw, pitch) to create a Studio-style camera behavior.",
+    "purpose": "To provide a robust and flexible foundation for the camera system by abstracting the complex math of camera movement and rotation into simple, high-level methods.",
+    "files_called": [],
+    "key_code": "The camera's state is defined by focalPoint, distance, yaw, and pitch. The 'UpdateCamera' function converts these spherical coordinates into a CFrame for the workspace camera. Methods like 'Zoom', 'Rotate', 'Pan', and 'Move' modify the spherical coordinates, which are then applied by 'UpdateCamera'."
+  },
+  "src/client/Camera/DesktopInput.luau": {
+    "description": "A class that handles all mouse and keyboard input for camera control on a desktop computer, implementing traditional RTS-style camera controls.",
+    "purpose": "To translate raw user input (key presses, mouse clicks, mouse movement) into abstract camera control events (Rotate, Pan, Zoom, Move, Focus), separating input-handling from camera mechanics.",
+    "files_called": [],
+    "key_code": "Uses UserInputService to listen for input. Right-click+drag rotates, middle-click+drag pans, mouse wheel zooms, and WASD/QE handle movement/rotation. It implements edge scrolling and fires events to an inputHandler (e.g., {Type = 'Rotate', Delta = mouseDelta}) instead of directly controlling the camera."
+  },
+  "src/client/Camera/InputHandler.luau": {
+    "description": "A central hub for managing input from different platforms (desktop, mobile, gamepad). It detects the current platform and delegates input handling to the appropriate module (DesktopInput, MobileInput, etc.).",
+    "purpose": "To provide a unified interface for camera input, regardless of the device. It allows the main camera controller to be agnostic of the input source by listening for normalized events from this handler.",
+    "files_called": [],
+    "key_code": "Detects the platform in its constructor using UserInputService. 'Enable' and 'Disable' methods manage the platform-specific input modules. 'OnInputEvent' registers a callback to receive input events. 'FireEvent' is called by platform-specific modules to broadcast a normalized InputEvent to all callbacks."
+  },
+  "src/client/Camera/KeybindingsManager.luau": {
+    "description": "A singleton module that manages all customizable keybindings for camera and placement controls. It handles saving/loading keybindings for each player, checking for conflicts, and providing a central place to query keybindings.",
+    "purpose": "To allow players to customize their controls for accessibility and comfort. It decouples the hardcoded keys from the input handling logic, allowing other scripts to query for the current key of an action.",
+    "files_called": [],
+    "key_code": "SaveKeybindings and LoadKeybindings serialize the keybinding table into a JSON string and save it as a player attribute. SetKeybinding allows changing a key and includes conflict detection. OnKeybindingChanged allows other scripts to subscribe to keybinding changes. It is a singleton module."
+  },
+  "src/client/Camera/MobileInput.luau": {
+    "description": "A class that handles all touch-based input for camera control on mobile devices. It recognizes common mobile gestures like panning, pinching, and rotating.",
+    "purpose": "To provide an intuitive camera control scheme for mobile players, translating touch gestures into the same abstract camera control events used by the desktop input module.",
+    "files_called": [],
+    "key_code": "Uses UserInputService.TouchStarted and TouchEnded to track active touches. The main logic in RenderStepped checks the number of touches to determine the gesture: one-finger drag for panning, two-finger pinch for zooming, two-finger rotation for yaw, and two-finger vertical drag for pitch. It also detects double-taps for focusing. It fires normalized events to the inputHandler."
+  },
+  "src/client/Camera/StudioCameraController.luau": {
+    "description": "The main, high-level camera controller script. It integrates all other camera modules (InputHandler, DesktopInput, MobileInput, CameraRig, CameraAnimator, BoundsManager, KeybindingsManager) to create a complete, Studio-style camera system.",
+    "purpose": "To act as the central coordinator for the entire camera system. It initializes all the sub-modules, wires them together, manages the main update loop, and handles the logic for switching between different camera modes (RTS and King).",
+    "files_called": [
+      "script.Parent.InputHandler",
+      "script.Parent.DesktopInput",
+      "script.Parent.MobileInput",
+      "script.Parent.CameraRig",
+      "script.Parent.CameraAnimator",
+      "script.Parent.BoundsManager",
+      "script.Parent.KeybindingsManager",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The constructor creates instances of all other camera modules. The 'Update' function calls the animator, applies boundary constraints, and updates the camera rig. 'HandleInputEvent' receives normalized events from the InputHandler and calls the appropriate methods on the cameraRig. It also handles switching between RTS and King camera modes."
+  },
+  "src/client/Combat/DamageNumberManager/init.luau": {
+    "description": "Manages the display of floating damage numbers that appear above units when they take damage. It includes animations to make the numbers pop up, float, and fade out.",
+    "purpose": "To provide clear and satisfying visual feedback to the player during combat, indicating how much damage their units are dealing or receiving, enhancing the user experience.",
+    "files_called": [
+      "ReplicatedStorage.Shared.DebugManager",
+      "workspace:FindFirstChild(\"Units\")"
+    ],
+    "key_code": "On RenderStepped, it iterates through units, comparing their current health to the last known value. If health has decreased, it calls createDamageNumber. This function creates a BillboardGui and uses TweenService to animate the damage number with scaling, floating, and fading effects. It also distinguishes critical hits."
+  },
+  "src/client/Combat/FogOfWarClient/init.luau": {
+    "description": "Implements the client-side logic for Fog of War. It is responsible for hiding and showing enemy units, buildings, and resource nodes based on whether they are in the player's line of sight.",
+    "purpose": "To enforce the Fog of War mechanic by controlling the visibility of objects, which restricts player information and encourages scouting and exploration in an RTS game.",
+    "files_called": [
+      "ReplicatedStorage:WaitForChild(\"RemoteEvents\")",
+      "RemoteEvents:WaitForChild(\"CheckVisibility\")",
+      "ReplicatedStorage.Shared.DebugManager",
+      "workspace:FindFirstChild(\"Units\")",
+      "workspace:FindFirstChild(\"Buildings\")",
+      "workspace:FindFirstChild(\"ResourceNodes\")"
+    ],
+    "key_code": "The 'updateVisibility' function runs in a loop, iterating through objects and calling a RemoteFunction 'CheckVisibility' on the server to determine visibility. Non-visible objects are moved to a 'HiddenFolder' in ReplicatedStorage. When they become visible, they are moved back. It also adjusts lighting for a visual fog effect."
+  },
+  "src/client/Combat/HealthBarManager/init.luau": {
+    "description": "Creates, updates, and displays styled health bars above units, with smooth color transitions based on health and visibility determined by Fog of War.",
+    "purpose": "To provide players with immediate visual information about unit health, which is essential for making tactical decisions in combat.",
+    "files_called": [
+      "ReplicatedStorage:WaitForChild(\"RemoteEvents\")",
+      "RemoteEvents:WaitForChild(\"CheckVisibility\")",
+      "ReplicatedStorage.Shared.DebugManager",
+      "workspace:FindFirstChild(\"Units\")"
+    ],
+    "key_code": "On RenderStepped, it creates health bars for new units and updates existing ones. 'createHealthBar' builds the visual components using a BillboardGui. 'updateHealthBar' calculates the health percentage, updates the bar's size and color, and calls the 'CheckVisibility' remote function to determine if the bar should be shown. Health bars are hidden at full health."
+  },
+  "src/client/Combat/ResourceCarryIndicator/init.luau": {
+    "description": "Manages the display of visual indicators above worker units when they are carrying resources, showing an icon for the resource type and the amount.",
+    "purpose": "To provide players with at-a-glance information about what their worker units are doing, helping them understand their economy and resource gathering operations.",
+    "files_called": [
+      "ReplicatedStorage.Shared.DebugManager",
+      "workspace:FindFirstChild(\"Units\")"
+    ],
+    "key_code": "On RenderStepped, it creates indicators for new workers (identified by the 'ResourcesCarrying' attribute) and updates existing ones. 'createCarryIndicator' builds the BillboardGui. 'updateCarryIndicator' reads the 'ResourcesCarrying' and 'ResourceType' attributes and updates the icon and text. The indicator is disabled if the worker is not carrying resources."
+  },
+  "src/client/Combat/StanceController/init.luau": {
+    "description": "Handles the client-side UI and commands for setting unit stances (e.g., Aggressive, Defensive, Hold). It connects to the stance buttons in the HUD and sends commands to the server when they are clicked.",
+    "purpose": "To provide a way for players to control the behavior of their combat units, acting as the bridge between the UI buttons and the server-side logic that changes the unit's behavior.",
+    "files_called": [
+      "ReplicatedStorage.Shared.DebugManager",
+      "ReplicatedStorage:WaitForChild(\"RemoteEvents\")",
+      "RemoteEvents:WaitForChild(\"GameEvent\")",
+      "player:WaitForChild(\"PlayerScripts\"):WaitForChild(\"Client\").Selection.SelectionManager"
+    ],
+    "key_code": "The init function finds the stance buttons in the HUD and connects a MouseButton1Click event to each. When a button is clicked, onStanceButtonClicked gets the selected units from the SelectionManager and fires a 'SetStance' event to the server with the unit IDs and the desired stance."
+  },
+  "src/client/Movement/MovementManager/init.luau": {
+    "description": "Handles unit movement and attack commands initiated by the player via right-clicks. It determines whether to issue a move or an attack command based on the target and provides visual feedback.",
+    "purpose": "To translate player input into actionable game commands for units, acting as the primary interface for controlling units on the battlefield.",
+    "files_called": [
+      "ReplicatedStorage.Shared.DebugManager",
+      "script.Parent.Parent.Selection.SelectionManager",
+      "ReplicatedStorage:WaitForChild(\"RemoteEvents\")",
+      "RemoteEvents:WaitForChild(\"GameEvent\")"
+    ],
+    "key_code": "Listens for right-clicks. If units are selected, it raycasts from the mouse. If an enemy is hit, it fires an 'AttackTarget' event to the server. Otherwise, it fires a 'MoveUnit' or 'MoveUnitsInFormation' event. It also creates visual markers for move and attack commands."
+  },
+  "src/client/Selection/SelectionManager/init.luau": {
+    "description": "A singleton module that manages unit selection. It handles single-unit selection, box selection (click-and-drag), and adding/removing units from the current selection (with the Shift key). It also provides visual feedback for selected units.",
+    "purpose": "To provide the core functionality for players to select and manage their units, which is a fundamental component of any RTS game.",
+    "files_called": [
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "Listens for MouseButton1 input. On InputBegan, it either selects a single unit or starts a box selection. On InputEnded, it finds all units within the box. It uses a GUI Frame for the selection box and creates visual indicators under selected units. A 'SelectionChanged' BindableEvent is fired when the selection changes."
+  },
+  "src/server/GameManager.server.luau": {
+    "description": "The main server-side coordinator for the entire game. It initializes all other server-side managers and systems, handles player joining and leaving, and processes game events received from clients.",
+    "purpose": "To act as the central hub of all server-side game logic, orchestrating everything from starting a game session to handling in-game actions like building, training units, and combat.",
+    "files_called": [
+      "ReplicatedStorage.Shared.GameData",
+      "ReplicatedStorage.Shared.DebugManager",
+      "All modules in src/server/Managers",
+      "All modules in src/server/Systems"
+    ],
+    "key_code": "Initializes all server managers and systems. The GameEvent.OnServerEvent connection is a large dispatcher for all client actions, such as 'StartGame', 'PlaceBuilding', 'MoveUnit', and 'AttackTarget'. It handles player data setup on join and cleanup on leave. It also provides the server-side implementation for the 'CheckVisibility' RemoteFunction used by the Fog of War system."
+  },
+  "src/server/TestRunner.server.luau": {
+    "description": "This script is intended to run automated tests for the project using the TestEz testing framework. The code is currently commented out.",
+    "purpose": "When active, its purpose would be to automatically discover and run all test specification files (those ending in .spec.luau) to verify that the codebase is working as expected.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.testez (commented out)"
+    ],
+    "key_code": "The script is entirely commented out. If it were active, 'TestEZ.TestBootstrap:run({game.ReplicatedStorage.Shared})' would be the key line to initiate the test run."
+  },
+  "src/server/BuildingSystem/Manager.spec/BuildingValidation.spec.luau": {
+    "description": "A test script for the 'BuildingValidation' module. It uses the TestEz framework to create automated tests that verify the functionality of the 'isValidPlacement' function.",
+    "purpose": "To ensure that the building placement validation logic works correctly by testing various scenarios, such as placing buildings inside and outside the valid build zone. This helps prevent bugs and regressions.",
+    "files_called": [
+      "ReplicatedStorage.Packages.testez",
+      "ReplicatedStorage.Server.BuildingSystem.Manager.BuildingValidation"
+    ],
+    "key_code": "Uses Test.setup to create mock data and a mock 'Keep' model. 'Test.beforeEach' and 'Test.afterEach' handle the setup and teardown for each test, including creating a test player. 'Test.expect(A).to.equal(B)' is used to assert that the actual result of a function call matches the expected result."
+  },
+  "src/server/Managers/AbilityManager.luau": {
+    "description": "Handles the logic for hero abilities. It defines a set of abilities (Rally, Charge, etc.), each with a specific effect, cooldown, and duration. It manages cooldowns for each player and executes the ability's effect when used.",
+    "purpose": "To provide an extensible system for creating and managing hero abilities, adding a layer of tactical depth to combat by centralizing all ability logic.",
+    "files_called": [
+      "ReplicatedStorage.Shared.GameData",
+      "ReplicatedStorage.Shared.DebugManager",
+      "script.Parent.MoraleManager"
+    ],
+    "key_code": "The 'ABILITIES' table defines each ability's properties and its 'effect' function. The 'useAbility' function is called by the GameManager, checks the 'PlayerAbilityCooldowns' table, executes the ability's effect if available, and then sets the new cooldown. It uses task.delay to handle temporary effects."
+  },
+  "src/server/Managers/AchievementManager.luau": {
+    "description": "Handles the logic for an achievement system. It defines a list of achievements, tracks player statistics (like buildings built, enemies killed, etc.), and unlocks achievements when players meet the requirements, providing rewards.",
+    "purpose": "To add long-term goals and a sense of progression for the player, encouraging them to explore different aspects of the game and rewarding them for their accomplishments.",
+    "files_called": [
+      "ReplicatedStorage.Shared.GameData",
+      "script.Parent.PlayerManager",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The 'ACHIEVEMENTS' table defines all achievements and their requirements. 'PlayerStats' and 'PlayerAchievements' tables store the progress for each player. 'incrementStat' and 'setStat' are called by other managers to update player progress. 'checkAchievements' is then called to see if any new achievements have been unlocked. 'unlockAchievement' grants rewards via the PlayerManager and fires a client notification."
+  },
+  "src/server/Managers/BuildingManager.luau": {
+    "description": "Handles the server-side logic for creating and managing buildings. It validates placement, creates the building models, sets their attributes, and manages their storage if they have any.",
+    "purpose": "To be the single source of truth for all building-related actions on the server, ensuring buildings are created correctly, ownership is set, and data is properly managed.",
+    "files_called": [
+      "ReplicatedStorage.Shared.GameData",
+      "script.Parent.PlayerManager",
+      "script.Parent.SpawnManager",
+      "script.Parent.Parent.Systems.WallSystem",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The 'createBuilding' function validates placement, finds or creates the model asset, sets 'Owner' and 'BuildingType' attributes, and registers walls with the WallSystem. It initializes storage for buildings with capacity. 'addToStorage' and 'takeFromStorage' manage building inventories."
+  },
+  "src/server/Managers/CaravanManager.luau": {
+    "description": "Handles the logic for NPC merchant caravans and trade routes. It defines available routes, allows players to send caravans, and processes the outcome (success or failure) when the caravan 'arrives'.",
+    "purpose": "To add an economic layer to the game that allows players to trade resources for profit, introducing an element of risk vs. reward as caravans can be lost.",
+    "files_called": [
+      "script.Parent.PlayerManager",
+      "script.Parent.TradeManager",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The 'TRADE_ROUTES' table defines all routes. 'sendCaravan' validates the request, deducts resources, and creates an 'ActiveCaravan' object. The 'update' function checks for arrived caravans, determines success based on a risk factor, and adds profit or marks the caravan as lost, notifying the client via a GameEvent."
+  },
+  "src/server/Managers/CombatManager.luau": {
+    "description": "A comprehensive server-side combat manager that handles target acquisition, damage calculation with various bonuses (stance, flanking, charge), and special faction abilities.",
+    "purpose": "To create a deep and engaging real-time combat system by incorporating numerous tactical factors that affect the outcome of a battle, encouraging strategic positioning and ability usage.",
+    "files_called": [
+      "ReplicatedStorage.Shared.GameData",
+      "script.Parent.PlayerManager",
+      "script.Parent.DebugManager",
+      "script.Parent.MoraleManager",
+      "script.Parent.FactionManager",
+      "script.Parent.RevoltManager",
+      "script.Parent.AchievementManager (lazy-loaded)",
+      "script.Parent.QuestManager (lazy-loaded)"
+    ],
+    "key_code": "The main 'updateCombat' loop runs on a fixed tick, managing unit targeting and movement. When a unit attacks, 'executeAttack' calls 'calculateDamage', which applies a series of modifiers (armor, stance, flanking, etc.). It also handles special abilities and unit death, notifying other managers like AchievementManager."
+  },
+  "src/server/Managers/ConsumptionManager.luau": {
+    "description": "Manages the periodic consumption of food by the player's population and certain buildings. It calculates the total food required, deducts it from the player's resources, and handles the consequences of starvation.",
+    "purpose": "To create a core gameplay loop that requires players to manage their food production to sustain their population and economy. Starvation is a key mechanic that can lead to negative consequences.",
+    "files_called": [
+      "script.Parent.PlayerManager",
+      "script.Parent.PopulationManager",
+      "script.Parent.BuildingManager",
+      "script.Parent.SeasonManager",
+      "ReplicatedStorage.Shared.GameData",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The 'getTotalConsumption' function calculates the total food needed, including a seasonal multiplier. 'consumeFood', called periodically by the ConsumptionSystem, checks if the player has enough food. If so, it deducts the resources; if not, it sets an 'isStarving' flag and notifies the client."
+  },
+  "src/server/Managers/EconomyDashboardManager.luau": {
+    "description": "Consolidates economic statistics from many other managers into a single, comprehensive 'snapshot'. This snapshot is then sent to the client to be displayed on the economy dashboard UI.",
+    "purpose": "To act as an aggregator and data provider for the UI, simplifying client-side code and reducing remote calls by packaging all necessary economic information together.",
+    "files_called": [
+      "PlayerManager",
+      "PopulationManager",
+      "ConsumptionManager",
+      "MaintenanceManager",
+      "TaxManager",
+      "SeasonManager",
+      "WeatherManager",
+      "TradeManager",
+      "CaravanManager",
+      "HappinessManager",
+      "DebugManager"
+    ],
+    "key_code": "The 'getSnapshot' function gathers data from numerous other managers (population, consumption, taxes, etc.). 'calculateEconomyHealth' combines several key metrics into a single 0-100 score. 'sendUpdate' calls 'getSnapshot' and then fires an 'EconomyDashboardUpdate' GameEvent to the client with the processed data."
+  },
+  "src/server/Managers/EventManager.luau": {
+    "description": "Manages random economic events for players. These events can be positive (opportunities, merchants) or negative (disasters, crises).",
+    "purpose": "To add unpredictability and variety to the gameplay, forcing players to adapt to changing circumstances and creating emergent narratives and challenges.",
+    "files_called": [
+      "script.Parent.PlayerManager",
+      "script.Parent.PopulationManager",
+      "script.Parent.BuildingManager",
+      "script.Parent.UnitManager",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The 'ECONOMIC_EVENTS' table defines all possible events, each with a probability, a 'canTrigger' function, and an 'effect' function. 'tryTriggerEvent' is called periodically, filters for eligible events, rolls against their probability, and if successful, executes the event's effect and notifies the client."
+  },
+  "src/server/Managers/FactionManager.luau": {
+    "description": "Manages the relationships between different factions in the game (e.g., Player, Rebel, Viking), providing a way to define which factions are enemies with each other.",
+    "purpose": "To provide a central authority for determining the allegiance of different units and factions, simplifying the logic in other managers like the CombatManager.",
+    "files_called": [],
+    "key_code": "The 'init' function defines all factions and uses 'setRelationship' to populate a 2D dictionary of their relationships. The 'areEnemies' helper function is the primary interface for other managers to check if two factions are hostile."
+  },
+  "src/server/Managers/FogOfWarManager.luau": {
+    "description": "Handles the server-side logic for the Fog of War system. It determines which enemy units and buildings are visible to each player based on the vision range of their own units and buildings.",
+    "purpose": "To provide a secure, server-authoritative source of truth for visibility, preventing clients from cheating by seeing objects that should be hidden in the fog.",
+    "files_called": [
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The 'isPositionVisible' function is the core logic. It iterates through a player's units and buildings and returns true if the given position is within any of their vision ranges. 'isUnitVisible' and 'isBuildingVisible' use this function to check enemy object visibility. A loop started by 'startUpdates' periodically caches visibility data for each player as an optimization."
+  },
+  "src/server/Managers/FormationManager.luau": {
+    "description": "Handles the logic for tactical unit formations. It defines various formation types (Line, Wedge, ShieldWall), calculates unit positions within a formation, and applies combat bonuses.",
+    "purpose": "To add a layer of tactical depth to unit control and combat, allowing players to arrange their units in strategically advantageous ways to gain bonuses and counter threats.",
+    "files_called": [
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The 'FORMATIONS' dictionary defines the properties and bonuses of each formation. 'createFormation' and 'calculateFormationPositions' handle the geometric logic of arranging units. It sets attributes on unit models so other systems, like the CombatManager, can use 'getFormationBonus' to apply the relevant combat modifiers."
+  },
+  "src/server/Managers/HappinessManager.luau": {
+    "description": "Tracks the happiness level of each player's population. It periodically calculates the happiness score based on various factors and triggers negative consequences, including revolts, if happiness drops too low.",
+    "purpose": "To create a crucial management challenge for the player, forcing them to keep their population happy. Failure directly impacts their economy and can lead to an internal military threat (a revolt).",
+    "files_called": [
+      "script.Parent.PlayerManager",
+      "script.Parent.WorkerManager",
+      "script.Parent.UnitManager",
+      "script.Parent.Parent.Systems.HappinessSystem",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The 'update' function periodically calls 'HappinessSystem.calculateHappiness' to get the current score. 'checkForRevolt' then compares this score against thresholds to determine a revolt stage. If the stage changes, 'triggerRevoltStage' implements the consequences, such as reducing production via the WorkerManager or starting a revolt via the UnitManager."
+  },
+  "src/server/Managers/LogManager.server.luau": {
+    "description": "This script is designed to save console logs to files at the end of a game session. However, the core functionality for file system operations is commented out, indicating that direct file writing is not available or intended for this environment.",
+    "purpose": "The original purpose was to provide persistent logging for debugging and post-mortem analysis. Currently, its primary purpose is vestigial due to disabled file writing, though it retains hooks to game closing events.",
+    "files_called": [
+      "game.ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The 'saveLogs' function is the central piece, but is currently disabled. The commented-out code reveals its intended use of 'DebugManager.getLogHistory()' and 'writefile()'. It binds to 'game:BindToClose' and 'Players.PlayerRemoving' to trigger this (currently inactive) logging."
+  },
+  "src/server/Managers/MaintenanceManager.luau": {
+    "description": "Handles the periodic maintenance costs for a player's buildings. It calculates the total resources required for upkeep, attempts to deduct them, and tracks consequences if the player cannot afford the maintenance.",
+    "purpose": "To introduce an ongoing economic challenge and resource sink, encouraging efficient resource production and management, as neglecting maintenance can lead to production penalties.",
+    "files_called": [
+      "script.Parent.PlayerManager",
+      "script.Parent.BuildingManager",
+      "ReplicatedStorage.Shared.GameData",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The 'calculateMaintenanceCost' function sums up building upkeep. 'payMaintenance' attempts to deduct these costs; if successful, it resets disrepair flags. If not, it increments 'buildingsInDisrepair', which 'getDisrepairPenalty' uses to apply increasing production penalties. It notifies the client of the outcome via a GameEvent."
+  },
+  "src/server/Managers/MapManager.luau": {
+    "description": "Handles the selection and management of the active game map. It provides functions to get the current map's configuration, set a new map, and retrieve a list of all available maps.",
+    "purpose": "To centralize all map-related logic on the server, ensuring that the correct map data is loaded and used consistently across various game systems.",
+    "files_called": [
+      "ReplicatedStorage.Shared.GameData.MapData",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "It uses 'MapData.getMap' and 'MapData.getMapList' to access map configurations. 'getCurrentMap' retrieves the active map's configuration with a default fallback. 'setMap' allows changing the active map, performing validation against available map data."
+  },
+  "src/server/Managers/MoraleManager.luau": {
+    "description": "Handles the morale system for units in the game. It tracks each unit's morale, updates it based on various factors (e.g., nearby ally/enemy deaths, aura effects), and triggers behavioral changes like fleeing or rallying.",
+    "purpose": "To add a dynamic and psychological layer to combat, influencing unit performance and battlefield outcomes, encouraging players to maintain high morale and break enemy morale.",
+    "files_called": [
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The 'UnitMoraleData' dictionary stores each unit's morale state. 'initializeUnit' sets initial morale and creates a visual indicator. 'modifyMorale' updates morale and triggers 'handleFleeing'/'handleRally'. The 'updateMoraleLoop' periodically applies passive changes and aura effects. 'evaluateCombatSituation' calculates modifiers based on combat conditions."
+  },
+  "src/server/Managers/NotificationManager.luau": {
+    "description": "Provides a centralized system for sending various types of notifications (warnings, alerts, info, success, critical) to individual players. It also stores a history of recent notifications for each player.",
+    "purpose": "To inform players about important game events, economic changes, or system status in a clear and organized manner, crucial for keeping players engaged and aware in complex RTS titles.",
+    "files_called": [
+      "script.Parent.PlayerManager",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The 'send' function is the core. It creates a Notification table, stores it in 'notificationHistory' (limited to 20), and fires a 'GameEvent' named 'EconomyNotification' to the client. Convenience functions (warning, alert, etc.) simplify sending specific types of notifications. 'getHistory' retrieves recent notifications."
+  },
+  "src/server/Managers/PlayerManager.luau": {
+    "description": "Acts as the central repository for all player-specific game data on the server. It stores and manages a player's faction, spawn point, game state, resources, buildings, units, and other vital information.",
+    "purpose": "To provide a single, consistent, and easily accessible source for player data, ensuring data integrity and simplifying interactions between various game systems that need to access or modify player-related information.",
+    "files_called": [
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The 'PlayersData' table stores all player information, keyed by UserId. 'create' initializes PlayerData on join, and 'remove' cleans it up on leave. Functions like 'addBuilding', 'addUnit', 'removeUnit', 'hasEnoughResources', 'addResources', and 'deductResources' provide centralized and safe management of player instances and resources."
+  },
+  "src/server/Managers/PopulationManager.luau": {
+    "description": "Handles all aspects of a player's population, including tracking the current population count, calculating housing capacity, and managing population growth.",
+    "purpose": "To create a dynamic and crucial element of city-building and resource management, requiring players to grow their economy/army while ensuring sufficient housing and food.",
+    "files_called": [
+      "script.Parent.PlayerManager",
+      "script.Parent.BuildingManager",
+      "ReplicatedStorage.Shared.GameData",
+      "ReplicatedStorage.Shared.DebugManager",
+      "script.Parent.UnitManager"
+    ],
+    "key_code": "It calculates 'currentPopulation' from civilian units and 'housingCapacity' from buildings. The 'update' function periodically refreshes these, sets an 'isOvercrowded' flag, and updates the client. 'getGrowthRate' determines new peasant spawn rates based on food, housing, and happiness. 'tryGrowPopulation' spawns new peasants using UnitManager near the Keep."
+  },
+  "src/server/Managers/ProductionChainManager.luau": {
+    "description": "Manages the logic for buildings that consume resources to produce others, forming production chains. It checks if a building has the necessary input resources to produce and facilitates the consumption of those inputs.",
+    "purpose": "To manage the economic simulation of resource transformation, ensuring that complex production processes are accurately modeled, adding depth and strategic planning to a player's economy.",
+    "files_called": [
+      "script.Parent.BuildingManager",
+      "script.Parent.PlayerManager",
+      "ReplicatedStorage.Shared.GameData",
+      "ReplicatedStorage.Shared.BuildingTypeHelper",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The 'canProduce' function checks if a building has enough input resources (from BuildingManager.getStorageAmount) to produce. 'consumeInputs' deducts these resources via BuildingManager.takeFromStorage. 'getProductionStatus' provides UI-friendly details on production status. 'isProductionChainBuilding' helps determine if a building produces resources."
+  },
+  "src/server/Managers/QuestManager.luau": {
+    "description": "Implements a quest and mission system. It defines a set of quests, tracks player progress on each objective, and awards rewards upon quest completion.",
+    "purpose": "To provide structured objectives and guidance for players, serving as a tutorial, introducing new mechanics, or as a continuous source of goals and rewards, driving player engagement.",
+    "files_called": [
+      "ReplicatedStorage.Shared.GameData",
+      "script.Parent.PlayerManager",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The 'QUEST_TEMPLATES' table defines all quests with objectives and rewards. 'PlayerQuests' stores active quests for each player. 'updateQuestProgress' updates objective progress, calls 'checkQuestCompletion', and if completed, calls 'giveQuestRewards' (which uses PlayerManager.addResources) and fires 'QuestCompleted' GameEvent. It also fires 'QuestProgress' updates."
+  },
+  "src/server/Managers/ResearchManager.luau": {
+    "description": "Implements a technology tree and research system. It defines various technologies, each with prerequisites, costs, research times, and effects. Players can research these technologies to unlock bonuses, new buildings, or unit types.",
+    "purpose": "To add a strategic layer of progression and customization, allowing players to tailor their strategy, specialize, and gain an advantage over opponents.",
+    "files_called": [
+      "ReplicatedStorage.Shared.GameData",
+      "script.Parent.PlayerManager",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The 'TECHNOLOGIES' table defines all technologies. 'PlayerTechnologies' tracks researched techs, and 'PlayerResearchQueue' active research. 'canResearch' checks prerequisites and costs. 'startResearch' deducts resources and schedules 'completeResearch' using task.delay. 'completeResearch' applies effects to 'playerData.ResearchBonuses' and notifies the client. 'applyTechnologyEffects' is crucial for applying benefits."
+  },
+  "src/server/Managers/ResourceNodeManager.luau": {
+    "description": "Handles the spawning and management of natural resource nodes (like trees for wood, rocks for stone, etc.) in the game world. It includes functions to create visual models for these nodes and to manage their resource quantities.",
+    "purpose": "To provide a dynamic and interactive source of raw materials that players can gather, forming a fundamental part of the economic loop.",
+    "files_called": [
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The 'NodesFolder' holds all resource node models. 'createNodeModel' generates visual models for nodes. 'spawnNodesNearPosition' procedurally places nodes around a point, using raycasting for ground placement. 'findNearestNode' locates available nodes. 'gatherFromNode' deducts resources and updates the visual to reflect depletion, destroying the node when fully gathered."
+  },
+  "src/server/Managers/RevoltManager.luau": {
+    "description": "Handles the logic for player revolts. It calculates a 'revolt risk' score based on factors like happiness and taxes, and triggers different stages of revolt with escalating consequences.",
+    "purpose": "To provide a dynamic internal threat system, pushing players to manage their kingdom effectively. Neglecting happiness and imposing high taxes can lead to severe penalties, including production loss and hostile units.",
+    "files_called": [
+      "script.Parent.PlayerManager",
+      "ReplicatedStorage.Shared.DebugManager",
+      "script.Parent.HappinessManager (lazy-loaded)",
+      "script.Parent.TaxManager (lazy-loaded)",
+      "script.Parent.WorkerManager (lazy-loaded)",
+      "script.Parent.UnitManager (lazy-loaded)",
+      "script.Parent.FactionManager (lazy-loaded)"
+    ],
+    "key_code": "The 'revoltData' table stores risk and stage per player. 'calculateRevoltRisk' aggregates factors like happiness and taxes. 'update' recalculates risk and calls 'checkRevoltStage', which determines the current stage based on risk thresholds. 'triggerRevoltStage' implements consequences: production reduction, unit destruction, and spawning of hostile rebel units from a new faction. It sends GameEvents to the client."
+  },
+  "src/server/Managers/SeasonManager.luau": {
+    "description": "Handles the progression of seasons (Spring, Summer, Autumn, Winter) and applies various economic effects based on the current season.",
+    "purpose": "To add environmental dynamics and strategic planning challenges to the game. Seasons affect food production, resource consumption, and population happiness, forcing players to adapt strategies.",
+    "files_called": [
+      "script.Parent.PlayerManager",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The 'SEASON_EFFECTS' table defines each season's multipliers. 'SEASON_DURATION' sets season length. 'update' periodically checks for season end and calls 'advanceSeason', which transitions to the next season and fires a 'SeasonChanged' GameEvent to the client. Other managers query functions like 'getFoodConsumptionMultiplier' for current season effects."
+  },
+  "src/server/Managers/SpawnManager.luau": {
+    "description": "Handles player spawn point assignment for multiplayer estates and manages map quadrants. It divides the game map into distinct player territories.",
+    "purpose": "To enable multiplayer functionality by creating segregated starting areas for each player, ensuring a fair and balanced start. It also provides methods for other systems to check if a location is within a player's assigned territory.",
+    "files_called": [
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The 'currentMapConfig' stores map layout. 'calculateQuadrantSpawnPoint' and 'getEstateBounds' define quadrant geometry. 'isPositionInEstate' checks if a world position is within a player's territory. 'assignPlayerToQuadrant' assigns players using round-robin logic. 'getPlayerSpawnPoint' and 'getPlayerQuadrant' retrieve player-specific spawn details."
+  },
+  "src/server/Managers/TaxManager.luau": {
+    "description": "Handles the collection of taxes from players. It allows setting a tax rate and periodically collects gold based on this rate and the player's economic activity.",
+    "purpose": "To provide a mechanism for players to generate gold income, while also introducing a potential source of discontent (high taxes can lead to unhappiness and revolts). It's a key economic lever.",
+    "files_called": [
+      "script.Parent.PlayerManager",
+      "script.Parent.Parent.Systems.TaxSystem",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The 'taxData' table stores tax rates per player. 'create' initializes this. 'setTaxRate' adjusts the rate. 'collectTaxes' uses 'TaxSystem.calculateTaxes' to determine and add gold to player resources via 'PlayerManager.addResources'. A 'task.spawn' loop collects taxes every 60 seconds."
+  },
+  "src/server/Managers/TestCommandManager.luau": {
+    "description": "Provides a set of admin commands for testing various game systems, particularly the economy. It allows administrators to quickly add resources, change seasons/weather, trigger events, spawn units, and inspect economy data.",
+    "purpose": "To accelerate development and testing by providing powerful tools to manipulate the game state, invaluable for debugging, balancing, and demonstrating features without playing through long game loops.",
+    "files_called": [
+      "script.Parent.PlayerManager",
+      "script.Parent.PopulationManager",
+      "script.Parent.ConsumptionManager",
+      "script.Parent.MaintenanceManager",
+      "script.Parent.TaxManager",
+      "script.Parent.SeasonManager",
+      "script.Parent.WeatherManager",
+      "script.Parent.TradeManager",
+      "script.Parent.CaravanManager",
+      "script.Parent.EventManager",
+      "script.Parent.EconomyDashboardManager",
+      "script.Parent.NotificationManager",
+      "script.Parent.UnitManager",
+      "script.Parent.BuildingManager",
+      "script.Parent.FogOfWarManager",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "It uses 'ADMIN_USER_IDS' for access control and 'COMMANDS' to map command names to functions. 'processCommand' dispatches client commands to these functions, which interact with other managers and use 'NotificationManager' for feedback. Listens for 'TestCommand' GameEvent from the client."
+  },
+  "src/server/Managers/TradeManager.luau": {
+    "description": "Handles all aspects of market trading, including dynamic pricing for resources, buying and selling mechanisms, and tracking trade volume.",
+    "purpose": "To provide players with a robust economic system beyond simple production and consumption, introducing concepts of supply and demand, seasonal effects, and price volatility.",
+    "files_called": [
+      "script.Parent.PlayerManager",
+      "script.Parent.SeasonManager",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The 'BASE_PRICES' defines starting resource values. 'updatePrices' dynamically adjusts prices based on player stockpiles (supply/demand), seasonal changes, and random fluctuations. 'buyResource' and 'sellResource' handle transactions, using 'PlayerManager' to modify resources and updating prices in response. 'hasMarketAccess' checks for prerequisite buildings."
+  },
+  "src/server/Managers/TrainingManager.luau": {
+    "description": "Handles the training of units in designated buildings. It manages training queues for each building, deducts resources when training starts, and spawns the new unit when training is complete.",
+    "purpose": "To provide players with a system for producing military or other specialized units, a core feature of RTS games. It ties into resource management and provides a clear progression for army building.",
+    "files_called": [
+      "ReplicatedStorage.Shared.GameData",
+      "script.Parent.PlayerManager",
+      "script.Parent.UnitManager",
+      "ReplicatedStorage.Shared.DebugManager",
+      "script.Parent.AchievementManager (lazy-loaded)",
+      "script.Parent.QuestManager (lazy-loaded)"
+    ],
+    "key_code": "The 'TrainingQueues' table stores unit training information per building. 'startTraining' validates the request, deducts resources, and adds a unit to the queue. 'updateTraining', called on Heartbeat, decrements training time, spawns the unit via 'UnitManager.createUnit' upon completion, and notifies 'AchievementManager' and 'QuestManager'."
+  },
+  "src/server/Managers/UnitManager.luau": {
+    "description": "Handles the creation and initial setup of all units in the game. It clones unit models (or generates dummy models), sets their attributes (owner, type, health), and initializes them with other core systems like combat, morale, and player tracking.",
+    "purpose": "To be the central factory for all in-game units, standardizing the creation process, ensuring all necessary attributes are set, and all relevant managers are informed, providing a consistent foundation for unit behavior.",
+    "files_called": [
+      "ReplicatedStorage.Shared.GameData",
+      "ReplicatedStorage.Shared.DebugManager",
+      "script.Parent.CombatManager",
+      "script.Parent.MoraleManager",
+      "script.Parent.FormationManager",
+      "script.Parent.PlayerManager"
+    ],
+    "key_code": "The 'UnitsFolder' holds active unit models. 'createUnit' is the main function: it retrieves unit info from GameData, determines faction, clones a model (or uses a dummy), sets crucial attributes (UnitType, Owner, UnitId), initializes with MoraleManager and CombatManager (handling fake players for AI), and adds to PlayerManager. 'getDummyModel' creates a basic Humanoid model. 'destroyRandomUnit' removes units."
+  },
+  "src/server/Managers/UpgradeManager.luau": {
+    "description": "Handles the upgrade system for buildings. It defines multi-tiered upgrades for various building types, each with specific costs and effects (e.g., increased production, larger storage, more health).",
+    "purpose": "To provide a progression system for buildings, allowing players to improve their existing structures rather than constantly building new ones. This adds strategic depth, encouraging investment and specialization.",
+    "files_called": [
+      "ReplicatedStorage.Shared.GameData",
+      "script.Parent.PlayerManager",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The 'UPGRADES' table defines all building upgrades with tiers, costs, and effects. 'BuildingLevels' tracks individual building levels. 'canUpgrade' and 'getUpgradeInfo' manage eligibility. 'upgradeBuilding' validates the upgrade, deducts resources, updates 'BuildingLevels' and the building's 'UpgradeLevel' attribute, and calls 'applyUpgradeEffects' to implement bonuses. It notifies the client via a GameEvent."
+  },
+  "src/server/Managers/VictoryConditionManager.luau": {
+    "description": "Defines and checks the win and loss conditions for the game. It continuously monitors player progress and game state against predefined conditions and declares victory or defeat when appropriate.",
+    "purpose": "To establish clear objectives and failure states for the game, providing players with goals to strive for and consequences for poor management. It creates a definitive endpoint for a game session.",
+    "files_called": [
+      "script.Parent.PlayerManager",
+      "script.Parent.PopulationManager",
+      "script.Parent.CaravanManager",
+      "ReplicatedStorage.Shared.DebugManager",
+      "script.Parent.ConsumptionManager (lazy-loaded)"
+    ],
+    "key_code": "The 'VICTORY_CONDITIONS' and 'LOSS_CONDITIONS' tables define conditions and their 'check' functions. 'create' initializes player victory data. 'checkVictory' and 'checkDefeat', called periodically, evaluate these conditions and, upon being met, set a flag and fire a 'Victory' or 'Defeat' GameEvent to the client. It uses data from PlayerManager, PopulationManager, CaravanManager, and ConsumptionManager."
+  },
+  "src/server/Managers/WeatherManager.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/server/Managers/WorkerManager.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/server/Systems/CaravanSystem.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/server/Systems/ConsumptionSystem.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/server/Systems/DashboardSystem.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/server/Systems/EventSystem.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/server/Systems/HappinessSystem.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/server/Systems/MaintenanceSystem.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/server/Systems/MovementSystem.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/server/Systems/PopulationSystem.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/server/Systems/RevoltSystem.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/server/Systems/SeasonSystem.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/server/Systems/TaxSystem.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/server/Systems/TradeSystem.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/server/Systems/VictorySystem.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/server/Systems/VikingRaidSystem.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/server/Systems/WallSystem.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/server/Systems/WallSystemServer.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/server/Systems/WeatherSystem.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/shared/BuildingTypeHelper.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/shared/Hello.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/shared/WallGridConfig.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/shared/DebugManager/init.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/shared/DebugManager/Manager/DebugManager.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/shared/DebugManager/Manager.spec/DebugManager.spec.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/shared/GameData/BuildingsData.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/shared/GameData/GameData.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/shared/GameData/init.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/shared/GameData/MapData.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/shared/GameData/ResourcesData.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/shared/GameData/UnitsData.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/shared/GameData.spec/BuildingsData.spec.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/shared/GameData.spec/ResourcesData.spec.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/shared/GameData.spec/UnitsData.spec.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/shared/PlayerData/init.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/shared/Remotes/GetStats.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/App.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/LobbySettings.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/main.client.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/Router.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/UIConfig.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/components/Button.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/components/Checkbox.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/components/MedievalCorners.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/components/Modal.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/components/Panel.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/components/Row.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/components/Slider.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/components/Textbox.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/components/Title.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/components/Toggle.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/components/Tooltip.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/components/TutorialModal.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/HUD/AchievementNotification.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/HUD/BuildingMenu.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/HUD/ConfirmDeleteModal.luau": {
+    "description": "A React modal component that asks for confirmation before deleting a single building. Shows building type with friendly name, resource refund amount (50% of cost), and displays a warning that the action cannot be undone. Uses medieval styling with brown/gold colors.",
+    "purpose": "To prevent accidental building deletion by requiring explicit confirmation. Informs the player of resource refund before they commit to deletion.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.Parent.UIConfig"
+    ],
+    "key_code": "ConfirmDeleteModal.new() creates a centered modal dialog with building name, refund info, warning text, and Confirm/Cancel buttons. Uses React.createElement to build UI tree with medieval color scheme (browns: RGB 45,35,25 for background, golds: RGB 220,180,120 for titles, red: RGB 200,50,50 for warnings). Calls onConfirm or onCancel callbacks based on user choice."
+  },
+  "src/ui/screens/HUD/FogOverlay.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/HUD/HeroAbilitiesPanel.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/HUD/HUD.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/HUD/MiniMap.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/HUD/MultiDeleteModal.luau": {
+    "description": "A React modal component for confirming deletion of multiple buildings/walls at once. Features checkboxes for each building, shows friendly names (e.g., 'Woodcutters Post' instead of 'Woodcutters_Post_8820940408'), displays summary of selected buildings, total refund, and medieval-themed styling. Built as a proper React function component to support hooks.",
+    "purpose": "To allow selective deletion of multiple buildings at once, giving players fine-grained control over which structures to delete from a drag-selected group. Shows grouped summary like '2 Stone Walls, 1 Gatehouse'.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.Parent.UIConfig"
+    ],
+    "key_code": "MultiDeleteModalComponent uses React.useState to track selectedStates for checkboxes (all selected by default). FRIENDLY_NAMES table maps building types to display names. Calculates selectedCount and buildingsByType for summary. Creates scrollable list of checkboxes for each building. Wrapper function MultiDeleteModal.new() calls React.createElement(MultiDeleteModalComponent, props) to maintain API compatibility. onConfirm callback receives array of selected buildings."
+  },
+  "src/ui/screens/HUD/QuestTracker.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/HUD/ResourceDisplay.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/HUD/SelectionPanel.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/HUD/TechTree.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/HUD/TrainingPanel.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/HUD/UnitControls.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/HUD/UnitSelectionPanel.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/HUD/UpgradePanel.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/HUD/WorkerAssignmentPanel.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/Keybindings/Keybindings.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/Lobby/Lobby.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/Lobby/MapPreview.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/Lobby/PlayerList.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/Lobby/SelectionManager.client.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/MainMenu/MainMenu.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/Menu/Menu.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/Policies/Policies.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/PostGame/DefeatScreen.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/PostGame/VictoryScreen.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/Settings/Settings.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  },
+  "src/ui/screens/Stats/Stats.luau": {
+    "description": "",
+    "purpose": "",
+    "files_called": "",
+    "key_code": ""
+  }
+}

@@ -24,6 +24,8 @@ local UpgradePanel = require(script.Parent.UpgradePanel)
 local TechTree = require(script.Parent.TechTree)
 local QuestTracker = require(script.Parent.QuestTracker)
 local AchievementNotification = require(script.Parent.AchievementNotification)
+local ConfirmDeleteModal = require(script.Parent.ConfirmDeleteModal)
+local MultiDeleteModal = require(script.Parent.MultiDeleteModal)
 
 local player = Players.LocalPlayer
 
@@ -81,6 +83,12 @@ function HUD:init()
 		-- Wall placement
 		currentWallPiece = "Wall Segment",
 		isPlacingWall = false,
+		-- Delete confirmation
+		showDeleteConfirmation = false,
+		buildingToDelete = nil,
+		-- Multi-delete confirmation
+		showMultiDeleteConfirmation = false,
+		buildingsToDelete = {},
 	})
 
 	-- Get game event reference
@@ -88,8 +96,85 @@ function HUD:init()
 	self.gameEvent = RemoteEvents:WaitForChild("GameEvent")
 	self.getStatsEvent = RemoteEvents:WaitForChild("GetStats")
 
+	-- Create/get delete mode event for visual feedback
+	self.deleteModeEvent = ReplicatedStorage:FindFirstChild("DeleteModeChanged")
+	if not self.deleteModeEvent then
+		self.deleteModeEvent = Instance.new("BindableEvent")
+		self.deleteModeEvent.Name = "DeleteModeChanged"
+		self.deleteModeEvent.Parent = ReplicatedStorage
+	end
+
 	self.statsConnection = self.getStatsEvent.OnClientEvent:Connect(function(stats)
 		self:setState({ stats = stats })
+	end)
+
+	-- Listen for multi-delete requests from drag selection
+	local multiDeleteEvent = ReplicatedStorage:FindFirstChild("MultiDeleteRequested")
+	if not multiDeleteEvent then
+		multiDeleteEvent = Instance.new("BindableEvent")
+		multiDeleteEvent.Name = "MultiDeleteRequested"
+		multiDeleteEvent.Parent = ReplicatedStorage
+	end
+
+	multiDeleteEvent.Event:Connect(function(buildings: { Model })
+		HUDDebug:info("Multi-delete requested", { count = #buildings })
+
+		-- Calculate total refund
+		local GameData = require(game.ReplicatedStorage.Shared.GameData)
+		local totalRefund = {}
+		local buildingInfoList = {}
+
+		for _, building in buildings do
+			local buildingType = building:GetAttribute("BuildingType")
+			local isWall = building:FindFirstChild("PlacedPiece") ~= nil
+
+			-- Determine actual type
+			local actualType = buildingType
+			if isWall and not buildingType then
+				-- For walls without BuildingType attribute, use a generic name
+				actualType = "Stone_Wall"
+			end
+
+			if actualType or isWall then
+				-- Add to building list
+				table.insert(buildingInfoList, {
+					name = building.Name,
+					type = actualType or "Stone_Wall",
+					model = building,
+					isWall = isWall,
+				})
+
+				-- Calculate refund (only for buildings, not walls)
+				if buildingType and not isWall then
+					local buildingInfo = GameData.Buildings[buildingType]
+					if buildingInfo and buildingInfo.cost then
+						for resourceType, cost in pairs(buildingInfo.cost) do
+							local refund = math.floor(cost * 0.5)
+							if refund > 0 then
+								totalRefund[resourceType] = (totalRefund[resourceType] or 0) + refund
+							end
+						end
+					end
+				end
+			end
+		end
+
+		-- Format refund string
+		local refundText = nil
+		if next(totalRefund) then
+			local refundParts = {}
+			for resourceType, amount in pairs(totalRefund) do
+				table.insert(refundParts, string.format("%d %s", amount, resourceType))
+			end
+			refundText = table.concat(refundParts, ", ")
+		end
+
+		-- Show multi-delete confirmation
+		self:setState({
+			showMultiDeleteConfirmation = true,
+			buildingsToDelete = buildingInfoList,
+			multiDeleteRefund = refundText,
+		})
 	end)
 
 	-- Request initial quest data
@@ -412,6 +497,8 @@ function HUD:setupBuildingSelection()
 		-- Left click on buildings to select them for training
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
 			local mousePosition = UserInputService:GetMouseLocation()
+			HUDDebug:info("MouseButton1 click at", { x = mousePosition.X, y = mousePosition.Y })
+
 			local camera = workspace.CurrentCamera
 			local ray = camera:ScreenPointToRay(mousePosition.X, mousePosition.Y)
 
@@ -424,6 +511,7 @@ function HUD:setupBuildingSelection()
 			raycastParams.FilterDescendantsInstances = filterList
 
 			local result = workspace:Raycast(ray.Origin, ray.Direction * 1000, raycastParams)
+			HUDDebug:info("Raycast result", { hit = result ~= nil, instance = result and result.Instance.Name or "none" })
 
 			if result and result.Instance then
 				HUDDebug:info("Clicked on instance", {
@@ -475,13 +563,45 @@ function HUD:setupBuildingSelection()
 								buildingName = building.Name,
 							})
 
-							-- Send delete request to server
-							self.gameEvent:FireServer("DeleteBuilding", {
-								buildingId = building.Name,
-							})
+							-- Check if this is an important building that needs confirmation
+							local GameData = require(game.ReplicatedStorage.Shared.GameData)
+							local buildingInfo = GameData.Buildings[buildingType]
+							local needsConfirmation = buildingInfo
+								and (buildingInfo.can_train_units or buildingInfo.produces_resource or buildingInfo.produces_resources or buildingType == "Town_Center")
 
-							-- Turn off delete mode after deletion
-							self:setState({ isDeleteMode = false })
+							if needsConfirmation then
+								-- Calculate refund info
+								local refundInfo = nil
+								if buildingInfo and buildingInfo.cost then
+									local refundParts = {}
+									for resourceType, cost in pairs(buildingInfo.cost) do
+										local refund = math.floor(cost * 0.5)
+										if refund > 0 then
+											table.insert(refundParts, string.format("%d %s", refund, resourceType))
+										end
+									end
+									if #refundParts > 0 then
+										refundInfo = table.concat(refundParts, ", ")
+									end
+								end
+
+								-- Show confirmation dialog
+								self:setState({
+									showDeleteConfirmation = true,
+									buildingToDelete = {
+										model = building,
+										name = building.Name,
+										type = buildingType,
+										refundInfo = refundInfo,
+									},
+								})
+							else
+								-- Delete immediately for simple buildings
+								self.gameEvent:FireServer("DeleteBuilding", {
+									buildingId = building.Name,
+								})
+								-- Don't turn off delete mode - let player keep deleting
+							end
 						else
 							-- Normal mode: Check if building can train units
 							local GameData = require(game.ReplicatedStorage.Shared.GameData)
@@ -565,6 +685,24 @@ function HUD:setupBuildingSelection()
 					selectedProductionBuilding = React.None,
 					trainingQueue = {},
 				})
+			end
+		end
+
+		-- ESC key to cancel delete mode
+		if input.KeyCode == Enum.KeyCode.Escape and self.state.isDeleteMode then
+			HUDDebug:info("ESC pressed - turning off delete mode")
+			self:setState({ isDeleteMode = false })
+			if self.deleteModeEvent then
+				self.deleteModeEvent:Fire(false)
+			end
+		end
+
+		-- Right-click to cancel delete mode
+		if input.UserInputType == Enum.UserInputType.MouseButton2 and self.state.isDeleteMode then
+			HUDDebug:info("Right-click pressed - turning off delete mode")
+			self:setState({ isDeleteMode = false })
+			if self.deleteModeEvent then
+				self.deleteModeEvent:Fire(false)
 			end
 		end
 	end)
@@ -1040,8 +1178,21 @@ function HUD:render()
 					TextSize = 18,
 					TextColor3 = UIConfig.HUD.PanelTextColor,
 					[React.Event.MouseButton1Click] = function()
-						self:setState({ isDeleteMode = not self.state.isDeleteMode })
-						HUDDebug:info("Delete mode toggled", { isDeleteMode = not self.state.isDeleteMode })
+						local newDeleteMode = not self.state.isDeleteMode
+						self:setState({ isDeleteMode = newDeleteMode })
+						HUDDebug:info("Delete mode toggled", { isDeleteMode = newDeleteMode })
+
+						-- When entering delete mode, cancel any active placement
+						if newDeleteMode then
+							-- Cancel wall placement
+							self.gameEvent:FireServer("PlacementEnded")
+							HUDDebug:info("Cancelled active placement modes")
+						end
+
+						-- Fire event for visual feedback controller
+						if self.deleteModeEvent then
+							self.deleteModeEvent:Fire(newDeleteMode)
+						end
 					end,
 				}),
 
@@ -1453,6 +1604,69 @@ function HUD:render()
 			achievementData = self.state.achievementData,
 			onDismiss = function()
 				self:setState({ achievementData = React.None })
+			end,
+		}) or nil,
+
+		-- Delete Confirmation Modal
+		DeleteConfirmationModal = self.state.showDeleteConfirmation and self.state.buildingToDelete
+				and React.createElement(ConfirmDeleteModal, {
+					buildingName = self.state.buildingToDelete.name,
+					buildingType = self.state.buildingToDelete.type,
+					refundInfo = self.state.buildingToDelete.refundInfo,
+					onConfirm = function()
+						-- Perform the deletion
+						self.gameEvent:FireServer("DeleteBuilding", {
+							buildingId = self.state.buildingToDelete.name,
+						})
+
+						-- Clear confirmation state but keep delete mode active
+						self:setState({
+							showDeleteConfirmation = false,
+							buildingToDelete = React.None,
+						})
+						-- Delete mode stays active so player can keep deleting
+					end,
+					onCancel = function()
+						-- Just close the dialog, keep delete mode active
+						self:setState({
+							showDeleteConfirmation = false,
+							buildingToDelete = React.None,
+						})
+					end,
+				})
+			or nil,
+
+		-- Multi-Delete Confirmation Modal
+		MultiDeleteConfirmationModal = self.state.showMultiDeleteConfirmation and #self.state.buildingsToDelete > 0 and MultiDeleteModal.new({
+			buildings = self.state.buildingsToDelete,
+			totalRefund = self.state.multiDeleteRefund,
+			onConfirm = function(selectedBuildings)
+				print(string.format("[HUD] Multi-delete confirmed with %d buildings", #selectedBuildings))
+
+				-- Get RemoveWallPiece event for walls
+				local RemoteEvents = ReplicatedStorage:FindFirstChild("RemoteEvents")
+				local removePieceEvent = RemoteEvents and RemoteEvents:FindFirstChild("RemoveWallPiece")
+
+				for _, buildingInfo in selectedBuildings do
+					print(string.format("[HUD] Deleting: %s (isWall: %s)", buildingInfo.name, tostring(buildingInfo.isWall)))
+					if buildingInfo.isWall then
+						-- Delete wall piece
+						if removePieceEvent then
+							print("[HUD] Firing RemoveWallPiece for wall:", buildingInfo.name)
+							removePieceEvent:FireServer(buildingInfo.model)
+						else
+							warn("[HUD] RemoveWallPiece event not found!")
+						end
+					else
+						-- Delete building
+						print("[HUD] Firing DeleteBuilding for building:", buildingInfo.name)
+						self.gameEvent:FireServer("DeleteBuilding", { buildingId = buildingInfo.name })
+					end
+				end
+				self:setState({ showMultiDeleteConfirmation = false, buildingsToDelete = {}, multiDeleteRefund = React.None })
+			end,
+			onCancel = function()
+				self:setState({ showMultiDeleteConfirmation = false, buildingsToDelete = {}, multiDeleteRefund = React.None })
 			end,
 		}) or nil,
 

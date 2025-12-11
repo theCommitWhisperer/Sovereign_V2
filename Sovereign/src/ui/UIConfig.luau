@@ -19,6 +19,12 @@ local UIConfig = {
 		TooltipBackground = Color3.fromRGB(75, 85, 99),
 		TooltipText = Color3.fromRGB(255, 255, 255),
 	},
+	Colors = {
+		Danger = Color3.fromRGB(220, 53, 69),
+		Warning = Color3.fromRGB(255, 193, 7),
+		Success = Color3.fromRGB(40, 167, 69),
+		Info = Color3.fromRGB(23, 162, 184),
+	},
 	Size = {
 		Button = UDim2.new(0, 200, 0, 50),
 		Title = UDim2.new(1, 0, 0, 100),
