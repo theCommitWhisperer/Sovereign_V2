@@ -742,8 +742,7 @@ end)
 gameEvent.OnClientEvent:Connect(function(act, data)
 	if act == "StartPlacement" then
 		-- Check if this is a wall building - if so, let WallBuilderController handle it
-		local isWallBuilding = data == "Stone_Wall"
-			or string.find(tostring(data), "Wall")
+		local isWallBuilding = data == "Stone_Wall" or string.find(tostring(data), "Wall")
 
 		if not isWallBuilding then
 			-- Cancel any active wall placement before starting regular building placement

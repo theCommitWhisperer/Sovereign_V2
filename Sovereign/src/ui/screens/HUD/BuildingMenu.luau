@@ -12,68 +12,65 @@ function BuildingMenu:init()
 end
 
 local BUILDING_CATEGORIES = {
-	-- Defense: Walls, towers, military buildings
+	-- Defense: Castle structures and fortifications (Castle Tower icon)
 	Defense = {
-		-- Keep is built during tutorial only, not available in menu
-		"Wooden_Palisade",
-		-- Wall System - Drag-and-build walls
-		"Stone_Wall",
-		"Wall_Tower",
-		"Wall_Gatehouse",
-		"Wall_Ladder",
-		-- Other defense
-		"Watch_Tower",
-		"Arrow_Tower",
-		"Barracks",
-		"Guard_House",
-		"Crannog",
-		"Round_Tower",
+		"Stone Wall",
+		"Short Tower",
+		"Wall Gatehouse",
+		"Wall Ladder",
+		"Round Tower",
+		"Wooden Palisade",
+		"Arrow Tower",
+		"Moat",
+		"Fire Pit",
 	},
-	-- Economy: Resource production, commerce, storage
-	Economy = {
-		"Woodcutters_Post",
-		"Stone_Quarry",
-		"Iron_Mine",
-		"Smithy",
+	-- Military: Weapons, armor, and military buildings (Sword icon)
+	Military = {
+		"Barracks",
+		"Guard House",
+		"Smelter",
 		"Weaponsmith",
+		"Armory",
+		"Training Ground",
+		"Siege Workshop",
+		"Stables",
+		"Archery Range",
+	},
+	-- Industry: Resource production, commerce, storage (Hammer icon)
+	Industry = {
+		"Lumberjack",
+		"Stone Quarry",
+		"Iron Mine",
 		"Storehouse",
-		"Granary",
 		"Market",
-		"Trading_Post",
+		"Trading Post",
 		"Tannery",
 		"Carpenter",
+		"Coal Mine",
 	},
-	-- Housing: All residential and population buildings
+	-- Food: Food production, processing, and storage (Wheat icon)
+	Food = {
+		"Potato Farm",
+		"Sheep Farm",
+		"Cow Farm",
+		"Fishermans Hut",
+		"Water Mill",
+		"Windmill",
+		"Brewery",
+		"Granary",
+		"Bakery",
+	},
+	-- Housing: All residential and community buildings (Medieval House icon)
 	Housing = {
 		"Hovel",
 		"Clachan",
 		"Inn",
 		"Monastery",
-	},
-	-- Food: Food production, processing, and service
-	Food = {
-		"Farm",
-		"Fishermans_Hut",
-		"Windmill",
-		"Water_Mill",
-		"Bakery",
-		"Brewery",
-		"Kitchen",
-		"Restaurant",
 		"Tavern",
-		"Mead_Hall",
-	},
-	-- Culture: Religious, cultural, and special Irish buildings
-	Culture = {
-		"Chapel",
 		"Church",
+		"Town Hall",
 		"Scriptorium",
-		"Town_Hall",
-		"Brehon_Court",
-		"Dolmen",
-		"Stone_Circle",
-		"Celtic_Cross",
-		"Forge_of_the_Tuatha",
+		"Celtic Cross",
 	},
 }
 
@@ -95,9 +92,11 @@ function BuildingMenu:render()
 
 	local buildingButtons = {}
 	buildingButtons.Layout = React.createElement("UIGridLayout", {
-		CellSize = UDim2.new(0, UIConfig.HUD.BuildingButtonSize, 0, UIConfig.HUD.BuildingButtonSize),
-		CellPadding = UDim2.new(0, 8, 0, 8),
+		CellSize = UDim2.fromOffset(60, 60),
+		CellPadding = UDim2.fromOffset(17, 15),
 		SortOrder = Enum.SortOrder.LayoutOrder,
+		FillDirectionMaxCells = 3,
+		FillDirection = Enum.FillDirection.Horizontal,
 	})
 
 	local buildingsInCategory = BUILDING_CATEGORIES[selectedCategory] or {}
@@ -124,61 +123,24 @@ function BuildingMenu:render()
 			-- Check if this wall piece is currently selected (only highlight when actively placing walls)
 			local isSelectedWallPiece = isPlacingWall and wallPieceMapping[currentWallPiece] == buildingName
 
-			local buttonChildren = {
-				Border = React.createElement("UIStroke", {
-					Color = isSelectedWallPiece and Color3.fromRGB(255, 215, 100) or UIConfig.HUD.StrokeColor,
-					Thickness = isSelectedWallPiece and 3 or UIConfig.HUD.StrokeThickness,
-				}),
+			local buttonChildren = {}
 
-				Padding = React.createElement("UIPadding", {
-					PaddingTop = UDim.new(0, 4),
-					PaddingBottom = UDim.new(0, 4),
-					PaddingLeft = UDim.new(0, 4),
-					PaddingRight = UDim.new(0, 4),
-				}),
-
-				Layout = React.createElement("UIListLayout", {
-					FillDirection = Enum.FillDirection.Vertical,
-					HorizontalAlignment = Enum.HorizontalAlignment.Center,
-					VerticalAlignment = Enum.VerticalAlignment.Center,
-					Padding = UDim.new(0, 3),
-				}),
-
-				Name = React.createElement("TextLabel", {
-					Size = UDim2.new(1, 0, 0, 18),
-					-- Show a nicer name for the Stone Wall button; other
-					-- buildings still just use their ID with spaces.
-					Text = (buildingName == "Stone_Wall" and "Stone Walls")
-						or buildingName:gsub("_", " "),
-					FontFace = UIConfig.Font.Title,
-					TextSize = 11,
-					TextColor3 = UIConfig.HUD.PanelTextColor,
+			-- Add icon if available
+			if buildingInfo.icon_asset_id then
+				buttonChildren.Icon = React.createElement("ImageLabel", {
+					Size = UDim2.fromScale(1, 1),
+					Image = buildingInfo.icon_asset_id,
 					BackgroundTransparency = 1,
-					TextWrapped = true,
-					Active = false,
-				}),
-
-				Cost = React.createElement("TextLabel", {
-					Size = UDim2.new(1, 0, 1, -21),
-					Text = costText,
-					FontFace = UIConfig.Font.Default,
-					TextSize = 9,
-					TextColor3 = canAfford and UIConfig.HUD.StatLabelColor or Color3.fromRGB(255, 100, 100),
-					BackgroundTransparency = 1,
-					TextWrapped = true,
-					TextYAlignment = Enum.TextYAlignment.Top,
-					Active = false,
-				}),
-			}
+					ScaleType = Enum.ScaleType.Fit,
+				})
+			end
 
 			local buttonRef = React.createRef()
 
-			buildingButtons[buildingName] = React.createElement("TextButton", {
+			buildingButtons[buildingName] = React.createElement("ImageButton", {
 				ref = buttonRef,
-				Size = UDim2.new(0, UIConfig.HUD.BuildingButtonSize, 0, UIConfig.HUD.BuildingButtonSize),
-				Text = "",
-				BackgroundColor3 = isSelectedWallPiece and Color3.fromRGB(255, 255, 255)
-					or (canAfford and UIConfig.HUD.BuildingButtonAffordable or UIConfig.HUD.BuildingButtonUnaffordable),
+				Size = UDim2.fromOffset(60, 60),
+				BackgroundTransparency = 1,
 				BorderSizePixel = 0,
 				LayoutOrder = i,
 				[React.Event.MouseButton1Click] = function()
@@ -243,7 +205,8 @@ function BuildingMenu:render()
 
 						-- Consumption info
 						if buildingInfo.consumes_resource then
-							tooltipLines[#tooltipLines + 1] = "⚙️ Uses " .. buildingInfo.consumes_resource:gsub("_", " ")
+							tooltipLines[#tooltipLines + 1] = "⚙️ Uses "
+								.. buildingInfo.consumes_resource:gsub("_", " ")
 						end
 
 						-- Training
@@ -253,7 +216,9 @@ function BuildingMenu:render()
 						end
 
 						-- Build time
-						tooltipLines[#tooltipLines + 1] = "\n⏱️ " .. buildingInfo.construction.build_time_seconds .. "s"
+						tooltipLines[#tooltipLines + 1] = "\n⏱️ "
+							.. buildingInfo.construction.build_time_seconds
+							.. "s"
 
 						local tooltipText = table.concat(tooltipLines, "\n")
 						self.props.tooltip.show(tooltipText, buttonRef.current)
@@ -274,14 +239,16 @@ function BuildingMenu:render()
 		BackgroundTransparency = 1,
 	}, {
 		Padding = React.createElement("UIPadding", {
-			PaddingTop = UDim.new(0, 8),
-			PaddingBottom = UDim.new(0, 8),
-			PaddingLeft = UDim.new(0, 8),
-			PaddingRight = UDim.new(0, 8),
+			PaddingTop = UDim.new(0, 0),
+			PaddingBottom = UDim.new(0, 0),
+			PaddingLeft = UDim.new(0, 0),
+			PaddingRight = UDim.new(0, 0),
 		}),
 
 		BuildingsGrid = React.createElement("Frame", {
 			Size = UDim2.fromScale(1, 1),
+			Position = UDim2.fromOffset(0, 0),
+			AnchorPoint = Vector2.new(0, 0),
 			BackgroundTransparency = 1,
 		}, buildingButtons),
 	})

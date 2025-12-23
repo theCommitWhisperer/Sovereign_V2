@@ -1,5 +1,6 @@
 local React = require(game.ReplicatedStorage.Packages.react)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
 
 local UIConfig = require(script.Parent.Parent.Parent.UIConfig)
 local LobbySettings = require(script.Parent.Parent.Parent.LobbySettings)
@@ -9,16 +10,23 @@ local PlayerList = require(script.Parent.PlayerList)
 local MapPreview = require(script.Parent.MapPreview)
 local Row = require(script.Parent.Parent.Parent.components.Row)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local LobbyDebug = DebugManager.createChannel("Lobby", false)
+local LobbyDebug = DebugManager.createChannel("Lobby", true)
 
 local Lobby = React.Component:extend("Lobby")
+
+local localPlayer = Players.LocalPlayer
+local FACTIONS = { "Kingdom", "Empire", "Tribes", "IronLegion" }
 
 -- Helper function to generate the initial state from the settings config
 local function getInitialState()
 	local state = {
-		players = { { name = "Player1", isAI = false } },
+		players = {},
 		maps = { "Default Map", "Forest Lands", "Desert Sands", "Frozen Peaks" },
 		selectedMap = "Default Map",
+		myFaction = nil,
+		isReady = false,
+		countdownActive = false,
+		countdownTimeRemaining = 0,
 	}
 
 	for groupName, settings in pairs(LobbySettings) do
@@ -36,31 +44,195 @@ function Lobby:init()
 	-- Track if game is starting to prevent double-clicks
 	self.isStartingGame = false
 
-	self.addAI = function()
-		if #self.state.players < 4 then
-			local newPlayers = table.clone(self.state.players)
-			table.insert(newPlayers, { name = "AI_Opponent" .. #newPlayers, isAI = true })
-			self:setState({ players = newPlayers })
-		end
-	end
+	-- Countdown thread reference
+	self.countdownThread = nil
 
-	self.removePlayer = function(playerToRemove)
-		local newPlayers = {}
-		for _, player in ipairs(self.state.players) do
-			if player ~= playerToRemove then
-				table.insert(newPlayers, player)
+	-- Setup lobby event listener
+	local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
+	local LobbyEvent = RemoteEvents:WaitForChild("LobbyEvent")
+	local GameEvent = RemoteEvents:WaitForChild("GameEvent")
+
+	-- Listen for lobby state updates from server
+	self.lobbyConnection = LobbyEvent.OnClientEvent:Connect(function(action, data)
+		if action == "LobbyStateUpdate" then
+			-- Convert server players to UI format
+			local playersArray = {}
+			for userId, playerData in pairs(data.Players) do
+				table.insert(playersArray, {
+					userId = playerData.UserId,
+					name = playerData.Name,
+					isAI = playerData.IsAI,
+					isReady = playerData.IsReady,
+					faction = playerData.SelectedFaction,
+				})
+			end
+
+			-- Update settings from server
+			local newState: any = {
+				players = playersArray,
+				countdownActive = data.CountdownActive,
+				countdownTimeRemaining = data.CountdownTimeRemaining,
+			}
+
+			-- Sync settings from server
+			for key, value in pairs(data.Settings) do
+				newState[key] = value
+			end
+
+			-- Find my faction and ready status
+			local myPlayerData = data.Players[localPlayer.UserId]
+			if myPlayerData then
+				newState.myFaction = myPlayerData.SelectedFaction
+				newState.isReady = myPlayerData.IsReady
+			end
+
+			self:setState(newState)
+			LobbyDebug:info("Lobby state updated from server")
+		elseif action == "CountdownStarted" then
+			self:setState({ countdownActive = true, countdownTimeRemaining = data })
+			LobbyDebug:info("Countdown started:", data, "seconds")
+
+			-- Start client-side countdown
+			if self.countdownThread then
+				task.cancel(self.countdownThread)
+			end
+
+			self.countdownThread = task.spawn(function()
+				local timeLeft = data
+				while timeLeft > 0 do
+					task.wait(1)
+					timeLeft = timeLeft - 1
+					if self.state.countdownActive then
+						self:setState({ countdownTimeRemaining = timeLeft })
+					else
+						break
+					end
+				end
+			end)
+		elseif action == "CountdownCancelled" then
+			self:setState({ countdownActive = false, countdownTimeRemaining = 0 })
+			LobbyDebug:info("Countdown cancelled")
+
+			-- Cancel countdown thread
+			if self.countdownThread then
+				task.cancel(self.countdownThread)
+				self.countdownThread = nil
+			end
+		elseif action == "FactionTaken" then
+			-- Show error that faction is taken
+			warn("Faction already taken:", data)
+		elseif action == "LobbyGameStart" then
+			-- Game is starting from multiplayer lobby!
+			LobbyDebug:info("Game starting with settings:", data)
+
+			-- Fire StartGame to GameManager with the settings from lobby
+			GameEvent:FireServer("StartGame", data)
+
+			-- Navigate to HUD
+			local navigate = self.props.navigate
+			if navigate then
+				navigate("hud")
 			end
 		end
-		self:setState({ players = newPlayers })
+	end)
+
+	-- Listen for game started confirmation from GameManager
+	self.gameConnection = GameEvent.OnClientEvent:Connect(function(action, data)
+		if action == "GameStarted" then
+			LobbyDebug:info("Game started successfully with faction:", data.faction)
+		end
+	end)
+
+	-- Join the lobby when component mounts
+	LobbyEvent:FireServer("JoinLobby")
+
+	self.addAI = function()
+		LobbyDebug:info("Add AI button clicked")
+		LobbyEvent:FireServer("AddAI")
+	end
+
+	self.removePlayer = function(playerInfo)
+		LobbyDebug:info("Remove player:", playerInfo.userId)
+		LobbyEvent:FireServer("RemovePlayer", playerInfo.userId)
 	end
 
 	self.selectMap = function(mapName)
-		self:setState({ selectedMap = mapName })
+		LobbyDebug:info("Map selected:", mapName)
+		LobbyEvent:FireServer("VoteSetting", "selectedMap", mapName)
 	end
 
 	self.onSettingChanged = function(settingId, newValue)
-		self:setState({ [settingId] = newValue })
+		LobbyDebug:info("Setting changed:", settingId, newValue)
+		LobbyEvent:FireServer("VoteSetting", settingId, newValue)
 	end
+
+	self.selectFaction = function(faction)
+		LobbyDebug:info("Faction selected:", faction)
+		LobbyEvent:FireServer("SelectFaction", faction)
+	end
+
+	self.toggleReady = function()
+		LobbyDebug:info("Toggle ready clicked")
+		LobbyEvent:FireServer("ToggleReady")
+	end
+end
+
+function Lobby:willUnmount()
+	-- Clean up connections
+	if self.lobbyConnection then
+		self.lobbyConnection:Disconnect()
+	end
+	if self.gameConnection then
+		self.gameConnection:Disconnect()
+	end
+
+	-- Cancel countdown thread
+	if self.countdownThread then
+		task.cancel(self.countdownThread)
+		self.countdownThread = nil
+	end
+
+	-- Leave lobby
+	local RemoteEvents = ReplicatedStorage:FindFirstChild("RemoteEvents")
+	if RemoteEvents then
+		local LobbyEvent = RemoteEvents:FindFirstChild("LobbyEvent")
+		if LobbyEvent then
+			LobbyEvent:FireServer("LeaveLobby")
+		end
+	end
+end
+
+-- Helper to create faction button
+function Lobby:createFactionButton(faction, order)
+	local lobbyConfig = UIConfig.LobbyPage
+	local isSelected = self.state.myFaction == faction
+	local isTaken = false
+
+	-- Check if faction is taken by someone else
+	for _, player in ipairs(self.state.players) do
+		if player.faction == faction and player.userId ~= localPlayer.UserId then
+			isTaken = true
+			break
+		end
+	end
+
+	return React.createElement("TextButton", {
+		LayoutOrder = order,
+		Text = faction,
+		Size = UDim2.new(0.15, 0, 0.7, 0),
+		BackgroundColor3 = if isSelected then Color3.fromRGB(100, 200, 100)
+			elseif isTaken then Color3.fromRGB(100, 100, 100)
+			else Color3.fromRGB(50, 50, 50),
+		TextColor3 = if isTaken then Color3.fromRGB(150, 150, 150) else lobbyConfig.MapSelectorTextColor,
+		FontFace = UIConfig.Font.Default,
+		TextSize = 16,
+		BorderSizePixel = 0,
+		[React.Event.MouseButton1Click] = function()
+			if not isTaken then
+				self.selectFaction(faction)
+			end
+		end,
+	})
 end
 
 -- Helper function to render a list of settings from the config
@@ -419,9 +591,9 @@ function Lobby:render()
 					}),
 					ButtonsFrame = React.createElement("Frame", {
 						LayoutOrder = 2,
-						Size = UDim2.new(1, 0, 0, 100),
+						Size = UDim2.new(1, 0, 0, 180),
 						BackgroundTransparency = 1,
-						Position = UDim2.new(0, 0, 1, -100),
+						Position = UDim2.new(0, 0, 1, -180),
 						AnchorPoint = Vector2.new(0, 1),
 					}, {
 						UIPadding = React.createElement("UIPadding", {
@@ -436,60 +608,65 @@ function Lobby:render()
 							SortOrder = Enum.SortOrder.LayoutOrder,
 							Padding = UDim.new(0, 10),
 						}),
-						StartButton = React.createElement("TextButton", {
+						-- Faction Selector
+						FactionFrame = React.createElement("Frame", {
 							LayoutOrder = 1,
-							Text = "Start Game",
+							Size = UDim2.new(1, 0, 0, 50),
+							BackgroundColor3 = lobbyConfig.PanelBackgroundColor,
+							BackgroundTransparency = lobbyConfig.PanelBackgroundTransparency,
+							BorderSizePixel = 0,
+						}, {
+							UIListLayout = React.createElement("UIListLayout", {
+								FillDirection = Enum.FillDirection.Horizontal,
+								HorizontalAlignment = Enum.HorizontalAlignment.Center,
+								VerticalAlignment = Enum.VerticalAlignment.Center,
+								Padding = UDim.new(0, 10),
+							}),
+							Label = React.createElement("TextLabel", {
+								LayoutOrder = 0,
+								Text = "Faction:",
+								Size = UDim2.new(0.25, 0, 1, 0),
+								FontFace = UIConfig.Font.Default,
+								TextColor3 = lobbyConfig.OptionsTextColor,
+								TextSize = 18,
+								BackgroundTransparency = 1,
+							}),
+							Kingdom = self:createFactionButton("Kingdom", 1),
+							Empire = self:createFactionButton("Empire", 2),
+							Tribes = self:createFactionButton("Tribes", 3),
+							IronLegion = self:createFactionButton("IronLegion", 4),
+						}),
+						-- Countdown Display (if active)
+						CountdownLabel = self.state.countdownActive and React.createElement("TextLabel", {
+							LayoutOrder = 2,
+							Text = "Starting in " .. math.ceil(self.state.countdownTimeRemaining) .. "...",
+							Size = UDim2.new(1, 0, 0, 40),
+							FontFace = UIConfig.Font.Title,
+							TextColor3 = Color3.fromRGB(255, 200, 0),
+							TextSize = 24,
+							BackgroundTransparency = 1,
+						}) or nil,
+						-- Ready Button
+						ReadyButton = React.createElement("TextButton", {
+							LayoutOrder = 3,
+							Text = if self.state.isReady then "Not Ready" else "Ready",
 							AutomaticSize = Enum.AutomaticSize.X,
-							Size = UDim2.new(0, 0, 0, 50),
+							Size = UDim2.fromOffset(0, 50),
 							BackgroundTransparency = 1,
 							FontFace = UIConfig.Font.Title,
-							TextColor3 = lobbyConfig.StartButtonTextColor,
+							TextColor3 = if self.state.isReady
+								then Color3.fromRGB(100, 255, 100)
+								else lobbyConfig.StartButtonTextColor,
 							TextSize = lobbyConfig.StartButtonTextSize,
 							[React.Event.MouseButton1Click] = function()
-								-- Prevent double-clicks
-								if self.isStartingGame then
-									LobbyDebug:warn("Game is already starting, ignoring duplicate click")
-									return
-								end
-								self.isStartingGame = true
-
-								local settings = {
-									selectedMap = self.state.selectedMap,
-									startingTroops = self.state.startingTroops,
-									startingGold = self.state.startingGold,
-									startingFood = self.state.startingFood,
-									startingWeapons = self.state.startingWeapons,
-									startingResources = self.state.startingResources,
-									gameSpeed = self.state.gameSpeed,
-									resourceDensity = self.state.resourceDensity,
-									victoryCondition = self.state.victoryCondition,
-									peaceTime = self.state.peaceTime,
-									wildlifeHostility = self.state.wildlifeHostility,
-									unitMorale = self.state.unitMorale,
-									abilityToTrade = self.state.abilityToTrade,
-									randomEvents = self.state.randomEvents,
-									legendsMode = self.state.legendsMode,
-									vikingRaids = self.state.vikingRaids,
-									honor = self.state.honor,
-									rank = self.state.rank,
-									showTutorial = self.state.showTutorial,
-								}
-
-								local ReplicatedStorage = game:GetService("ReplicatedStorage")
-								local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
-								local GameEvent = RemoteEvents:WaitForChild("GameEvent")
-								GameEvent:FireServer("StartGame", settings)
-
-								LobbyDebug:info("Starting game with settings", settings)
-
-								-- Don't navigate here - wait for GameStarted event in App.luau to switch to HUD
+								self.toggleReady()
 							end,
 						}),
 						BackButton = React.createElement("TextButton", {
-							LayoutOrder = 2,
+							LayoutOrder = 4,
 							Text = "Back",
 							AutomaticSize = Enum.AutomaticSize.X,
-							Size = UDim2.new(0, 0, 0, 40),
+							Size = UDim2.fromOffset(0, 40),
 							BackgroundTransparency = 1,
 							FontFace = UIConfig.Font.Default,
 							TextColor3 = lobbyConfig.BackButtonTextColor,

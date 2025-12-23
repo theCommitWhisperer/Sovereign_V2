@@ -35,10 +35,15 @@ function PlayerList:render()
 				}),
 				PlayerName = React.createElement("TextLabel", {
 					LayoutOrder = 1,
-					Text = playerInfo.name .. (playerInfo.isAI and " (AI)" or ""),
+					Text = playerInfo.name
+						.. (playerInfo.isAI and " (AI)" or "")
+						.. (playerInfo.faction and (" - " .. playerInfo.faction) or "")
+						.. (playerInfo.isReady and " ✓" or " ✗"),
 					Size = UDim2.new(0.8, 0, 1, 0),
 					FontFace = UIConfig.Font.Default,
-					TextColor3 = lobbyConfig.PlayerListNameColor,
+					TextColor3 = if playerInfo.isReady
+						then Color3.fromRGB(100, 255, 100)
+						else lobbyConfig.PlayerListNameColor,
 					TextSize = lobbyConfig.PlayerListNameSize,
 					BackgroundTransparency = 1,
 					TextXAlignment = Enum.TextXAlignment.Left,

@@ -119,6 +119,17 @@ function MiniMap:onMinimapClick(rbx: GuiObject, input: InputObject)
 	local relativeX = (mousePos.X - minimapPos.X) / minimapSize.X
 	local relativeZ = (mousePos.Y - minimapPos.Y) / minimapSize.Y
 
+	-- Check if click is within circular boundary
+	-- Convert to centered coordinates (-0.5 to 0.5)
+	local centerX = relativeX - 0.5
+	local centerZ = relativeZ - 0.5
+	local distanceFromCenter = math.sqrt(centerX * centerX + centerZ * centerZ)
+
+	-- If click is outside the circle, ignore it
+	if distanceFromCenter > 0.5 then
+		return
+	end
+
 	-- Clamp to valid range
 	relativeX = math.clamp(relativeX, 0, 1)
 	relativeZ = math.clamp(relativeZ, 0, 1)
@@ -175,7 +186,10 @@ function MiniMap:render()
 	return React.createElement("ImageButton", {
 		Name = "MiniMapButton",
 		Size = UDim2.fromScale(1, 1),
-		BackgroundColor3 = Color3.fromRGB(40, 60, 40),  -- Dark green terrain color
+		BackgroundColor3 = Color3.fromRGB(40, 60, 40),  -- Fallback color if image doesn't load
+		BackgroundTransparency = 1,  -- Transparent to show the background
+		Image = "",  -- No image here - the background is on the parent frame
+		ScaleType = Enum.ScaleType.Stretch,
 		BorderSizePixel = 0,
 		AutoButtonColor = false,
 		ZIndex = 1,

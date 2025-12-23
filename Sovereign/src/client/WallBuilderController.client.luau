@@ -21,6 +21,9 @@ local removePieceEvent = RemoteEvents:WaitForChild("RemoveWallPiece")
 local Assets = ReplicatedStorage:WaitForChild("Assets")
 local Buildings = Assets:WaitForChild("Buildings")
 
+-- Wait for GetWallEndpoints RemoteFunction (may be created by server)
+local getEndpointsEvent: RemoteFunction? = nil
+
 -- === CONFIGURATION ===
 local CONFIG = {
 	GridSize = 4,
@@ -679,6 +682,25 @@ end
 deleteModeEvent.Event:Connect(function(isActive: boolean)
 	isDeleteModeActive = isActive
 	print("[WallBuilderController] Delete mode:", isActive)
+end)
+
+-- === SYNC ENDPOINTS FROM SERVER ===
+task.spawn(function()
+	getEndpointsEvent = RemoteEvents:WaitForChild("GetWallEndpoints", 10) :: RemoteFunction?
+	if getEndpointsEvent then
+		-- Sync existing wall endpoints from server
+		local success, serverEndpoints = pcall(function()
+			return getEndpointsEvent:InvokeServer()
+		end)
+		if success and serverEndpoints then
+			wallEndpoints = serverEndpoints
+			print(string.format("[WallBuilderController] Synced %d wall endpoints from server", #wallEndpoints))
+		else
+			warn("[WallBuilderController] Failed to sync endpoints from server")
+		end
+	else
+		warn("[WallBuilderController] GetWallEndpoints remote not found - endpoints won't persist across sessions")
+	end
 end)
 
 print("[WallBuilderController] Wall Builder Ready")

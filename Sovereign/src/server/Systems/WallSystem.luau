@@ -23,23 +23,24 @@ local DIRECTIONS = {
 }
 
 -- Lookup Table [Bitmask] = { AssetName, Rotation }
+-- Updated to use actual asset names from Buildings folder
 local ADJACENCY_LOOKUP = {
-	[0] = { "Wall Segment", 0 },
-	[1] = { "Wall Segment", 90 },
-	[2] = { "Wall Segment", 0 },
-	[3] = { "Wall Corner", 0 },
-	[4] = { "Wall Segment", 90 },
-	[5] = { "Wall Segment", 90 },
-	[6] = { "Wall Corner", 270 },
-	[7] = { "Tower", 0 },
-	[8] = { "Wall Segment", 0 },
-	[9] = { "Wall Corner", 90 },
-	[10] = { "Wall Segment", 0 },
-	[11] = { "Tower", 180 },
-	[12] = { "Wall Corner", 180 },
-	[13] = { "Tower", 90 },
-	[14] = { "Tower", 270 },
-	[15] = { "Tower", 0 },
+	[0] = { "Stone_Wall_Straight", 0 },          -- Isolated
+	[1] = { "Stone_Wall_Straight", 90 },         -- North only
+	[2] = { "Stone_Wall_Straight", 0 },          -- East only
+	[3] = { "Stone_Wall_Small_Tower", 0 },       -- North + East (corner)
+	[4] = { "Stone_Wall_Straight", 90 },         -- South only
+	[5] = { "Stone_Wall_Straight", 90 },         -- North + South (straight)
+	[6] = { "Stone_Wall_Small_Tower", 270 },     -- East + South (corner)
+	[7] = { "Stone_Wall_Small_Tower", 0 },       -- N + E + S (T-junction)
+	[8] = { "Stone_Wall_Straight", 0 },          -- West only
+	[9] = { "Stone_Wall_Small_Tower", 90 },      -- North + West (corner)
+	[10] = { "Stone_Wall_Straight", 0 },         -- East + West (straight)
+	[11] = { "Stone_Wall_Small_Tower", 180 },    -- N + E + W (T-junction)
+	[12] = { "Stone_Wall_Small_Tower", 180 },    -- South + West (corner)
+	[13] = { "Stone_Wall_Small_Tower", 90 },     -- N + S + W (T-junction)
+	[14] = { "Stone_Wall_Small_Tower", 270 },    -- E + S + W (T-junction)
+	[15] = { "Stone_Wall_Small_Tower", 0 },      -- All 4 directions (4-way junction)
 }
 
 local function findConnectionPoints(model: Model): { BasePart }
@@ -184,11 +185,9 @@ function WallSystem.registerWall(wallInstance: Instance)
 	end
 	wallGrid[x][z] = wall
 
-	-- Update neighbors
-	updateWallVisuals(x, z)
-	for _, dir in ipairs(DIRECTIONS) do
-		updateWallVisuals(x + dir.x, z + dir.z)
-	end
+	-- Auto-update DISABLED - walls are placed as-is by the path system
+	-- The path system already handles corners and towers correctly
+	-- Only use WallSystem.updateAllWalls() manually if you need to fix specific walls
 end
 
 function WallSystem.unregisterWall(wallInstance: Instance)
@@ -210,6 +209,7 @@ function WallSystem.initialize()
 		return
 	end
 
+	-- First pass: Register all walls into the grid
 	for _, child in BuildingsFolder:GetChildren() do
 		local bType = child:GetAttribute("BuildingType")
 		if bType and (bType == "Stone_Wall" or string.find(bType, "Wall")) and child:IsA("Model") then
@@ -221,6 +221,22 @@ function WallSystem.initialize()
 			wallGrid[x][z] = child
 		end
 	end
+
+	-- Note: Auto-update on initialization is DISABLED to prevent breaking existing structures
+	-- Visual updates only happen when new walls are placed via WallSystem.registerWall()
+	-- Use WallSystem.updateAllWalls() manually if you want to fix existing walls
+
+	print("[WallSystem] Initialized wall grid (auto-update disabled)")
+end
+
+-- Force update of all walls in the grid (useful for fixing mismatched pieces)
+function WallSystem.updateAllWalls()
+	for x, row in pairs(wallGrid) do
+		for z, _ in pairs(row) do
+			updateWallVisuals(x, z)
+		end
+	end
+	print("[WallSystem] Forced update of all wall visuals")
 end
 
 return WallSystem

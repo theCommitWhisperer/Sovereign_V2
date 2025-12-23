@@ -597,4 +597,383 @@ UnitsData.Wolfhound = {
 	description = "Irish Wolfhound. Fast war dog, good against light units.",
 } :: UnitData
 
+-- ========================================
+-- WORKER UNITS (Added for data-driven worker system)
+-- ========================================
+
+UnitsData.Miner = {
+	type = "Unit",
+	subtype = "Worker",
+	faction = "Neutral",
+	description = "Specialized in mining iron and coal from underground deposits.",
+	cost = { Food = 0 },
+	training_time_seconds = 0,
+	health = {
+		max_health = 30,
+	},
+	movement = {
+		speed_meters_per_second = 0.9,
+		can_swim = false,
+		can_climb = false,
+	},
+	carry_capacity = 15,
+	combat = {
+		attack_damage = 3,
+		attack_speed = 1.5,
+		attack_range = 1,
+		armor = 1,
+	},
+	population_cost = 0,
+} :: UnitData
+
+UnitsData.Fisherman = {
+	type = "Unit",
+	subtype = "Worker",
+	faction = "Neutral",
+	description = "Catches fish from nearby waters to feed the settlement.",
+	cost = { Food = 0 },
+	training_time_seconds = 0,
+	health = {
+		max_health = 25,
+	},
+	movement = {
+		speed_meters_per_second = 1.0,
+		can_swim = true,
+		can_climb = false,
+	},
+	carry_capacity = 20,
+	combat = {
+		attack_damage = 2,
+		attack_speed = 1.0,
+		attack_range = 1,
+		armor = 0,
+	},
+	population_cost = 0,
+} :: UnitData
+
+UnitsData.Smelter = {
+	type = "Unit",
+	subtype = "Worker",
+	faction = "Neutral",
+	description = "Smelts iron ore into iron bars at the furnace.",
+	cost = { Food = 0 },
+	training_time_seconds = 0,
+	health = {
+		max_health = 30,
+	},
+	movement = {
+		speed_meters_per_second = 0.9,
+		can_swim = false,
+		can_climb = false,
+	},
+	carry_capacity = 15,
+	combat = {
+		attack_damage = 3,
+		attack_speed = 1.2,
+		attack_range = 1,
+		armor = 2,
+	},
+	population_cost = 0,
+} :: UnitData
+
+UnitsData.Blacksmith = {
+	type = "Unit",
+	subtype = "Worker",
+	faction = "Neutral",
+	description = "Forges weapons and armor from iron bars.",
+	cost = { Food = 0 },
+	training_time_seconds = 0,
+	health = {
+		max_health = 35,
+	},
+	movement = {
+		speed_meters_per_second = 0.9,
+		can_swim = false,
+		can_climb = false,
+	},
+	carry_capacity = 20,
+	combat = {
+		attack_damage = 5,
+		attack_speed = 1.3,
+		attack_range = 1,
+		armor = 3,
+	},
+	population_cost = 0,
+} :: UnitData
+
+UnitsData.Carpenter = {
+	type = "Unit",
+	subtype = "Worker",
+	faction = "Neutral",
+	description = "Crafts furniture and wooden goods from lumber.",
+	cost = { Food = 0 },
+	training_time_seconds = 0,
+	health = {
+		max_health = 28,
+	},
+	movement = {
+		speed_meters_per_second = 1.0,
+		can_swim = false,
+		can_climb = false,
+	},
+	carry_capacity = 15,
+	combat = {
+		attack_damage = 3,
+		attack_speed = 1.2,
+		attack_range = 1,
+		armor = 1,
+	},
+	population_cost = 0,
+} :: UnitData
+
+UnitsData.Tanner = {
+	type = "Unit",
+	subtype = "Worker",
+	faction = "Neutral",
+	description = "Processes animal hides into leather for armor and goods.",
+	cost = { Food = 0 },
+	training_time_seconds = 0,
+	health = {
+		max_health = 25,
+	},
+	movement = {
+		speed_meters_per_second = 1.0,
+		can_swim = false,
+		can_climb = false,
+	},
+	carry_capacity = 12,
+	combat = {
+		attack_damage = 2,
+		attack_speed = 1.0,
+		attack_range = 1,
+		armor = 1,
+	},
+	population_cost = 0,
+} :: UnitData
+
+UnitsData.Miller = {
+	type = "Unit",
+	subtype = "Worker",
+	faction = "Neutral",
+	description = "Grinds grain into flour at the mill.",
+	cost = { Food = 0 },
+	training_time_seconds = 0,
+	health = {
+		max_health = 26,
+	},
+	movement = {
+		speed_meters_per_second = 1.0,
+		can_swim = false,
+		can_climb = false,
+	},
+	carry_capacity = 18,
+	combat = {
+		attack_damage = 2,
+		attack_speed = 1.0,
+		attack_range = 1,
+		armor = 0,
+	},
+	population_cost = 0,
+} :: UnitData
+
+UnitsData.Baker = {
+	type = "Unit",
+	subtype = "Worker",
+	faction = "Neutral",
+	description = "Bakes bread and pastries to feed the people.",
+	cost = { Food = 0 },
+	training_time_seconds = 0,
+	health = {
+		max_health = 25,
+	},
+	movement = {
+		speed_meters_per_second = 1.0,
+		can_swim = false,
+		can_climb = false,
+	},
+	carry_capacity = 15,
+	combat = {
+		attack_damage = 2,
+		attack_speed = 1.0,
+		attack_range = 1,
+		armor = 0,
+	},
+	population_cost = 0,
+} :: UnitData
+
+UnitsData.Brewer = {
+	type = "Unit",
+	subtype = "Worker",
+	faction = "Neutral",
+	description = "Brews ale and spirits to boost morale.",
+	cost = { Food = 0 },
+	training_time_seconds = 0,
+	health = {
+		max_health = 26,
+	},
+	movement = {
+		speed_meters_per_second = 1.0,
+		can_swim = false,
+		can_climb = false,
+	},
+	carry_capacity = 18,
+	combat = {
+		attack_damage = 2,
+		attack_speed = 1.0,
+		attack_range = 1,
+		armor = 0,
+	},
+	population_cost = 0,
+} :: UnitData
+
+UnitsData.Merchant = {
+	type = "Unit",
+	subtype = "Worker",
+	faction = "Neutral",
+	description = "Manages trade and commerce at the marketplace.",
+	cost = { Food = 0 },
+	training_time_seconds = 0,
+	health = {
+		max_health = 25,
+	},
+	movement = {
+		speed_meters_per_second = 1.2,
+		can_swim = false,
+		can_climb = false,
+	},
+	carry_capacity = 25,
+	combat = {
+		attack_damage = 2,
+		attack_speed = 1.0,
+		attack_range = 1,
+		armor = 0,
+	},
+	population_cost = 0,
+} :: UnitData
+
+UnitsData.Trader = {
+	type = "Unit",
+	subtype = "Worker",
+	faction = "Neutral",
+	description = "Manages international trade at the trading post.",
+	cost = { Food = 0 },
+	training_time_seconds = 0,
+	health = {
+		max_health = 26,
+	},
+	movement = {
+		speed_meters_per_second = 1.3,
+		can_swim = false,
+		can_climb = false,
+	},
+	carry_capacity = 30,
+	combat = {
+		attack_damage = 2,
+		attack_speed = 1.0,
+		attack_range = 1,
+		armor = 0,
+	},
+	population_cost = 0,
+} :: UnitData
+
+UnitsData.Innkeeper = {
+	type = "Unit",
+	subtype = "Worker",
+	faction = "Neutral",
+	description = "Serves food, drink, and lodging at the inn or tavern.",
+	cost = { Food = 0 },
+	training_time_seconds = 0,
+	health = {
+		max_health = 25,
+	},
+	movement = {
+		speed_meters_per_second = 1.0,
+		can_swim = false,
+		can_climb = false,
+	},
+	carry_capacity = 15,
+	combat = {
+		attack_damage = 2,
+		attack_speed = 1.0,
+		attack_range = 1,
+		armor = 0,
+	},
+	population_cost = 0,
+} :: UnitData
+
+UnitsData.Scribe = {
+	type = "Unit",
+	subtype = "Worker",
+	faction = "Neutral",
+	description = "Copies and illuminates manuscripts, preserving knowledge.",
+	cost = { Food = 0 },
+	training_time_seconds = 0,
+	health = {
+		max_health = 22,
+	},
+	movement = {
+		speed_meters_per_second = 0.9,
+		can_swim = false,
+		can_climb = false,
+	},
+	carry_capacity = 8,
+	combat = {
+		attack_damage = 1,
+		attack_speed = 0.8,
+		attack_range = 1,
+		armor = 0,
+	},
+	population_cost = 0,
+} :: UnitData
+
+UnitsData.Priest = {
+	type = "Unit",
+	subtype = "Worker",
+	faction = "Neutral",
+	description = "Leads worship and provides spiritual guidance at churches and chapels.",
+	cost = { Food = 0 },
+	training_time_seconds = 0,
+	health = {
+		max_health = 24,
+	},
+	movement = {
+		speed_meters_per_second = 1.0,
+		can_swim = false,
+		can_climb = false,
+	},
+	carry_capacity = 5,
+	combat = {
+		attack_damage = 1,
+		attack_speed = 0.8,
+		attack_range = 1,
+		armor = 0,
+	},
+	population_cost = 0,
+} :: UnitData
+
+UnitsData.Administrator = {
+	type = "Unit",
+	subtype = "Worker",
+	faction = "Neutral",
+	description = "Manages administrative affairs at the town hall.",
+	cost = { Food = 0 },
+	training_time_seconds = 0,
+	health = {
+		max_health = 26,
+	},
+	movement = {
+		speed_meters_per_second = 1.0,
+		can_swim = false,
+		can_climb = false,
+	},
+	carry_capacity = 10,
+	combat = {
+		attack_damage = 2,
+		attack_speed = 1.0,
+		attack_range = 1,
+		armor = 0,
+	},
+	population_cost = 0,
+} :: UnitData
+
 return UnitsData

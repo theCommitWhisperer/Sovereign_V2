@@ -15,6 +15,7 @@ local Keybindings = require(script.Parent.screens.Keybindings.Keybindings)
 
 -- Components
 local Tooltip = require(script.Parent.components.Tooltip)
+local ErrorBoundary = require(script.Parent.components.ErrorBoundary)
 
 local App = React.Component:extend("App")
 
@@ -69,14 +70,16 @@ function App:render()
 	local tooltipApi = self.tooltipRef and self.tooltipRef.current and self.tooltipRef.current.api
 
 	return React.createElement(React.Fragment, {}, {
-		Router = React.createElement(Router, {
-			route = self.state.route,
-			routes = self.routes,
-			routeProps = {
-				navigate = self.navigate,
-				tooltip = tooltipApi, -- Pass tooltip API to all routes
-				gameStartData = self.state.gameStartData, -- Pass game start data to HUD
-			},
+		ErrorBoundary = React.createElement(ErrorBoundary, {}, {
+			Router = React.createElement(Router, {
+				route = self.state.route,
+				routes = self.routes,
+				routeProps = {
+					navigate = self.navigate,
+					tooltip = tooltipApi, -- Pass tooltip API to all routes
+					gameStartData = self.state.gameStartData, -- Pass game start data to HUD
+				},
+			}),
 		}),
 		Tooltip = React.createElement(Tooltip, {
 			ref = self.tooltipRef,

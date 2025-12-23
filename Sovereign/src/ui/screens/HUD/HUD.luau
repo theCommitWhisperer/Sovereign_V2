@@ -26,6 +26,10 @@ local QuestTracker = require(script.Parent.QuestTracker)
 local AchievementNotification = require(script.Parent.AchievementNotification)
 local ConfirmDeleteModal = require(script.Parent.ConfirmDeleteModal)
 local MultiDeleteModal = require(script.Parent.MultiDeleteModal)
+local IconButton = require(script.Parent.Parent.Parent.components.IconButton)
+local TopBar = require(script.Parent.TopBar)
+local UndoButton = require(script.Parent.UndoButton)
+local BattleLog = require(script.Parent.BattleLog)
 
 local player = Players.LocalPlayer
 
@@ -57,12 +61,14 @@ function HUD:init()
 		showHeroAbilities = false,
 		achievementData = nil,
 		buildingUpgradeInfo = nil,
-		selectedCategory = "Defense", -- Defense, Economy, Housing, Food, Culture
+		selectedCategory = "Defense", -- Defense, Military, Industry, Food, Housing
 		armySize = 0,
 		honor = 0,
 		glory = 0,
 		population = 0,
 		happiness = 50, -- 0-100, affects revolt meter
+		weather = "Clear", -- Current weather condition
+		date = "Y1 M1", -- Current game date
 		isDeleteMode = false, -- Delete mode for removing buildings/units
 		showExpandedMeters = false, -- Show expanded meter panel
 		commandText = "", -- For admin command input
@@ -89,12 +95,26 @@ function HUD:init()
 		-- Multi-delete confirmation
 		showMultiDeleteConfirmation = false,
 		buildingsToDelete = {},
+		-- Undo deletion history (last 5 deletions)
+		deletionHistory = {},
+		-- Battle log messages
+		battleLogMessages = {},
+		battleLogExpanded = false,
 	})
 
-	-- Get game event reference
-	local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
-	self.gameEvent = RemoteEvents:WaitForChild("GameEvent")
-	self.getStatsEvent = RemoteEvents:WaitForChild("GetStats")
+	-- Get game event reference with timeout to prevent infinite hang
+	local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents", 10)
+	if not RemoteEvents then
+		warn("⚠️ [HUD] Failed to find RemoteEvents folder after 10 seconds")
+		return
+	end
+	self.gameEvent = RemoteEvents:WaitForChild("GameEvent", 10)
+	self.getStatsEvent = RemoteEvents:WaitForChild("GetStats", 10)
+
+	if not self.gameEvent or not self.getStatsEvent then
+		warn("⚠️ [HUD] Failed to find required RemoteEvents (GameEvent or GetStats)")
+		return
+	end
 
 	-- Create/get delete mode event for visual feedback
 	self.deleteModeEvent = ReplicatedStorage:FindFirstChild("DeleteModeChanged")
@@ -188,7 +208,10 @@ function HUD:init()
 		HUDDebug:info("Initializing from gameStartData prop", data)
 		if data.resources then
 			local tutorialEnabled = if data.showTutorial ~= nil then data.showTutorial else true
-			HUDDebug:info("Tutorial setting from prop", { showTutorial = data.showTutorial, tutorialEnabled = tutorialEnabled })
+			HUDDebug:info(
+				"Tutorial setting from prop",
+				{ showTutorial = data.showTutorial, tutorialEnabled = tutorialEnabled }
+			)
 			self:setState({
 				resources = data.resources,
 				tutorialEnabled = tutorialEnabled,
@@ -201,7 +224,10 @@ function HUD:init()
 			HUDDebug:info("Received resources from event", { resources = data.resources })
 			-- Set tutorial state based on game settings
 			local tutorialEnabled = if data.showTutorial ~= nil then data.showTutorial else true
-			HUDDebug:info("Tutorial setting from event", { showTutorial = data.showTutorial, tutorialEnabled = tutorialEnabled })
+			HUDDebug:info(
+				"Tutorial setting from event",
+				{ showTutorial = data.showTutorial, tutorialEnabled = tutorialEnabled }
+			)
 			self:setState({
 				resources = data.resources,
 				tutorialEnabled = tutorialEnabled,
@@ -229,12 +255,12 @@ function HUD:init()
 				})
 				self:setState({ trainingQueue = data.queue })
 			end
-        elseif action == "UpdateHappiness" and data.happiness then
-            HUDDebug:info("Happiness updated", { happiness = data.happiness })
-            self:setState({ happiness = data.happiness })
-        elseif action == "UpdatePopulation" and data.current then
-            HUDDebug:info("Population updated", { population = data.current })
-            self:setState({ population = data.current })
+		elseif action == "UpdateHappiness" and data.happiness then
+			HUDDebug:info("Happiness updated", { happiness = data.happiness })
+			self:setState({ happiness = data.happiness })
+		elseif action == "UpdatePopulation" and data.current then
+			HUDDebug:info("Population updated", { population = data.current })
+			self:setState({ population = data.current })
 		elseif action == "EconomyNotification" then
 			-- Economy notification (from NotificationManager)
 			if data.title and data.message then
@@ -263,7 +289,10 @@ function HUD:init()
 					weather = data.snapshot.weather,
 					economyHealth = data.snapshot.economyHealth,
 				})
-				self:setState({ economySnapshot = data.snapshot })
+				self:setState({
+					economySnapshot = data.snapshot,
+					weather = data.snapshot.weather, -- Update weather in top bar
+				})
 			end
 		elseif action == "CameraModeChanged" then
 			-- Camera mode changed (RTS/King)
@@ -294,59 +323,59 @@ function HUD:init()
 
 				-- TODO: Show notification UI
 				-- For now, just log it
-		elseif action == "AchievementUnlocked" then
-			-- Achievement notification
-			HUDDebug:info("Achievement Unlocked!", data)
-			self:setState({ achievementData = data })
-			-- Auto-clear after component handles it
-			task.delay(6, function()
-				self:setState({ achievementData = nil })
-			end)
-		elseif action == "BuildingUpgraded" then
-			-- Building was upgraded
-			HUDDebug:info("Building Upgraded", data)
-		elseif action == "ResearchStarted" then
-			-- Research started
-			HUDDebug:info("Research Started", data)
-		elseif action == "ResearchCompleted" then
-			-- Research completed
-			HUDDebug:info("Research Completed", data)
-		elseif action == "QuestCompleted" then
-			-- Quest completed
-			HUDDebug:info("Quest Completed", data)
-			-- Refresh quest list
-			self.gameEvent:FireServer("GetQuests")
-		elseif action == "QuestProgress" then
-			-- Quest progress updated
-			HUDDebug:info("Quest Progress", data)
-			-- Refresh quest list
-			self.gameEvent:FireServer("GetQuests")
-		elseif action == "QuestsData" then
-			-- Quest data received
-			HUDDebug:info("Received quests data", data)
-			self:setState({ activeQuests = data.activeQuests or {} })
-		elseif action == "AbilitiesData" then
-			-- Hero abilities data received
-			HUDDebug:info("Received abilities data", data)
-			self:setState({ heroAbilities = data.abilities or {} })
-		elseif action == "AbilityCooldownUpdate" then
-			-- Ability cooldown updated
-			HUDDebug:info("Ability cooldown update", data)
-			-- Update specific ability cooldown
-			if self.state.heroAbilities and data.abilityId then
-				local abilities = table.clone(self.state.heroAbilities)
-				for _, ability in abilities do
-					if ability.id == data.abilityId then
-						ability.remainingCooldown = data.remainingCooldown
-						ability.isOnCooldown = data.isOnCooldown
-						break
+			elseif action == "AchievementUnlocked" then
+				-- Achievement notification
+				HUDDebug:info("Achievement Unlocked!", data)
+				self:setState({ achievementData = data })
+				-- Auto-clear after component handles it
+				task.delay(6, function()
+					self:setState({ achievementData = nil })
+				end)
+			elseif action == "BuildingUpgraded" then
+				-- Building was upgraded
+				HUDDebug:info("Building Upgraded", data)
+			elseif action == "ResearchStarted" then
+				-- Research started
+				HUDDebug:info("Research Started", data)
+			elseif action == "ResearchCompleted" then
+				-- Research completed
+				HUDDebug:info("Research Completed", data)
+			elseif action == "QuestCompleted" then
+				-- Quest completed
+				HUDDebug:info("Quest Completed", data)
+				-- Refresh quest list
+				self.gameEvent:FireServer("GetQuests")
+			elseif action == "QuestProgress" then
+				-- Quest progress updated
+				HUDDebug:info("Quest Progress", data)
+				-- Refresh quest list
+				self.gameEvent:FireServer("GetQuests")
+			elseif action == "QuestsData" then
+				-- Quest data received
+				HUDDebug:info("Received quests data", data)
+				self:setState({ activeQuests = data.activeQuests or {} })
+			elseif action == "AbilitiesData" then
+				-- Hero abilities data received
+				HUDDebug:info("Received abilities data", data)
+				self:setState({ heroAbilities = data.abilities or {} })
+			elseif action == "AbilityCooldownUpdate" then
+				-- Ability cooldown updated
+				HUDDebug:info("Ability cooldown update", data)
+				-- Update specific ability cooldown
+				if self.state.heroAbilities and data.abilityId then
+					local abilities = table.clone(self.state.heroAbilities)
+					for _, ability in abilities do
+						if ability.id == data.abilityId then
+							ability.remainingCooldown = data.remainingCooldown
+							ability.isOnCooldown = data.isOnCooldown
+							break
+						end
 					end
+					self:setState({ heroAbilities = abilities })
 				end
-				self:setState({ heroAbilities = abilities })
-			end
-		elseif action == "KingRespawned" then
-			-- King respawned
-			HUDDebug:info("King Respawned", data)
+			elseif action == "KingRespawned" then
+				-- King respawned
+				HUDDebug:info("King Respawned", data)
 				HUDDebug:warn(`VIKING RAID #${data.raidNumber}! {data.vikingCount} Vikings are attacking!`)
 			end
 		end
@@ -416,7 +445,10 @@ function HUD:onBuildingPlaced(buildingType)
 	local currentRequiredBuilding = tutorialBuildings[self.state.tutorialStep]
 
 	if buildingType == currentRequiredBuilding then
-		HUDDebug:info("Tutorial: Required building placed", { buildingType = buildingType, step = self.state.tutorialStep })
+		HUDDebug:info(
+			"Tutorial: Required building placed",
+			{ buildingType = buildingType, step = self.state.tutorialStep }
+		)
 
 		-- Mark building as completed
 		local newCompleted = table.clone(self.state.buildingsCompleted)
@@ -484,6 +516,29 @@ end
 function HUD:setupBuildingSelection()
 	-- Listen for building clicks
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		-- Ctrl+U to undo deletion (Ctrl+Z is intercepted by Roblox Studio)
+		-- Check if U key is pressed while Ctrl is held down
+		if input.KeyCode == Enum.KeyCode.U and input.UserInputType == Enum.UserInputType.Keyboard then
+			if
+				UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
+				or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
+			then
+				self:undoLastDeletion()
+				return
+			end
+		end
+
+		-- Also check if Ctrl is pressed while U is already held down
+		if
+			(input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.RightControl)
+			and input.UserInputType == Enum.UserInputType.Keyboard
+		then
+			if UserInputService:IsKeyDown(Enum.KeyCode.U) then
+				self:undoLastDeletion()
+				return
+			end
+		end
+
 		HUDDebug:info("Input detected", {
 			inputType = tostring(input.UserInputType),
 			gameProcessed = gameProcessed,
@@ -511,7 +566,10 @@ function HUD:setupBuildingSelection()
 			raycastParams.FilterDescendantsInstances = filterList
 
 			local result = workspace:Raycast(ray.Origin, ray.Direction * 1000, raycastParams)
-			HUDDebug:info("Raycast result", { hit = result ~= nil, instance = result and result.Instance.Name or "none" })
+			HUDDebug:info(
+				"Raycast result",
+				{ hit = result ~= nil, instance = result and result.Instance.Name or "none" }
+			)
 
 			if result and result.Instance then
 				HUDDebug:info("Clicked on instance", {
@@ -556,52 +614,10 @@ function HUD:setupBuildingSelection()
 					})
 
 					if buildingType and owner == player.UserId then
-						-- If delete mode is active, delete the building
+						-- If delete mode is active, let DeletionInputHandler handle it (don't process here)
 						if self.state.isDeleteMode then
-							HUDDebug:info("Delete mode: Deleting building", {
-								buildingType = buildingType,
-								buildingName = building.Name,
-							})
-
-							-- Check if this is an important building that needs confirmation
-							local GameData = require(game.ReplicatedStorage.Shared.GameData)
-							local buildingInfo = GameData.Buildings[buildingType]
-							local needsConfirmation = buildingInfo
-								and (buildingInfo.can_train_units or buildingInfo.produces_resource or buildingInfo.produces_resources or buildingType == "Town_Center")
-
-							if needsConfirmation then
-								-- Calculate refund info
-								local refundInfo = nil
-								if buildingInfo and buildingInfo.cost then
-									local refundParts = {}
-									for resourceType, cost in pairs(buildingInfo.cost) do
-										local refund = math.floor(cost * 0.5)
-										if refund > 0 then
-											table.insert(refundParts, string.format("%d %s", refund, resourceType))
-										end
-									end
-									if #refundParts > 0 then
-										refundInfo = table.concat(refundParts, ", ")
-									end
-								end
-
-								-- Show confirmation dialog
-								self:setState({
-									showDeleteConfirmation = true,
-									buildingToDelete = {
-										model = building,
-										name = building.Name,
-										type = buildingType,
-										refundInfo = refundInfo,
-									},
-								})
-							else
-								-- Delete immediately for simple buildings
-								self.gameEvent:FireServer("DeleteBuilding", {
-									buildingId = building.Name,
-								})
-								-- Don't turn off delete mode - let player keep deleting
-							end
+							HUDDebug:info("Delete mode active - DeletionInputHandler will handle this click")
+							-- Don't process the click in HUD, DeletionInputHandler will handle deletion
 						else
 							-- Normal mode: Check if building can train units
 							local GameData = require(game.ReplicatedStorage.Shared.GameData)
@@ -708,44 +724,134 @@ function HUD:setupBuildingSelection()
 	end)
 end
 
+-- Undo deletion system
+function HUD:addToDeletionHistory(buildingDataOrBatch)
+	local history = table.clone(self.state.deletionHistory)
+
+	-- Check if it's a batch (array) or single item
+	local isBatch = buildingDataOrBatch[1] ~= nil and type(buildingDataOrBatch[1]) == "table"
+
+	if isBatch then
+		-- Store the batch as a single history entry
+		local batch = {}
+		for _, buildingData in buildingDataOrBatch do
+			table.insert(batch, {
+				buildingType = buildingData.type,
+				buildingName = buildingData.name,
+				position = buildingData.position,
+				rotation = buildingData.rotation,
+				isWall = buildingData.isWall,
+			})
+		end
+		table.insert(history, {
+			batch = batch,
+			timestamp = os.time(),
+		})
+		HUDDebug:info("Added batch to deletion history", { count = #batch, historySize = #history })
+	else
+		-- Single item
+		table.insert(history, {
+			buildingType = buildingDataOrBatch.type,
+			buildingName = buildingDataOrBatch.name,
+			position = buildingDataOrBatch.position,
+			rotation = buildingDataOrBatch.rotation,
+			isWall = buildingDataOrBatch.isWall,
+			timestamp = os.time(),
+		})
+		HUDDebug:info("Added to deletion history", { type = buildingDataOrBatch.type, historySize = #history })
+	end
+
+	-- Keep only last 5
+	while #history > 5 do
+		table.remove(history, 1)
+	end
+
+	self:setState({ deletionHistory = history })
+end
+
+function HUD:undoLastDeletion()
+	local history = self.state.deletionHistory
+	if #history == 0 then
+		HUDDebug:warn("No deletions to undo")
+		print("[UNDO] No deletions in history to undo")
+		return
+	end
+
+	local lastDeletion = history[#history]
+	HUDDebug:info("Undoing deletion", lastDeletion)
+
+	-- Check if it's a batch
+	if lastDeletion.batch then
+		-- Restore batch of items
+		local RemoteEvents = ReplicatedStorage:FindFirstChild("RemoteEvents")
+		local placePathEvent = RemoteEvents and RemoteEvents:FindFirstChild("PlaceWallPath")
+
+		for _, item in lastDeletion.batch do
+			if item.isWall then
+				-- Restore wall piece
+				if placePathEvent then
+					-- Convert rotation from degrees (Orientation.Y) to radians
+					local yRotationDegrees = item.rotation and item.rotation.Y or 0
+					local yRotationRadians = math.rad(yRotationDegrees)
+					placePathEvent:FireServer({
+						{
+							type = item.buildingType,
+							position = item.position,
+							rotation = yRotationRadians,
+						},
+					})
+				end
+			else
+				-- Restore regular building
+				self.gameEvent:FireServer("UndoDeletion", {
+					buildingType = item.buildingType,
+					position = item.position,
+					rotation = item.rotation,
+				})
+			end
+		end
+		HUDDebug:info("Batch restoration sent", { count = #lastDeletion.batch })
+	elseif lastDeletion.isWall then
+		-- Restore single wall piece
+		local RemoteEvents = ReplicatedStorage:FindFirstChild("RemoteEvents")
+		local placePathEvent = RemoteEvents and RemoteEvents:FindFirstChild("PlaceWallPath")
+
+		if placePathEvent then
+			-- Convert rotation from degrees (Orientation.Y) to radians
+			local yRotationDegrees = lastDeletion.rotation and lastDeletion.rotation.Y or 0
+			local yRotationRadians = math.rad(yRotationDegrees)
+			placePathEvent:FireServer({
+				{
+					type = lastDeletion.buildingType,
+					position = lastDeletion.position,
+					rotation = yRotationRadians,
+				},
+			})
+			HUDDebug:info("Wall piece restoration sent", { type = lastDeletion.buildingType })
+		else
+			warn("[UNDO] PlaceWallPath event not found!")
+		end
+	else
+		-- Restore single regular building
+		self.gameEvent:FireServer("UndoDeletion", {
+			buildingType = lastDeletion.buildingType,
+			position = lastDeletion.position,
+			rotation = lastDeletion.rotation,
+		})
+	end
+
+	-- Remove from history
+	local newHistory = table.clone(history)
+	table.remove(newHistory)
+	self:setState({ deletionHistory = newHistory })
+
+	HUDDebug:info("Undo complete, new history size:", #newHistory)
+end
+
 function HUD:willUnmount()
 	if self.connection then
 		self.connection:Disconnect()
 	end
-end
-
--- Helper function to create stat boxes for top bar
-function HUD:createStatBox(label: string, value: any, icon: string)
-	return React.createElement("Frame", {
-		Size = UDim2.new(0, UIConfig.HUD.StatBoxWidth, 1, 0),
-		BackgroundColor3 = UIConfig.HUD.StatBoxBackground,
-		BorderSizePixel = 1,
-		BorderColor3 = UIConfig.HUD.StatBoxBorder,
-	}, {
-		Layout = React.createElement("UIListLayout", {
-			FillDirection = Enum.FillDirection.Horizontal,
-			HorizontalAlignment = Enum.HorizontalAlignment.Center,
-			VerticalAlignment = Enum.VerticalAlignment.Center,
-			Padding = UDim.new(0, 4),
-		}),
-
-		Icon = React.createElement("TextLabel", {
-			Size = UDim2.new(0, 16, 0, 16),
-			BackgroundTransparency = 1,
-			Text = icon,
-			TextSize = 14,
-		}),
-
-		Value = React.createElement("TextLabel", {
-			Size = UDim2.new(1, -20, 1, 0),
-			BackgroundTransparency = 1,
-			Text = tostring(value),
-			Font = Enum.Font.GothamBold,
-			TextSize = 13,
-			TextColor3 = UIConfig.HUD.StatTextColor,
-			TextXAlignment = Enum.TextXAlignment.Left,
-		}),
-	})
 end
 
 -- Helper function to create expanded meter in the meter panel
@@ -800,7 +906,7 @@ function HUD:createExpandedMeter(label: string, icon: string, value: number, max
 	})
 end
 
--- Helper functions for season and weather icons
+-- Helper function for season icons
 function HUD:getSeasonIcon(season: string?): string
 	if season == "Spring" then
 		return "🌸"
@@ -814,48 +920,30 @@ function HUD:getSeasonIcon(season: string?): string
 	return "🌸" -- Default to Spring
 end
 
-function HUD:getWeatherIcon(weather: string?): string
-	if weather == "Clear" then
-		return "☀️"
-	elseif weather == "Rain" then
-		return "🌧️"
-	elseif weather == "Storm" then
-		return "⛈️"
-	elseif weather == "Drought" then
-		return "🌵"
-	end
-	return "☀️" -- Default to Clear
-end
-
 -- Helper function to create category buttons for bottom bar (icon only)
 function HUD:createCategoryButton(category: string, icon: string)
 	local isSelected = self.state.selectedCategory == category
 
-	-- Set layout order based on category
-	local layoutOrder = 1
-	if category == "Defense" then
-		layoutOrder = 1
-	elseif category == "Economy" then
-		layoutOrder = 2
-	elseif category == "Housing" then
-		layoutOrder = 3
-	elseif category == "Food" then
-		layoutOrder = 4
-	elseif category == "Culture" then
-		layoutOrder = 5
-	end
+	-- Get the custom button image and position for this category
+	local buttonImage = UIConfig.HUD.CategoryButtonImages[category] or "rbxassetid://105781657626004"
+	local position = UIConfig.HUD.CategoryButtonPositions[category] or { X = 452, Y = 38 }
 
-	return React.createElement("TextButton", {
-		Size = UDim2.new(1, 0, 0, UIConfig.HUD.CategoryButtonHeight),
-		BackgroundColor3 = isSelected and UIConfig.HUD.CategoryButtonSelected or UIConfig.HUD.CategoryButtonBackground,
-		BorderSizePixel = 1,
-		BorderColor3 = UIConfig.HUD.CategoryButtonBorder,
-		Text = icon, -- Icon only, no text
-		Font = Enum.Font.GothamBold,
-		TextSize = 20, -- Larger icon
-		TextColor3 = UIConfig.HUD.PanelTextColor,
-		LayoutOrder = layoutOrder,
-		[React.Event.MouseButton1Click] = function()
+	-- Keep button hitbox constant to prevent blocking adjacent buttons
+	local buttonSize = UDim2.fromOffset(UIConfig.HUD.CategoryButtonWidth, UIConfig.HUD.CategoryButtonHeight)
+	local adjustedPosition = UDim2.fromOffset(position.X, position.Y)
+
+	-- Visual scale for appearance only (1.5x when selected, hitbox stays 57x57)
+	local visualScale = isSelected and 1.5 or 1.0
+
+	return React.createElement(IconButton, {
+		Size = buttonSize,
+		Position = adjustedPosition,
+		ButtonImage = buttonImage,
+		ImageColor3 = Color3.fromRGB(255, 255, 255),
+		ShowGlow = false,
+		VisualScale = visualScale, -- Scale visual only, not hitbox
+		ZIndex = isSelected and 20 or 11, -- Selected button on top of others
+		OnClick = function()
 			HUDDebug:info(`Category button clicked: {category}`)
 			HUDDebug:info(`Current selectedTrainingBuilding: {tostring(self.state.selectedTrainingBuilding)}`)
 
@@ -888,8 +976,12 @@ function HUD:render()
 	local hasTrainingBuildingSelected = self.state.selectedTrainingBuilding ~= nil
 	local hasProductionBuildingSelected = self.state.selectedProductionBuilding ~= nil
 
-	HUDDebug:info(`Render state check: selectedTrainingBuilding={tostring(self.state.selectedTrainingBuilding)}, hasTrainingBuildingSelected={hasTrainingBuildingSelected}, hasProductionBuildingSelected={hasProductionBuildingSelected}`)
-	local showBuildingsInContent = not hasUnitsSelected and not hasTrainingBuildingSelected and not hasProductionBuildingSelected
+	HUDDebug:info(
+		`Render state check: selectedTrainingBuilding={tostring(self.state.selectedTrainingBuilding)}, hasTrainingBuildingSelected={hasTrainingBuildingSelected}, hasProductionBuildingSelected={hasProductionBuildingSelected}`
+	)
+	local showBuildingsInContent = not hasUnitsSelected
+		and not hasTrainingBuildingSelected
+		and not hasProductionBuildingSelected
 
 	-- Category icons
 	local CATEGORY_ICONS = {
@@ -907,277 +999,64 @@ function HUD:render()
 		IgnoreGuiInset = true,
 	}, {
 		-- ===== TOP BAR =====
-		TopBar = React.createElement("Frame", {
-			Name = "TopBar",
-			Size = UDim2.new(1, 0, 0, UIConfig.HUD.TopBarHeight),
-			Position = UDim2.fromScale(0, 0),
-			BackgroundColor3 = UIConfig.HUD.TopBarBackground,
-			BorderSizePixel = 1,
-			BorderColor3 = UIConfig.HUD.TopBarBorder,
-			ZIndex = 10,
-		}, {
-			-- MENU button (far left)
-			MenuButton = React.createElement("TextButton", {
-				Size = UDim2.new(0, UIConfig.HUD.TopButtonWidth, 0, UIConfig.HUD.TopButtonHeight),
-				Position = UDim2.new(0, 5, 0, 5),
-				BackgroundColor3 = UIConfig.HUD.TopButtonBackground,
-				BorderSizePixel = 1,
-				BorderColor3 = UIConfig.HUD.TopButtonBorder,
-				Text = "MENU",
-				Font = Enum.Font.GothamBold,
-				TextSize = 14,
-				TextColor3 = UIConfig.HUD.PanelTextColor,
-				[React.Event.MouseButton1Click] = function()
-					self:setState({ showMenuModal = not self.state.showMenuModal })
-				end,
-			}),
-
-			-- STATS button (next to MENU)
-			StatsButton = React.createElement("TextButton", {
-				Size = UDim2.new(0, UIConfig.HUD.TopButtonWidth, 0, UIConfig.HUD.TopButtonHeight),
-				Position = UDim2.new(0, UIConfig.HUD.TopButtonWidth + 10, 0, 5),
-				BackgroundColor3 = UIConfig.HUD.TopButtonBackground,
-				BorderSizePixel = 1,
-				BorderColor3 = UIConfig.HUD.TopButtonBorder,
-				Text = "STATS",
-				Font = Enum.Font.GothamBold,
-				TextSize = 14,
-				TextColor3 = UIConfig.HUD.PanelTextColor,
-				[React.Event.MouseButton1Click] = function()
-					self.getStatsEvent:FireServer("GetStats")
-					self:setState({ showStatsModal = not self.state.showStatsModal })
-				end,
-			}),
-
-			-- TECH button (next to STATS)
-			TechButton = React.createElement("TextButton", {
-				Size = UDim2.new(0, UIConfig.HUD.TopButtonWidth, 0, UIConfig.HUD.TopButtonHeight),
-				Position = UDim2.new(0, (UIConfig.HUD.TopButtonWidth + 5) * 2 + 5, 0, 5),
-				BackgroundColor3 = UIConfig.HUD.TopButtonBackground,
-				BorderSizePixel = 1,
-				BorderColor3 = UIConfig.HUD.TopButtonBorder,
-				Text = "TECH",
-				Font = Enum.Font.GothamBold,
-				TextSize = 14,
-				TextColor3 = UIConfig.HUD.PanelTextColor,
-				[React.Event.MouseButton1Click] = function()
-					self:setState({ showTechTreeModal = not self.state.showTechTreeModal })
-				end,
-			}),
-
-			-- Camera Mode Indicator (next to TECH)
-			CameraModeIndicator = React.createElement("Frame", {
-				Size = UDim2.new(0, UIConfig.HUD.TopButtonWidth, 0, UIConfig.HUD.TopButtonHeight),
-				Position = UDim2.new(0, (UIConfig.HUD.TopButtonWidth + 5) * 3 + 5, 0, 5),
-				BackgroundColor3 = self.state.cameraMode == "King" and Color3.fromRGB(90, 60, 40) or UIConfig.HUD.TopButtonBackground,
-				BorderSizePixel = 2,
-				BorderColor3 = self.state.cameraMode == "King" and UIConfig.HUD.AccentGold or UIConfig.HUD.TopButtonBorder,
-			}, {
-				Icon = React.createElement("TextLabel", {
-					Size = UDim2.new(1, 0, 0.5, 0),
-					Position = UDim2.fromScale(0, 0),
-					BackgroundTransparency = 1,
-					Text = self.state.cameraMode == "King" and "👑" or "🗺️",
-					Font = Enum.Font.GothamBold,
-					TextSize = 18,
-					TextColor3 = Color3.fromRGB(255, 255, 255),
-					TextYAlignment = Enum.TextYAlignment.Center,
-				}),
-				Label = React.createElement("TextLabel", {
-					Size = UDim2.new(1, 0, 0.5, 0),
-					Position = UDim2.fromScale(0, 0.5),
-					BackgroundTransparency = 1,
-					Text = self.state.cameraMode == "King" and "KING" or "RTS",
-					Font = Enum.Font.GothamBold,
-					TextSize = 10,
-					TextColor3 = self.state.cameraMode == "King" and UIConfig.HUD.AccentGold or UIConfig.HUD.PanelTextColor,
-					TextYAlignment = Enum.TextYAlignment.Top,
-				}),
-				Hint = React.createElement("TextLabel", {
-					Size = UDim2.new(1, 0, 0, 12),
-					Position = UDim2.new(0, 0, 1, 2),
-					BackgroundTransparency = 1,
-					Text = "Tab to toggle",
-					Font = Enum.Font.Gotham,
-					TextSize = 9,
-					TextColor3 = Color3.fromRGB(150, 150, 150),
-					TextYAlignment = Enum.TextYAlignment.Top,
-				}),
-			}),
-
-			-- King Health Bar (only visible in King mode)
-			KingHealthBar = self.state.cameraMode == "King" and React.createElement("Frame", {
-				Size = UDim2.new(0, UIConfig.HUD.TopButtonWidth + 80, 0, 30),
-				Position = UDim2.new(0, (UIConfig.HUD.TopButtonWidth + 5) * 3 + 10, 0, 5),
-				BackgroundColor3 = Color3.fromRGB(40, 40, 40),
-				BorderSizePixel = 2,
-				BorderColor3 = UIConfig.HUD.AccentGold,
-			}, {
-				-- Health icon
-				Icon = React.createElement("TextLabel", {
-					Size = UDim2.fromOffset(24, 24),
-					Position = UDim2.fromOffset(3, 3),
-					BackgroundTransparency = 1,
-					Text = "❤️",
-					Font = Enum.Font.GothamBold,
-					TextSize = 16,
-					TextXAlignment = Enum.TextXAlignment.Center,
-					TextYAlignment = Enum.TextYAlignment.Center,
-				}),
-
-				-- Health bar container
-				BarContainer = React.createElement("Frame", {
-					Size = UDim2.new(1, -60, 0, 16),
-					Position = UDim2.fromOffset(30, 7),
-					BackgroundColor3 = Color3.fromRGB(20, 20, 20),
-					BorderSizePixel = 1,
-					BorderColor3 = Color3.fromRGB(100, 100, 100),
-				}, {
-					-- Health bar fill (green to red based on percentage)
-					HealthBar = React.createElement("Frame", {
-						Size = UDim2.fromScale(self.state.kingHealth / self.state.kingMaxHealth, 1),
-						BackgroundColor3 = self.state.kingHealth / self.state.kingMaxHealth > 0.5
-							and Color3.fromRGB(0, 200, 0)
-							or self.state.kingHealth / self.state.kingMaxHealth > 0.25
-							and Color3.fromRGB(255, 165, 0)
-							or Color3.fromRGB(200, 0, 0),
-						BorderSizePixel = 0,
-					}),
-				}),
-
-				-- Health text (e.g., "100/100")
-				HealthText = React.createElement("TextLabel", {
-					Size = UDim2.new(1, -35, 1, 0),
-					Position = UDim2.fromOffset(30, 0),
-					BackgroundTransparency = 1,
-					Text = string.format("%d/%d", self.state.kingHealth, self.state.kingMaxHealth),
-					Font = Enum.Font.GothamBold,
-					TextSize = 11,
-					TextColor3 = Color3.fromRGB(255, 255, 255),
-					TextXAlignment = Enum.TextXAlignment.Center,
-					TextYAlignment = Enum.TextYAlignment.Center,
-					TextStrokeTransparency = 0.5,
-					TextStrokeColor3 = Color3.fromRGB(0, 0, 0),
-				}),
-			}) or nil,
-
-			-- Command Input TextBox (below MENU/STATS buttons)
-			CommandInput = React.createElement("TextBox", {
-				Size = UDim2.new(0, UIConfig.HUD.TopButtonWidth * 2 + 5, 0, 25),
-				Position = UDim2.new(0, 5, 0, UIConfig.HUD.TopButtonHeight + 10),
-				BackgroundColor3 = Color3.fromRGB(30, 30, 30),
-				BorderSizePixel = 1,
-				BorderColor3 = UIConfig.HUD.TopButtonBorder,
-				PlaceholderText = "Admin command (/help)",
-				PlaceholderColor3 = Color3.fromRGB(120, 120, 120),
-				Text = self.state.commandText,
-				Font = Enum.Font.Code,
-				TextSize = 12,
-				TextColor3 = Color3.fromRGB(0, 255, 0),
-				TextXAlignment = Enum.TextXAlignment.Left,
-				ClearTextOnFocus = false,
-				[React.Change.Text] = function(rbx)
-					self:setState({ commandText = rbx.Text })
-				end,
-				[React.Event.FocusLost] = function(rbx, enterPressed)
-					if enterPressed and self.state.commandText ~= "" then
-						-- Send command to server
-						local commandText = self.state.commandText
-						if commandText:sub(1, 1) == "/" then
-							commandText = commandText:sub(2) -- Remove leading /
-						end
-
-						HUDDebug:info("Sending admin command", { command = commandText })
-						self.gameEvent:FireServer("TestCommand", commandText)
-
-						-- Clear the text box
-						self:setState({ commandText = "" })
-					end
-				end,
-			}),
-
-			-- Center stats container (Army, Honor, Glory, Date, Gold, Food, Population)
-			CenterStats = React.createElement("Frame", {
-				Size = UDim2.new(0, 600, 1, -10),
-				Position = UDim2.new(0.5, -300, 0, 5),
-				BackgroundTransparency = 1,
-			}, {
-				Layout = React.createElement("UIListLayout", {
-					FillDirection = Enum.FillDirection.Horizontal,
-					HorizontalAlignment = Enum.HorizontalAlignment.Center,
-					VerticalAlignment = Enum.VerticalAlignment.Center,
-					Padding = UDim.new(0, 8),
-				}),
-
-				-- Army Size
-				ArmyBox = self:createStatBox("Army", self.state.armySize, "👥"),
-				-- Honor
-				HonorBox = self:createStatBox("Honor", self.state.honor, "🎖️"),
-				-- Glory
-				GloryBox = self:createStatBox("Glory", self.state.glory, "⭐"),
-				-- Date (placeholder)
-				DateBox = self:createStatBox("Date", "Y1 M1", "📅"),
-				-- Gold
-				GoldBox = self:createStatBox("Gold", self.state.resources.Gold, "💰"),
-				-- Food
-				FoodBox = self:createStatBox("Food", self.state.resources.Food, "🌾"),
-				-- Population
-				PopBox = self:createStatBox("Pop", self.state.population, "👤"),
-				-- Season (if available)
-				SeasonBox = self.state.economySnapshot and self:createStatBox(
-					"",
-					self.state.economySnapshot.season or "Spring",
-					self:getSeasonIcon(self.state.economySnapshot.season)
-				) or nil,
-				-- Weather (if available)
-				WeatherBox = self.state.economySnapshot and self:createStatBox(
-					"",
-					self.state.economySnapshot.weather or "Clear",
-					self:getWeatherIcon(self.state.economySnapshot.weather)
-				) or nil,
-			}),
+		TopBar = React.createElement(TopBar, {
+			resources = self.state.resources,
+			honor = self.state.honor,
+			glory = self.state.glory,
+			population = self.state.population,
+			date = self.state.date,
+			weather = self.state.weather,
 		}),
 
 		-- ===== BOTTOM BAR ===== (Delete/Policies | Minimap | 5 Categories | Content Area)
 		BottomBar = React.createElement("Frame", {
 			Name = "BottomBar",
-			Size = UDim2.new(1, 0, 0, UIConfig.HUD.BottomBarHeight),
-			Position = UDim2.new(0, 0, 1, 0), -- Flush to bottom
+			Size = UDim2.new(0, 1400, 0, UIConfig.HUD.BottomBarHeight), -- Fixed width to contain both images
+			Position = UDim2.new(0, 0, 1, 0), -- Flush to bottom left
 			AnchorPoint = Vector2.new(0, 1),
-			BackgroundColor3 = UIConfig.HUD.BottomBarBackground,
-			BorderSizePixel = 1,
-			BorderColor3 = UIConfig.HUD.BottomBarBorder,
+			BackgroundTransparency = 1, -- Transparent to show background images
+			BorderSizePixel = 0,
 			ZIndex = 10,
 		}, {
+
+			MainBackground = React.createElement("ImageLabel", {
+				Name = "MainBackground",
+				Size = UDim2.new(0, 800, 0, UIConfig.HUD.BottomBarHeight), -- Fixed width for left section
+				Position = UDim2.new(0, 0, 0, 0), -- Start at left edge
+				BackgroundTransparency = 1,
+				Image = "rbxassetid://102075136386279",
+				BorderSizePixel = 0,
+				ZIndex = 10,
+			}),
+
 			-- Delete/Policies buttons (stacked on far left)
 			UtilityButtons = React.createElement("Frame", {
 				Size = UDim2.new(0, UIConfig.HUD.UtilityButtonWidth, 0, UIConfig.HUD.BottomBarHeight),
-				Position = UDim2.new(0, 5, 0, 0),
+				Position = UDim2.new(0, 68, 0.26, 0), -- 20% right (160px from 800px), 20% down from top
 				BackgroundTransparency = 1,
+				ZIndex = 11, -- Above background images
 			}, {
 				Padding = React.createElement("UIPadding", {
-					PaddingTop = UDim.new(0, 15),
-					PaddingBottom = UDim.new(0, 15),
+					PaddingTop = UDim.new(0, 0),
+					PaddingBottom = UDim.new(0, 10),
 				}),
 
 				Layout = React.createElement("UIListLayout", {
 					FillDirection = Enum.FillDirection.Vertical,
-					Padding = UDim.new(0, 5),
+					Padding = UDim.new(0, 35),
 					HorizontalAlignment = Enum.HorizontalAlignment.Center,
 					VerticalAlignment = Enum.VerticalAlignment.Top,
 				}),
 
-				DeleteButton = React.createElement("TextButton", {
+				DeleteButton = React.createElement(IconButton, {
+					Name = "DeleteButton",
 					Size = UDim2.new(1, 0, 0, UIConfig.HUD.UtilityButtonHeight),
-					BackgroundColor3 = self.state.isDeleteMode and UIConfig.HUD.CategoryButtonSelected
+					Icon = "🗑️",
+					IconSize = 15,
+					IconColor = UIConfig.HUD.PanelTextColor,
+					ImageColor3 = self.state.isDeleteMode and UIConfig.HUD.CategoryButtonSelected
 						or UIConfig.HUD.UtilityButtonBackground,
-					BorderSizePixel = 1,
-					BorderColor3 = UIConfig.HUD.UtilityButtonBorder,
-					Text = "🗑️", -- Icon only
-					Font = Enum.Font.GothamBold,
-					TextSize = 18,
-					TextColor3 = UIConfig.HUD.PanelTextColor,
-					[React.Event.MouseButton1Click] = function()
+					OnClick = function()
 						local newDeleteMode = not self.state.isDeleteMode
 						self:setState({ isDeleteMode = newDeleteMode })
 						HUDDebug:info("Delete mode toggled", { isDeleteMode = newDeleteMode })
@@ -1196,16 +1075,14 @@ function HUD:render()
 					end,
 				}),
 
-				PoliciesButton = React.createElement("TextButton", {
+				PoliciesButton = React.createElement(IconButton, {
+					Name = "PoliciesButton",
 					Size = UDim2.new(1, 0, 0, UIConfig.HUD.UtilityButtonHeight),
-					BackgroundColor3 = UIConfig.HUD.UtilityButtonBackground,
-					BorderSizePixel = 1,
-					BorderColor3 = UIConfig.HUD.UtilityButtonBorder,
-					Text = "📜", -- Icon only
-					Font = Enum.Font.GothamBold,
-					TextSize = 18,
-					TextColor3 = UIConfig.HUD.PanelTextColor,
-					[React.Event.MouseButton1Click] = function()
+					Icon = "📜",
+					IconSize = 20,
+					IconColor = UIConfig.HUD.PanelTextColor,
+					ImageColor3 = UIConfig.HUD.UtilityButtonBackground,
+					OnClick = function()
 						self:setState({ showPoliciesModal = not self.state.showPoliciesModal })
 					end,
 				}),
@@ -1215,177 +1092,156 @@ function HUD:render()
 			MiniMapFrame = React.createElement("Frame", {
 				Name = "MiniMapFrame",
 				Size = UDim2.new(0, UIConfig.HUD.MinimapSize, 0, UIConfig.HUD.MinimapSize),
-				Position = UDim2.new(0, UIConfig.HUD.UtilityButtonWidth + 10, 0, 10), -- 10px from top
+				Position = UDim2.new(0, 185, 0, 40), -- 10px from topPosition = UDim2.new(0, 160, 0.2, 0),
 				BackgroundColor3 = Color3.fromRGB(0, 0, 0),
 				BorderColor3 = UIConfig.HUD.MinimapBorder,
 				BorderSizePixel = 2,
+				ClipsDescendants = true, -- Clip contents to circular shape
+				ZIndex = 9, -- Behind background images
 			}, {
+				Corner = React.createElement("UICorner", {
+					CornerRadius = UDim.new(0.5, 0), -- Make it circular (50% radius)
+				}),
 				MiniMap = React.createElement(MiniMap),
 			}),
 
 			-- Fog of War indicator
 			FogOfWarIndicator = React.createElement(FogOverlay),
 
-			-- 5 Category buttons (stacked vertically, next to minimap) - Icon only with padding
-			CategoryButtons = React.createElement("Frame", {
-				Size = UDim2.new(0, UIConfig.HUD.CategoryButtonWidth, 0, UIConfig.HUD.BottomBarHeight),
-				Position = UDim2.new(0, UIConfig.HUD.UtilityButtonWidth + UIConfig.HUD.MinimapSize + 15, 0, 0),
-				BackgroundTransparency = 1,
-			}, {
-				UIPadding = React.createElement("UIPadding", {
-					PaddingTop = UDim.new(0, 10),
-					PaddingBottom = UDim.new(0, 10),
-				}),
-
-				Layout = React.createElement("UIListLayout", {
-					FillDirection = Enum.FillDirection.Vertical,
-					Padding = UDim.new(0, 6),
-					HorizontalAlignment = Enum.HorizontalAlignment.Center,
-					VerticalAlignment = Enum.VerticalAlignment.Top,
-				}),
-
-				-- Defense button (🛡️)
-				DefenseButton = self:createCategoryButton("Defense", "🛡️"),
-				-- Economy button (💰)
-				EconomyButton = self:createCategoryButton("Economy", "💰"),
-				-- Housing button (🏠)
-				HousingButton = self:createCategoryButton("Housing", "🏠"),
-				-- Food button (🌾)
-				FoodButton = self:createCategoryButton("Food", "🌾"),
-				-- Culture button (⛪)
-				CultureButton = self:createCategoryButton("Culture", "⛪"),
-			}),
+			-- Category buttons (individually positioned)
+			DefenseButton = self:createCategoryButton("Defense", "🛡️"),
+			MilitaryButton = self:createCategoryButton("Military", "⚔️"),
+			IndustryButton = self:createCategoryButton("Industry", "💰"),
+			HousingButton = self:createCategoryButton("Housing", "🏠"),
+			FoodButton = self:createCategoryButton("Food", "🌾"),
 
 			-- Content Area (shows buildings OR selected units)
 			ContentArea = React.createElement("Frame", {
-				Size = UDim2.new(
-					1,
-					-(
-							UIConfig.HUD.UtilityButtonWidth
-							+ UIConfig.HUD.MinimapSize
-							+ UIConfig.HUD.CategoryButtonWidth
-							+ 30
-						),
-					1,
-					-10
-				),
-				Position = UDim2.new(
-					0,
-					UIConfig.HUD.UtilityButtonWidth + UIConfig.HUD.MinimapSize + UIConfig.HUD.CategoryButtonWidth + 20,
-					0,
-					5
-				),
-				BackgroundColor3 = UIConfig.HUD.ContentAreaBackground,
-				BorderSizePixel = 1,
-				BorderColor3 = UIConfig.HUD.ContentAreaBorder,
+				Size = UDim2.new(0.35, 215, 0, 10),
+				Position = UDim2.new(0, 540, 0, 45),
+				BackgroundTransparency = 1, -- Transparent to show background image
+				BorderSizePixel = 0,
+				ZIndex = 11, -- Above background images
 			}, {
 				-- Content priority: Training Panel > Production Panel > Hero Abilities > Upgrade Panel > Unit Selection > Building Menu
-				Content = hasTrainingBuildingSelected and React.createElement(TrainingPanel, {
-					selectedBuilding = self.state.selectedTrainingBuilding,
-					queue = self.state.trainingQueue,
-					onTrainUnit = function(unitType)
-						HUDDebug:info(`Training unit: {unitType}`)
-						if self.state.selectedTrainingBuilding then
-							self.gameEvent:FireServer("StartTraining", {
-								buildingId = self.state.selectedTrainingBuilding.Name,
-								unitType = unitType,
-							})
-						end
-					end,
-					onClose = function()
-						HUDDebug:info("Training panel close button clicked")
-						-- Stop polling when closing training panel
-						self.pollingBuildingId = nil
-						HUDDebug:info(`Stopped polling, pollingBuildingId set to nil`)
-						self:setState({
-							selectedTrainingBuilding = React.None,
-							trainingQueue = {},
-						})
-					end,
-				}) or hasProductionBuildingSelected and React.createElement(WorkerAssignmentPanel, {
-					selectedBuilding = self.state.selectedProductionBuilding,
-					onClose = function()
-						HUDDebug:info("Worker assignment panel close button clicked")
-						self:setState({
-							selectedProductionBuilding = React.None,
-						})
-					end,
-				}) or (self.state.cameraMode == "King" and self.state.showHeroAbilities) and React.createElement(HeroAbilitiesPanel, {
-					abilities = self.state.heroAbilities,
-					onAbilityUsed = function(abilityId)
-						HUDDebug:info(`Using hero ability: {abilityId}`)
-						self.gameEvent:FireServer("UseAbility", abilityId)
-					end,
-				}) or self.state.buildingUpgradeInfo and React.createElement(UpgradePanel, {
-					buildingInfo = self.state.buildingUpgradeInfo,
-					playerResources = self.state.resources,
-					onUpgrade = function()
-						HUDDebug:info(`Upgrading building: {self.state.buildingUpgradeInfo.buildingId}`)
-						self.gameEvent:FireServer("UpgradeBuilding", self.state.buildingUpgradeInfo.buildingId)
-					end,
-					onClose = function()
-						self:setState({ buildingUpgradeInfo = React.None })
-					end,
-				}) or hasUnitsSelected and React.createElement(UnitSelectionPanel, {
-					selectedUnits = self.state.selectedUnits,
-					selectedFormation = self.state.selectedFormation,
-					onFormationSelected = function(formationType)
-						HUDDebug:info(`Formation selected: {formationType}`)
-						self:setState({ selectedFormation = formationType })
-						-- Also update SelectionManager
-						if self.selectionManager then
-							self.selectionManager.setFormationType(formationType)
-						end
-
-						-- Immediately arrange units in formation at their current location
-						if #self.state.selectedUnits >= 2 then
-							local unitIds = {}
-							for _, unit in self.state.selectedUnits do
-								table.insert(unitIds, unit:GetAttribute("UnitId") or unit.Name)
-							end
-
-							-- Calculate average position of selected units
-							local avgPosition = Vector3.new(0, 0, 0)
-							for _, unit in self.state.selectedUnits do
-								if unit.PrimaryPart then
-									avgPosition = avgPosition + unit.PrimaryPart.Position
+				Content = hasTrainingBuildingSelected
+						and React.createElement(TrainingPanel, {
+							selectedBuilding = self.state.selectedTrainingBuilding,
+							queue = self.state.trainingQueue,
+							onTrainUnit = function(unitType)
+								HUDDebug:info(`Training unit: {unitType}`)
+								if self.state.selectedTrainingBuilding then
+									self.gameEvent:FireServer("StartTraining", {
+										buildingId = self.state.selectedTrainingBuilding.Name,
+										unitType = unitType,
+									})
 								end
-							end
-							avgPosition = avgPosition / #self.state.selectedUnits
-
-							-- Offset formation center slightly forward (in camera's facing direction)
-							-- This prevents units from colliding with each other when forming up
-							local camera = workspace.CurrentCamera
-							local cameraLook = camera.CFrame.LookVector
-							local horizontalLook = Vector3.new(cameraLook.X, 0, cameraLook.Z).Unit
-							local formationOffset = horizontalLook * 8  -- Move formation 8 studs forward from average position
-							local targetPosition = avgPosition + formationOffset
-
-							-- Send formation command to server
-							self.gameEvent:FireServer("MoveUnitsInFormation", {
-								unitIds = unitIds,
-								targetPosition = targetPosition,
-								formationType = formationType,
-							})
-
-							HUDDebug:info(`Arranging {#unitIds} units in {formationType} formation at offset position`)
-						end
-					end,
-				}) or React.createElement(BuildingMenu, {
-					tooltip = self.props.tooltip, -- Pass tooltip API down
-					resources = self.state.resources,
-					selectedCategory = self.state.selectedCategory,
-					currentWallPiece = self.state.currentWallPiece,
-					isPlacingWall = self.state.isPlacingWall,
-					onBuildingSelected = function(buildingName)
-						HUDDebug:info("Building selected for placement", { building = buildingName })
-						self:setState({
-							isPlacingBuilding = true,
-							selectedBuilding = buildingName,
+							end,
+							onClose = function()
+								HUDDebug:info("Training panel close button clicked")
+								-- Stop polling when closing training panel
+								self.pollingBuildingId = nil
+								HUDDebug:info(`Stopped polling, pollingBuildingId set to nil`)
+								self:setState({
+									selectedTrainingBuilding = React.None,
+									trainingQueue = {},
+								})
+							end,
 						})
-						self.gameEvent:FireServer("StartPlacement", buildingName)
-					end,
-				}),
+					or hasProductionBuildingSelected and React.createElement(WorkerAssignmentPanel, {
+						selectedBuilding = self.state.selectedProductionBuilding,
+						onClose = function()
+							HUDDebug:info("Worker assignment panel close button clicked")
+							self:setState({
+								selectedProductionBuilding = React.None,
+							})
+						end,
+					})
+					or (self.state.cameraMode == "King" and self.state.showHeroAbilities) and React.createElement(
+						HeroAbilitiesPanel,
+						{
+							abilities = self.state.heroAbilities,
+							onAbilityUsed = function(abilityId)
+								HUDDebug:info(`Using hero ability: {abilityId}`)
+								self.gameEvent:FireServer("UseAbility", abilityId)
+							end,
+						}
+					)
+					or self.state.buildingUpgradeInfo and React.createElement(UpgradePanel, {
+						buildingInfo = self.state.buildingUpgradeInfo,
+						playerResources = self.state.resources,
+						onUpgrade = function()
+							HUDDebug:info(`Upgrading building: {self.state.buildingUpgradeInfo.buildingId}`)
+							self.gameEvent:FireServer("UpgradeBuilding", self.state.buildingUpgradeInfo.buildingId)
+						end,
+						onClose = function()
+							self:setState({ buildingUpgradeInfo = React.None })
+						end,
+					})
+					or hasUnitsSelected
+						and React.createElement(UnitSelectionPanel, {
+							selectedUnits = self.state.selectedUnits,
+							selectedFormation = self.state.selectedFormation,
+							onFormationSelected = function(formationType)
+								HUDDebug:info(`Formation selected: {formationType}`)
+								self:setState({ selectedFormation = formationType })
+								-- Also update SelectionManager
+								if self.selectionManager then
+									self.selectionManager.setFormationType(formationType)
+								end
+
+								-- Immediately arrange units in formation at their current location
+								if #self.state.selectedUnits >= 2 then
+									local unitIds = {}
+									for _, unit in self.state.selectedUnits do
+										table.insert(unitIds, unit:GetAttribute("UnitId") or unit.Name)
+									end
+
+									-- Calculate average position of selected units
+									local avgPosition = Vector3.new(0, 0, 0)
+									for _, unit in self.state.selectedUnits do
+										if unit.PrimaryPart then
+											avgPosition = avgPosition + unit.PrimaryPart.Position
+										end
+									end
+									avgPosition = avgPosition / #self.state.selectedUnits
+
+									-- Offset formation center slightly forward (in camera's facing direction)
+									-- This prevents units from colliding with each other when forming up
+									local camera = workspace.CurrentCamera
+									local cameraLook = camera.CFrame.LookVector
+									local horizontalLook = Vector3.new(cameraLook.X, 0, cameraLook.Z).Unit
+									local formationOffset = horizontalLook * 8 -- Move formation 8 studs forward from average position
+									local targetPosition = avgPosition + formationOffset
+
+									-- Send formation command to server
+									self.gameEvent:FireServer("MoveUnitsInFormation", {
+										unitIds = unitIds,
+										targetPosition = targetPosition,
+										formationType = formationType,
+									})
+
+									HUDDebug:info(
+										`Arranging {#unitIds} units in {formationType} formation at offset position`
+									)
+								end
+							end,
+						})
+					or React.createElement(BuildingMenu, {
+						tooltip = self.props.tooltip, -- Pass tooltip API down
+						resources = self.state.resources,
+						selectedCategory = self.state.selectedCategory,
+						currentWallPiece = self.state.currentWallPiece,
+						isPlacingWall = self.state.isPlacingWall,
+						onBuildingSelected = function(buildingName)
+							HUDDebug:info("Building selected for placement", { building = buildingName })
+							self:setState({
+								isPlacingBuilding = true,
+								selectedBuilding = buildingName,
+							})
+							self.gameEvent:FireServer("StartPlacement", buildingName)
+						end,
+					}),
 			}),
 		}),
 
@@ -1395,7 +1251,7 @@ function HUD:render()
 			Size = UDim2.new(0, 280, 0, self.state.showExpandedMeters and 280 or 50),
 			Position = UDim2.new(
 				1,
-				-290,
+				-1300,
 				1,
 				-UIConfig.HUD.BottomBarHeight - (self.state.showExpandedMeters and 280 or 60)
 			),
@@ -1403,17 +1259,14 @@ function HUD:render()
 			ZIndex = 10,
 		}, {
 			-- Expand/Collapse button (arrow at top, narrower)
-			ExpandButton = React.createElement("TextButton", {
+			ExpandButton = React.createElement(IconButton, {
 				Size = UDim2.new(0, 80, 0, 20),
 				Position = UDim2.new(0.5, -40, 0, 0),
-				BackgroundColor3 = UIConfig.HUD.UtilityButtonBackground,
-				BorderSizePixel = 1,
-				BorderColor3 = UIConfig.HUD.MeterBorder,
-				Text = self.state.showExpandedMeters and "▼" or "▲",
-				Font = Enum.Font.GothamBold,
-				TextSize = 14,
-				TextColor3 = UIConfig.HUD.PanelTextColor,
-				[React.Event.MouseButton1Click] = function()
+				Icon = self.state.showExpandedMeters and "▼" or "▲",
+				IconSize = 14,
+				IconColor = UIConfig.HUD.PanelTextColor,
+				ImageColor3 = UIConfig.HUD.UtilityButtonBackground,
+				OnClick = function()
 					self:setState({ showExpandedMeters = not self.state.showExpandedMeters })
 				end,
 			}),
@@ -1608,8 +1461,9 @@ function HUD:render()
 		}) or nil,
 
 		-- Delete Confirmation Modal
-		DeleteConfirmationModal = self.state.showDeleteConfirmation and self.state.buildingToDelete
-				and React.createElement(ConfirmDeleteModal, {
+		DeleteConfirmationModal = self.state.showDeleteConfirmation
+				and self.state.buildingToDelete
+				and ConfirmDeleteModal.new({
 					buildingName = self.state.buildingToDelete.name,
 					buildingType = self.state.buildingToDelete.type,
 					refundInfo = self.state.buildingToDelete.refundInfo,
@@ -1637,38 +1491,114 @@ function HUD:render()
 			or nil,
 
 		-- Multi-Delete Confirmation Modal
-		MultiDeleteConfirmationModal = self.state.showMultiDeleteConfirmation and #self.state.buildingsToDelete > 0 and MultiDeleteModal.new({
-			buildings = self.state.buildingsToDelete,
-			totalRefund = self.state.multiDeleteRefund,
-			onConfirm = function(selectedBuildings)
-				print(string.format("[HUD] Multi-delete confirmed with %d buildings", #selectedBuildings))
+		MultiDeleteConfirmationModal = self.state.showMultiDeleteConfirmation
+				and #self.state.buildingsToDelete > 0
+				and MultiDeleteModal.new({
+					buildings = self.state.buildingsToDelete,
+					totalRefund = self.state.multiDeleteRefund,
+					onConfirm = function(selectedBuildings)
+						print(string.format("[HUD] Multi-delete confirmed with %d buildings", #selectedBuildings))
 
-				-- Get RemoveWallPiece event for walls
-				local RemoteEvents = ReplicatedStorage:FindFirstChild("RemoteEvents")
-				local removePieceEvent = RemoteEvents and RemoteEvents:FindFirstChild("RemoveWallPiece")
+						-- Get RemoveWallPiece event for walls
+						local RemoteEvents = ReplicatedStorage:FindFirstChild("RemoteEvents")
+						local removePieceEvent = RemoteEvents and RemoteEvents:FindFirstChild("RemoveWallPiece")
 
-				for _, buildingInfo in selectedBuildings do
-					print(string.format("[HUD] Deleting: %s (isWall: %s)", buildingInfo.name, tostring(buildingInfo.isWall)))
-					if buildingInfo.isWall then
-						-- Delete wall piece
-						if removePieceEvent then
-							print("[HUD] Firing RemoveWallPiece for wall:", buildingInfo.name)
-							removePieceEvent:FireServer(buildingInfo.model)
-						else
-							warn("[HUD] RemoveWallPiece event not found!")
+						-- Track deletions for undo (do this BEFORE deleting)
+						local deletionBatch = {}
+						for _, buildingInfo in selectedBuildings do
+							local wallPieceType = nil
+							if buildingInfo.isWall then
+								-- Extract wall piece type from name (e.g., "Straight_1234.56" -> "Straight")
+								wallPieceType = buildingInfo.name:match("^([^_]+)")
+							end
+
+							local buildingData = {
+								type = wallPieceType or buildingInfo.type,
+								name = buildingInfo.name,
+								position = buildingInfo.model.PrimaryPart and buildingInfo.model.PrimaryPart.Position
+									or Vector3.new(0, 0, 0),
+								rotation = buildingInfo.model.PrimaryPart
+										and buildingInfo.model.PrimaryPart.Orientation
+									or Vector3.new(0, 0, 0),
+								isWall = buildingInfo.isWall or false,
+							}
+							table.insert(deletionBatch, buildingData)
 						end
-					else
-						-- Delete building
-						print("[HUD] Firing DeleteBuilding for building:", buildingInfo.name)
-						self.gameEvent:FireServer("DeleteBuilding", { buildingId = buildingInfo.name })
+
+						-- Add entire batch as one history entry
+						if #deletionBatch > 0 then
+							task.defer(function()
+								self:addToDeletionHistory(deletionBatch)
+							end)
+						end
+
+						-- Delete buildings
+						for _, buildingInfo in selectedBuildings do
+							print(
+								string.format(
+									"[HUD] Deleting: %s (isWall: %s)",
+									buildingInfo.name,
+									tostring(buildingInfo.isWall)
+								)
+							)
+							if buildingInfo.isWall then
+								-- Delete wall piece
+								if removePieceEvent then
+									print("[HUD] Firing RemoveWallPiece for wall:", buildingInfo.name)
+									removePieceEvent:FireServer(buildingInfo.model)
+								else
+									warn("[HUD] RemoveWallPiece event not found!")
+								end
+							else
+								-- Delete building
+								print("[HUD] Firing DeleteBuilding for building:", buildingInfo.name)
+								self.gameEvent:FireServer("DeleteBuilding", { buildingId = buildingInfo.name })
+							end
+						end
+						self:setState({
+							showMultiDeleteConfirmation = false,
+							buildingsToDelete = {},
+							multiDeleteRefund = React.None,
+						})
+					end,
+					onCancel = function()
+						self:setState({
+							showMultiDeleteConfirmation = false,
+							buildingsToDelete = {},
+							multiDeleteRefund = React.None,
+						})
+					end,
+				})
+			or nil,
+
+		-- Undo Button (bottom-right, above minimap)
+		UndoButton = React.createElement(UndoButton, {
+			history = self.state.deletionHistory,
+			onUndo = function()
+				if #self.state.deletionHistory > 0 then
+					local lastDeletion = self.state.deletionHistory[#self.state.deletionHistory]
+
+					-- Send undo request to server
+					self.gameEvent:FireServer("UndoDeletion", lastDeletion)
+
+					-- Remove from history
+					local newHistory = {}
+					for i = 1, #self.state.deletionHistory - 1 do
+						table.insert(newHistory, self.state.deletionHistory[i])
 					end
+					self:setState({ deletionHistory = newHistory })
 				end
-				self:setState({ showMultiDeleteConfirmation = false, buildingsToDelete = {}, multiDeleteRefund = React.None })
 			end,
-			onCancel = function()
-				self:setState({ showMultiDeleteConfirmation = false, buildingsToDelete = {}, multiDeleteRefund = React.None })
+		}),
+
+		-- Battle Log (bottom-right, above undo button)
+		BattleLog = React.createElement(BattleLog, {
+			messages = self.state.battleLogMessages,
+			expanded = self.state.battleLogExpanded,
+			onToggleExpanded = function()
+				self:setState({ battleLogExpanded = not self.state.battleLogExpanded })
 			end,
-		}) or nil,
+		}),
 
 		-- Tutorial Modal (required buildings guide)
 		-- Step 1 (Keep) always shows, Steps 2-3 only if tutorialEnabled

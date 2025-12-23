@@ -11,7 +11,7 @@ local WallSystem = require(script.Parent.Parent.Systems.WallSystem)
 
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local StorageDebug = DebugManager.createChannel("Storage", false)
-local channel = DebugManager.createChannel("BuildingManager", false)
+local channel = DebugManager.createChannel("BuildingManager", true) -- Enable debug for AI building issues
 
 local BuildingManager = {}
 
@@ -26,12 +26,57 @@ if not BuildingsFolder then
 	BuildingsFolder.Parent = Workspace
 end
 
+-- Check if a position is clear of other buildings and units
+local function isPositionClear(position: Vector3, minimumDistance: number): boolean
+	minimumDistance = minimumDistance or 25 -- Default 25 studs minimum distance
+
+	-- Check against all existing buildings
+	local buildingsFolder = Workspace:FindFirstChild("Buildings")
+	if buildingsFolder then
+		for _, building in buildingsFolder:GetChildren() do
+			if building:IsA("Model") then
+				local buildingPos = building:GetPivot().Position
+				local distance = (buildingPos - position).Magnitude
+				if distance < minimumDistance then
+					local buildingType = building:GetAttribute("BuildingType") or building.Name
+					channel:warn(
+						`Position {position} blocked by {buildingType} at {buildingPos} (distance: {math.floor(distance)} studs, minimum: {minimumDistance})`
+					)
+					return false
+				end
+			end
+		end
+	end
+
+	-- Check against units
+	local unitsFolder = Workspace:FindFirstChild("Units")
+	if unitsFolder then
+		for _, unit in unitsFolder:GetChildren() do
+			if unit:IsA("Model") then
+				local unitPos = unit:GetPivot().Position
+				local distance = (unitPos - position).Magnitude
+				if distance < 15 then -- Units need less clearance
+					local unitType = unit:GetAttribute("UnitType") or unit.Name
+					channel:warn(
+						`Position {position} blocked by {unitType} unit at {unitPos} (distance: {math.floor(distance)} studs)`
+					)
+					return false
+				end
+			end
+		end
+	end
+
+	channel:info(`Position {position} is clear - no collisions detected`)
+	return true
+end
+
 function BuildingManager.createBuilding(
-	player: Player,
+	player: Player | number, -- Can be Player object or ownerId (number for AI)
 	buildingName: string,
 	cframe: CFrame,
 	wallPieceType: string?,
-	manualRotation: number?
+	manualRotation: number?,
+	skipCost: boolean?
 ): Instance?
 	local buildingInfo = GameData.Buildings[buildingName]
 	if not buildingInfo then
@@ -39,17 +84,37 @@ function BuildingManager.createBuilding(
 		return nil
 	end
 
-	-- Check if player can build in this location (territory check)
-	local quadrant = SpawnManager.getPlayerQuadrant(player.UserId)
+	-- Get ownerId and ownerName (support both Player and AI)
+	local ownerId: number
+	local ownerName: string
+	local isAI = false
+
+	if typeof(player) == "Instance" and player:IsA("Player") then
+		ownerId = player.UserId
+		ownerName = player.Name
+	else
+		ownerId = player :: number
+		ownerName = `AI_{ownerId}`
+		isAI = true
+	end
+
+	-- Check if owner can build in this location (territory check)
+	local quadrant = SpawnManager.getPlayerQuadrant(ownerId)
 	if quadrant then
 		local buildPosition = cframe.Position
 		if not SpawnManager.isPositionInEstate(buildPosition, quadrant) then
-			channel:warn(`{player.Name} tried to build outside their estate (Quadrant {quadrant})`)
+			channel:warn(`{ownerName} tried to build outside their estate (Quadrant {quadrant})`)
 			return nil
 		end
 	end
 
-	channel:info(`Creating {buildingName} for {player.Name}`)
+	-- Check for collisions with existing buildings and units
+	if not isPositionClear(cframe.Position, 25) then
+		channel:warn(`{ownerName} cannot build {buildingName} - position blocked by existing structure or unit`)
+		return nil
+	end
+
+	channel:info(`Creating {buildingName} for {ownerName}`)
 
 	-- Check for Assets first
 	local Assets = ReplicatedStorage:FindFirstChild("Assets")
@@ -104,25 +169,14 @@ function BuildingManager.createBuilding(
 	if modelAsset then
 		-- Use the actual model
 		building = modelAsset
-		building.Name = `{buildingName}_{player.UserId}`
+		building.Name = `{buildingName}_{ownerId}`
 
-		if isWallBuilding then
-			channel:info(
-				string.format(
-					"Placing %s at CFrame pos (%.1f, %.1f, %.1f)",
-					buildingName,
-					cframe.Position.X,
-					cframe.Position.Y,
-					cframe.Position.Z
-				)
-			)
-		end
-
+		-- Position the building using the provided CFrame exactly as-is
 		building:PivotTo(cframe)
 	else
 		-- [FIXED] Fallback logic to ensure it creates a Model with a PrimaryPart
 		building = Instance.new("Model")
-		building.Name = `{buildingName}_{player.UserId}`
+		building.Name = `{buildingName}_{ownerId}`
 
 		local part = Instance.new("Part")
 		part.Name = "MainPart"
@@ -143,7 +197,7 @@ function BuildingManager.createBuilding(
 	end
 
 	-- Add ownership attribute
-	building:SetAttribute("Owner", player.UserId)
+	building:SetAttribute("Owner", ownerId)
 	building:SetAttribute("BuildingType", buildingName)
 	building:SetAttribute("IsConstructed", true)
 
@@ -171,13 +225,26 @@ function BuildingManager.createBuilding(
 		WallSystem.registerWall(building)
 	end
 
-	-- Track in player data
-	PlayerManager.addBuilding(player, building)
+	-- Lazy-load GameplayEnhancementManager to avoid circular dependency (only for real players)
+	if not isAI then
+		local success, err = pcall(function()
+			local GameplayEnhancementManager = require(script.Parent.GameplayEnhancementManager)
+			GameplayEnhancementManager.onBuildingCreated(building, buildingName, ownerId)
+		end)
+		if not success then
+			warn("GameplayEnhancementManager error:", err)
+		end
+	end
 
-	-- Special case for Keep
-	local playerData = PlayerManager.get(player)
-	if playerData and buildingName == "Keep" then
-		playerData.Keep = building
+	-- Track in player data (only for real players, not AI)
+	if not isAI and typeof(player) == "Instance" then
+		PlayerManager.addBuilding(player :: Player, building)
+
+		-- Special case for Keep
+		local playerData = PlayerManager.get(player :: Player)
+		if playerData and buildingName == "Keep" then
+			playerData.Keep = building
+		end
 	end
 
 	return building

@@ -7,7 +7,7 @@ local ServerStorage = game:GetService("ServerStorage")
 
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local UnitManagerDebug = DebugManager.createChannel("UnitManager", false)
+local UnitManagerDebug = DebugManager.createChannel("UnitManager", true) -- Enabled for AI debugging
 local Managers = script.Parent
 local CombatManager = require(Managers.CombatManager)
 local MoraleManager = require(Managers.MoraleManager)

@@ -29,7 +29,7 @@ local playerFogData: { [Player]: FogOfWarData } = {}
 -- Initialize fog of war for a player
 function FogOfWarManager.init(player: Player)
 	playerFogData[player] = {
-		enabled = true, -- Fog of war ON by default
+		enabled = false, -- Fog of war ON by default
 		visibleUnits = {},
 		visibleBuildings = {},
 	}

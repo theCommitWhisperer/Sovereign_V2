@@ -46,7 +46,7 @@ local UIConfig = {
 		TopBarBorder = Color3.fromRGB(76, 62, 62), -- Tundora
 
 		-- Bottom Bar: Delete/Policies (stacked) | Minimap | 5 Categories (stacked) | Content Area
-		BottomBarHeight = 210,
+		BottomBarHeight = 300,
 		BottomBarBackground = Color3.fromRGB(90, 78, 78), -- Don Juan
 		BottomBarBorder = Color3.fromRGB(76, 62, 62), -- Tundora
 
@@ -64,22 +64,41 @@ local UIConfig = {
 		StatLabelColor = Color3.fromRGB(209, 148, 92), -- Whiskey
 
 		-- Bottom Bar: Delete/Policies Buttons (stacked, left side)
-		UtilityButtonWidth = 50,
-		UtilityButtonHeight = 35,
+		UtilityButtonWidth = 57,
+		UtilityButtonHeight = 55,
 		UtilityButtonBackground = Color3.fromRGB(138, 106, 106), -- Opium
 		UtilityButtonBorder = Color3.fromRGB(76, 62, 62), -- Tundora
 
 		-- Minimap (in bottom bar, next to utility buttons)
-		MinimapSize = 170,
+		MinimapSize = 210,
 		MinimapBackground = Color3.fromRGB(76, 62, 62), -- Tundora
 		MinimapBorder = Color3.fromRGB(90, 78, 78), -- Don Juan
 
 		-- Category Buttons (5 stacked: Castle, Sword, House, Food, Hammer) - Icon only
-		CategoryButtonWidth = 50,
-		CategoryButtonHeight = 32,
+		CategoryButtonWidth = 57,
+		CategoryButtonHeight = 57,
 		CategoryButtonBackground = Color3.fromRGB(138, 106, 106), -- Opium
 		CategoryButtonSelected = Color3.fromRGB(209, 148, 92), -- Whiskey
 		CategoryButtonBorder = Color3.fromRGB(76, 62, 62), -- Tundora
+
+		-- Category Button Images (custom button backgrounds for each category)
+		CategoryButtonImages = {
+			Defense = "rbxassetid://74964510346496", -- Castle Tower button
+			Military = "rbxassetid://114683118358730", -- Sword icon button
+			Industry = "rbxassetid://76829588648181", -- Hammer button
+			Housing = "rbxassetid://76068788954168", -- Medieval House button
+			Food = "rbxassetid://117222411027155", -- Wheat button
+		},
+
+		-- Category Button Positions (X, Y offset from top left of BottomBar)
+		-- Calculated: 55px button height, spacing of 44px between button starts
+		CategoryButtonPositions = {
+			Defense = { X = 442, Y = 36 },
+			Military = { X = 442, Y = 80 }, -- 38 + 44
+			Industry = { X = 442, Y = 124 }, -- 82 + 44
+			Food = { X = 442, Y = 168 }, -- 126 + 44
+			Housing = { X = 442, Y = 212 }, -- 170 + 44
+		},
 
 		-- Content Area (shows buildings or selected units or training)
 		ContentAreaBackground = Color3.fromRGB(90, 78, 78), -- Don Juan

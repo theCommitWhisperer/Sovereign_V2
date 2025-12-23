@@ -6,7 +6,8 @@
     "ReplicatedStorage": {
       "Shared": { "$path": "src/shared" },
       "Packages": { "$path": "Packages" },
-      "BuildingModels": { "$path": "src/shared/Assets/Buildings" }
+      "BuildingModels": { "$path": "src/shared/Assets/Buildings" },
+      "UIAssets": { "$path": "src/shared/assets/ui" }
     },
 
     "ServerScriptService": {

@@ -601,334 +601,505 @@
     "key_code": "The 'VICTORY_CONDITIONS' and 'LOSS_CONDITIONS' tables define conditions and their 'check' functions. 'create' initializes player victory data. 'checkVictory' and 'checkDefeat', called periodically, evaluate these conditions and, upon being met, set a flag and fire a 'Victory' or 'Defeat' GameEvent to the client. It uses data from PlayerManager, PopulationManager, CaravanManager, and ConsumptionManager."
   },
   "src/server/Managers/WeatherManager.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "Manages weather conditions and their effects on production. It simulates different weather types (Clear, Rain, Drought, Storm) based on the current season and applies multipliers to farm and mining production. The manager ensures that weather changes dynamically and notifies the client of these changes.",
+    "purpose": "To add a layer of environmental unpredictability to the game, forcing players to adapt their economic strategies to changing weather conditions. It creates a more dynamic and immersive world.",
+    "files_called": [
+      "script.Parent.PlayerManager",
+      "script.Parent.SeasonManager",
+      "ReplicatedStorage.Shared.DebugManager",
+      "ReplicatedStorage:FindFirstChild(\"RemoteEvents\")",
+      "RemoteEvents:FindFirstChild(\"GameEvent\")"
+    ],
+    "key_code": "The `WEATHER_EFFECTS` and `WEATHER_PROBABILITIES` tables define the core mechanics. The `changeWeather` function uses these probabilities to randomly select a new weather type based on the season. The `update` function, called periodically, checks if it's time to change the weather. The manager also provides functions like `getFarmProductionMultiplier` which combines weather and seasonal effects."
   },
   "src/server/Managers/WorkerManager.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "Manages the entire lifecycle of worker units, including peasants, specialized workers (like Woodcutters, Farmers), and haulers. It handles assigning peasants to jobs, transforming them into specialized workers, and managing their tasks, which include gathering resources from nodes, producing goods at buildings, and transporting resources between production buildings and storage. The manager uses a state machine to control worker behavior.",
+    "purpose": "To create a sophisticated and automated economic simulation where workers and haulers form the backbone of the player's economy. It abstracts the low-level details of resource gathering and transport, allowing the player to focus on higher-level strategy.",
+    "files_called": [
+      "ReplicatedStorage.Shared.GameData",
+      "script.Parent.ResourceNodeManager",
+      "script.Parent.PlayerManager",
+      "script.Parent.BuildingManager",
+      "script.Parent.ProductionChainManager",
+      "script.Parent.WeatherManager",
+      "ReplicatedStorage.Shared.DebugManager",
+      "ReplicatedStorage:FindFirstChild(\"RemoteEvents\")",
+      "RemoteEvents:FindFirstChild(\"GameEvent\")"
+    ],
+    "key_code": "The manager is built around two main task lists: `WorkerTasks` and `HaulerTasks`. The `updateWorkerTasks` and `updateHaulerTasks` functions, run on `RunService.Heartbeat`, iterate through these tasks and execute logic based on each unit's state (e.g., `GoingToWorkplace`, `Gathering`, `GoingToPickup`). Key functions include `assignWorkerToBuilding`, `assignHauler`, `findStorageWithSpace`, and `findBuildingWithResources` to orchestrate the complex logistics."
   },
   "src/server/Systems/CaravanSystem.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A lightweight system that acts as a periodic timer for the `CaravanManager`. It ensures that the logic for updating caravan progress and resolving their outcomes is executed at a regular interval for all active players.",
+    "purpose": "To provide a simple and reliable ticker for the caravan system, decoupling the timing logic from the core `CaravanManager`. This separation of concerns improves code organization and makes the update interval easy to configure.",
+    "files_called": [
+      "script.Parent.Parent.Managers.CaravanManager",
+      "script.Parent.Parent.Managers.PlayerManager",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The system's `init` function spawns a `while true` loop with a `task.wait(CARAVAN_UPDATE_INTERVAL)`. Inside the loop, it iterates through all players and calls `CaravanManager.update(player)` to trigger the actual caravan logic."
   },
   "src/server/Systems/ConsumptionSystem.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A system that periodically triggers the food consumption logic for all players. It calls the `ConsumptionManager` to perform the actual consumption and then sends notifications to the player if they are starving, with increasingly urgent messages based on the duration of the starvation.",
+    "purpose": "To enforce the core gameplay loop of feeding the population by acting as a timer that calls the `ConsumptionManager`. It also enhances player feedback by creating and sending starvation warnings through the `NotificationManager`.",
+    "files_called": [
+      "script.Parent.Parent.Managers.ConsumptionManager",
+      "script.Parent.Parent.Managers.PlayerManager",
+      "script.Parent.Parent.Managers.NotificationManager",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The system's `init` function spawns a `while true` loop with a `task.wait(CONSUMPTION_CYCLE)`. Inside the loop, it calls `ConsumptionManager.consumeFood(player)`. If consumption fails, it checks the starvation duration using `ConsumptionManager.getStarvationDuration(player)` and sends critical notifications via `NotificationManager`."
   },
   "src/server/Systems/DashboardSystem.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A system responsible for periodically sending economy dashboard updates to clients. It acts as a timer, calling the `EconomyDashboardManager` to gather the latest economic data and send it to each player.",
+    "purpose": "To ensure that the player's UI is kept up-to-date with the latest economic information. By using a dedicated system with a configurable interval, it provides regular updates without overwhelming the client or the server.",
+    "files_called": [
+      "script.Parent.Parent.Managers.EconomyDashboardManager",
+      "script.Parent.Parent.Managers.PlayerManager",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The system's `init` function spawns a `while true` loop with a `task.wait(DASHBOARD_UPDATE_INTERVAL)`. Inside this loop, it iterates through all active players and calls `EconomyDashboardManager.sendUpdate(player)`. It also sends an initial update when a player joins."
   },
   "src/server/Systems/EventSystem.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A lightweight system that periodically attempts to trigger random events for each player. It serves as a timer, calling the `EventManager` at a regular interval to handle the complex logic of event selection and execution.",
+    "purpose": "To introduce an element of chance and unpredictability into the game by ensuring that the random event system is checked regularly. This decouples the event triggering from other game logic and makes the check-in interval easily configurable.",
+    "files_called": [
+      "script.Parent.Parent.Managers.EventManager",
+      "script.Parent.Parent.Managers.PlayerManager",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The system's `init` function spawns a `while true` loop with a `task.wait(EVENT_CHECK_INTERVAL)`. Inside the loop, it iterates through all active players and calls `EventManager.tryTriggerEvent(player)` to see if a random event should occur."
   },
   "src/server/Systems/HappinessSystem.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A pure calculation module that determines a player's happiness level. It takes into account a wide variety of factors, including food supply, starvation status, overcrowding, tax rates, seasonal effects, and the availability of luxury goods like bread and ale. The final happiness score is clamped between 0 and 100.",
+    "purpose": "To provide a centralized and comprehensive calculation for player happiness, which can then be used by other managers (like `HappinessManager` and `RevoltManager`) to influence gameplay. It encapsulates the complex logic of how different game states affect population morale.",
+    "files_called": [
+      "script.Parent.Parent.Managers.PlayerManager",
+      "script.Parent.Parent.Managers.TaxManager",
+      "script.Parent.Parent.Managers.ConsumptionManager",
+      "script.Parent.Parent.Managers.PopulationManager",
+      "script.Parent.Parent.Managers.SeasonManager"
+    ],
+    "key_code": "The core of the module is the `calculateHappiness` function. It starts with a base happiness of 50 and then adds or subtracts points based on a series of checks: food levels, `ConsumptionManager.isStarving()`, `PopulationManager.isOvercrowded()`, tax rates, `SeasonManager.getHappinessModifier()`, and the amount of Bread and Ale in the player's resources. The final result is clamped using `math.clamp(happiness, 0, 100)`."
   },
   "src/server/Systems/MaintenanceSystem.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A system that periodically triggers the maintenance cost logic for all players. It calls the `MaintenanceManager` to deduct resources for building upkeep. If a player fails to pay, this system applies the consequences by calling the `WorkerManager` to reduce production efficiency and sends escalating notifications to the player via the `NotificationManager`.",
+    "purpose": "To enforce the economic challenge of building maintenance by acting as a timer that calls the `MaintenanceManager`. It also handles the application of penalties for non-payment, creating a clear cause-and-effect loop for the player.",
+    "files_called": [
+      "script.Parent.Parent.Managers.MaintenanceManager",
+      "script.Parent.Parent.Managers.PlayerManager",
+      "script.Parent.Parent.Managers.WorkerManager",
+      "script.Parent.Parent.Managers.NotificationManager",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The system's `init` function spawns a `while true` loop with a `task.wait(MAINTENANCE_CYCLE)`. Inside the loop, it calls `MaintenanceManager.payMaintenance(player)`. If payment fails, it retrieves the penalty multiplier from `MaintenanceManager.getDisrepairPenalty(player)` and applies it to the player's production by calling `WorkerManager.setProductionModifier(player, penalty)`. It also sends increasingly severe notifications based on the `disrepairLevel`."
   },
   "src/server/Systems/MovementSystem.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A server-side system that handles unit movement using Roblox's `PathfindingService`. It finds units that have an `IsMoving` attribute set to true and a `TargetPosition` vector, then computes a path to that target. The system moves the unit along the path's waypoints and includes logic to handle blocked paths and recalculate if necessary.",
+    "purpose": "To provide an intelligent and robust movement system for all units, ensuring they can navigate around obstacles in the game world. By running on the server and using attributes, it decouples the movement logic from the unit's controller, allowing any part of the game to command a unit to move by simply setting two attributes.",
+    "files_called": [
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The core logic resides in the `update` function, which is connected to `RunService.Heartbeat`. It iterates through all children in the `workspace.Units` folder. For units with `IsMoving` and `TargetPosition` attributes, it creates a path using `PathfindingService:CreatePath()` and `path:ComputeAsync()`. The system then uses `humanoid:MoveTo()` to guide the unit to each waypoint in sequence. The `activePaths` table tracks the state for each moving unit."
   },
   "src/server/Systems/PopulationSystem.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A system that manages population growth for each player. It periodically checks if enough time has passed for a new peasant to be spawned, based on a dynamic growth rate calculated by the `PopulationManager`. If successful, it calls the manager to create the new unit and notifies the client.",
+    "purpose": "To provide a time-based trigger for population growth, decoupling the growth check from the core game loop and making the frequency of checks easily configurable. It ensures that population growth happens at a controlled and predictable pace.",
+    "files_called": [
+      "script.Parent.Parent.Managers.PopulationManager",
+      "script.Parent.Parent.Managers.PlayerManager",
+      "ReplicatedStorage.Shared.DebugManager",
+      "ReplicatedStorage:FindFirstChild(\"RemoteEvents\")",
+      "RemoteEvents:FindFirstChild(\"GameEvent\")"
+    ],
+    "key_code": "The system's `init` function spawns a `while true` loop with a `task.wait(10)`. Inside the loop, `checkPopulationGrowth` is called for each player. This function gets the `growthRate` from `PopulationManager.getGrowthRate(player)` and compares it to the time since the last growth attempt. If enough time has passed, it calls `PopulationManager.tryGrowPopulation(player)` and sends a `PopulationGrew` GameEvent to the client."
   },
   "src/server/Systems/RevoltSystem.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A lightweight system that periodically triggers the revolt risk calculation for each player. It serves as a timer, calling the `RevoltManager` at a regular interval to update the revolt status.",
+    "purpose": "To ensure that the revolt risk for each player is checked consistently, decoupling the check from the main game loop and making the interval easily configurable. This system drives the core logic of the `RevoltManager`.",
+    "files_called": [
+      "script.Parent.Parent.Managers.RevoltManager"
+    ],
+    "key_code": "The system's `init` function spawns a `while true` loop with a `task.wait(10)`. Inside the loop, it iterates through all active players and calls `RevoltManager.update(player)` to recalculate revolt risk and trigger any necessary consequences."
   },
   "src/server/Systems/SeasonSystem.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A lightweight system that periodically triggers the season progression for each player. It acts as a timer, calling the `SeasonManager` at a regular interval to check if the current season has ended and to advance to the next one.",
+    "purpose": "To ensure that the game's seasons advance at a steady and predictable pace. By decoupling the season check from the main game loop, it provides a simple and reliable way to manage the flow of time in the game world.",
+    "files_called": [
+      "script.Parent.Parent.Managers.SeasonManager",
+      "script.Parent.Parent.Managers.PlayerManager",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The system's `init` function spawns a `while true` loop with a `task.wait(SEASON_UPDATE_INTERVAL)`. Inside this loop, it iterates through all active players and calls `SeasonManager.update(player)`, which contains the logic for checking and advancing the season."
   },
   "src/server/Systems/TaxSystem.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A pure calculation module that determines the amount of tax to be collected from a player. It calculates the tax based on the player's total number of units (a simple measure of population) and the current tax rate set in the `TaxManager`.",
+    "purpose": "To provide a simple, centralized function for calculating a player's tax bill. By abstracting this calculation, it allows the `TaxManager` to focus on the timing and application of taxes, while the calculation itself can be easily modified in one place.",
+    "files_called": [
+      "script.Parent.Parent.Managers.PlayerManager",
+      "script.Parent.Parent.Managers.TaxManager"
+    ],
+    "key_code": "The core of the module is the `calculateTaxes` function. It retrieves the player's data and tax information from their respective managers, calculates the tax as `math.floor(population * taxRate)`, and returns the result. The population is determined by the number of units the player owns (`#playerData.Units`)."
   },
   "src/server/Systems/TradeSystem.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A lightweight system that periodically triggers the dynamic price update logic for the in-game market. It acts as a timer, calling the `TradeManager` at a regular interval to ensure that resource prices fluctuate based on supply, demand, and other economic factors.",
+    "purpose": "To create a dynamic and responsive market by ensuring that prices are not static. By decoupling the price update from other game logic, it provides a simple and reliable ticker for the `TradeManager`'s core economic simulation.",
+    "files_called": [
+      "script.Parent.Parent.Managers.TradeManager",
+      "script.Parent.Parent.Managers.PlayerManager",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The system's `init` function spawns a `while true` loop with a `task.wait(PRICE_UPDATE_INTERVAL)`. Inside this loop, it iterates through all active players and calls `TradeManager.updatePrices(player)` to trigger the price adjustment logic."
   },
   "src/server/Systems/VictorySystem.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A system that periodically checks for victory and defeat conditions for all players. It serves as a timer, calling the `VictoryConditionManager` at a regular interval to evaluate whether any player has met the criteria for winning or losing the game.",
+    "purpose": "To provide a reliable and consistent check for the game's end-state. By decoupling the victory and defeat checks from the main game loop, it ensures that the game ends promptly when the conditions are met, without adding complexity to other systems.",
+    "files_called": [
+      "script.Parent.Parent.Managers.VictoryConditionManager",
+      "script.Parent.Parent.Managers.PlayerManager",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The system's `init` function spawns a `while true` loop with a `task.wait(VICTORY_CHECK_INTERVAL)`. Inside this loop, it iterates through all active players and calls both `VictoryConditionManager.checkVictory(player)` and `VictoryConditionManager.checkDefeat(player)`."
   },
   "src/server/Systems/VikingRaidSystem.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A system that manages periodic Viking raids against players. It can be enabled or disabled per player and includes a configurable peace time before the first raid. The system spawns waves of Viking units that become progressively more difficult. The spawned Vikings are assigned to a special 'Viking' faction and are commanded to attack the player's Keep.",
+    "purpose": "To provide a recurring PVE challenge for players, forcing them to build defenses and maintain a standing army. The scaling difficulty ensures that the threat remains relevant throughout the game, creating tension and a need for military preparedness.",
+    "files_called": [
+      "script.Parent.Parent.Managers.UnitManager",
+      "script.Parent.Parent.Managers.CombatManager",
+      "ReplicatedStorage.Shared.DebugManager",
+      "game.ReplicatedStorage:FindFirstChild(\"RemoteEvents\")",
+      "RemoteEvents:FindFirstChild(\"GameEvent\")"
+    ],
+    "key_code": "The system is driven by the `updateRaids` function, which runs on `RunService.Heartbeat`. It checks the `activeRaids` table to see if a player's raid timer (`nextRaidTime`) has expired. If so, `spawnRaid` is called, which calculates a spawn position near the player's Keep, determines the number and type of Vikings to spawn based on the `currentRaidNumber`, and then uses `UnitManager.createUnit` to create the hostile units. The system then commands the new units to attack the player's Keep by setting their `TargetPosition` and `IsMoving` attributes."
   },
   "src/server/Systems/WallSystem.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A comprehensive system for managing wall segments. It uses a grid-based approach to track the placement of walls and automatically updates their visuals based on adjacent segments. This 'auto-tiling' logic selects the correct wall piece (straight, corner, tower) from an asset pack based on a bitmask calculated from neighboring walls.",
+    "purpose": "To abstract the complexity of building contiguous, visually appealing walls. Instead of requiring players to manually select and rotate each piece, this system automatically handles the logic, allowing for a much more fluid and intuitive building experience. It is the core of the 'smart' wall building feature.",
+    "files_called": [
+      "ReplicatedStorage.Shared.WallGridConfig"
+    ],
+    "key_code": "The system revolves around the `wallGrid`, a 2D table that stores wall instances by their grid coordinates. The `updateWallVisuals` function is the heart of the system. When a wall is added or removed, this function is called for the affected cell and its neighbors. It calculates a `bitmask` representing the neighboring walls, looks up the correct asset and rotation in the `ADJACENCY_LOOKUP` table, and then replaces the existing wall model with the new, correctly oriented one. The `registerWall` and `unregisterWall` functions are the public interface for adding and removing walls from the grid."
   },
   "src/server/Systems/WallSystemServer.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "Handles the server-side logic for placing and removing complex wall paths. It receives a `PlaceWallPath` event from the client, which contains an array of wall pieces to be placed. The system validates this path for security and game rules (e.g., distance from player, segment length) and then creates each wall piece. It also handles a `RemoveWallPiece` event for deleting individual segments.",
+    "purpose": "To provide a secure and validated server-side endpoint for the complex wall building features initiated by the client's `WallBuilderController`. It ensures that players cannot build invalid or exploitatively large wall sections, acting as a critical server-side check for a client-driven building system.",
+    "files_called": [],
+    "key_code": "The `initialize` function sets up listeners for the `PlaceWallPath` and `RemoveWallPiece` RemoteEvents. When `placePathEvent` is fired, the `validatePath` function checks the incoming data for exploits. If valid, it iterates through the `pathData` array and calls `placeSinglePiece` for each point, creating and anchoring the physical wall models in the workspace."
   },
   "src/server/Systems/WeatherSystem.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A lightweight system that periodically triggers weather updates for each player. It serves as a timer, calling the `WeatherManager` at a regular interval to check if the current weather duration has expired and to initiate a weather change.",
+    "purpose": "To ensure that weather conditions change dynamically over time. By decoupling the weather update check from the main game loop, it provides a simple and reliable ticker for the `WeatherManager`'s core environmental simulation.",
+    "files_called": [
+      "script.Parent.Parent.Managers.WeatherManager",
+      "script.Parent.Parent.Managers.PlayerManager",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The system's `init` function spawns a `while true` loop with a `task.wait(WEATHER_UPDATE_INTERVAL)`. Inside this loop, it iterates through all active players and calls `WeatherManager.update(player)`. This triggers the logic within the `WeatherManager` to check if the `weatherDuration` has been exceeded and a new weather state should be rolled."
   },
   "src/shared/BuildingTypeHelper.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A shared helper module that provides a unified system for classifying and categorizing buildings based on their data in `GameData`. It offers a suite of functions to check a building's capabilities, such as whether it produces resources, requires workers, provides housing, or can attack. This eliminates the need for scattered and duplicative logic throughout the codebase.",
+    "purpose": "To centralize all building classification logic in one place, making the code cleaner, more maintainable, and easier to extend with new building types. Any script on the client or server can use this module to quickly understand the capabilities of a building without needing to parse the raw `GameData` itself.",
+    "files_called": [
+      "ReplicatedStorage.Shared.GameData"
+    ],
+    "key_code": "The module consists of a series of boolean classification functions (e.g., `isResourceProducer`, `isTrainingBuilding`, `isStorageBuilding`) that read the `GameData.Buildings` table. It also includes higher-level functions like `getBuildingCapabilities`, which returns a list of all functions a building can perform, and `hasCapability`, which checks for a specific function. These helpers are used extensively by managers and systems to make decisions about buildings."
   },
   "src/shared/Hello.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A simple test module that, when called, uses the `DebugManager` to print the message 'Hello, world!' to a dedicated 'Hello' channel in the developer console.",
+    "purpose": "This module serves as a basic example or test case for ensuring that the `DebugManager` is functioning correctly. It provides a straightforward way to verify that custom debug channels can be created and that messages can be logged to them.",
+    "files_called": [
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The module requires `DebugManager`, creates a new channel named 'Hello', and returns a function. When this function is executed, it calls `channel:info('Hello, world!')` to log the message."
   },
   "src/shared/WallGridConfig.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A shared configuration module that contains all the essential data and helper functions for the wall building system. It defines the local offsets for each wall piece, the size of the grid, snapping radiuses, and provides functions for converting between world positions and grid coordinates. It is a critical component for both the client-side placement visualization and the server-side auto-tiling logic.",
+    "purpose": "To centralize all hard-coded values and geometric calculations related to the wall grid. By providing a single source of truth for this data, it ensures that both the client and server are perfectly synchronized in how they handle wall placement, snapping, and grid calculations.",
+    "files_called": [],
+    "key_code": "The module contains the `PIECES` table, which defines the `connectionPointOffset` for each wall type. It also includes the `GRID_SIZE` constant and the `toGrid` and `fromGrid` functions, which are used throughout the wall building systems to translate between world space and the abstract wall grid. The `getModelCFrame` function is also key, as it calculates the precise CFrame needed to align a wall piece's pivot so that its connection points snap to the grid."
   },
   "src/shared/DebugManager/init.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A centralized, shared module for handling all debug logging. It allows for the creation of named 'channels' (e.g., 'Weather', 'Combat'), each of which can be individually enabled or disabled. It supports different log levels (info, warn, error) and formats the output with icons and channel names for clarity. The entire system can be globally disabled via the `DebugManager.Enabled` flag.",
+    "purpose": "To provide a powerful and flexible logging system that helps developers debug the game without cluttering the console. By using channels, developers can focus on logs from specific systems, making it much easier to trace bugs and understand the flow of data. The global toggle allows all logging to be silenced in a production environment.",
+    "files_called": [],
+    "key_code": "The core function is `createChannel(name, enabled)`, which returns a channel object with `info`, `warn`, and `error` methods. These methods call the internal `logWithLevel` function, which formats the message and prints it to the console. The `logWithLevel` function also stores a history of all logs in the `logHistory` table, which can be retrieved with `getLogHistory()`."
   },
   "src/shared/DebugManager/Manager/DebugManager.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A centralized utility for logging and debugging. It provides a simple interface for logging messages with different severity levels (ERROR, WARN, INFO, DEBUG) and from different systems. It includes a custom JSON encoder to safely handle Vector3 values in log data.",
+    "purpose": "To provide a structured and filterable logging system. By allowing logs to be categorized by system and severity, it helps developers to focus on relevant information and diagnose issues more efficiently. The ability to set a log level allows for performance tuning by suppressing less critical messages.",
+    "files_called": [
+      "HttpService"
+    ],
+    "key_code": "The `log` function is the core of the manager. It checks if debugging is enabled and if the message's log level meets the `currentLogLevel`. It then formats a detailed log message including a timestamp, level, system name, the message itself, and any optional data serialized to JSON. It provides convenience wrappers like `error`, `warn`, `info`, and `debug`."
   },
   "src/shared/DebugManager/Manager.spec/DebugManager.spec.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A test script for the `DebugManager` module. It uses a BDD-style testing framework (likely TestEz) to verify the core functionality of the logging system. The tests ensure that the manager can be created, that messages can be logged without errors (including with data tables and Vector3 values), and that logging channels can be created, enabled, and disabled as expected.",
+    "purpose": "To ensure the reliability and stability of the `DebugManager`. By testing its public API, this script guarantees that the logging system works as intended and that future changes do not break its core features, which are critical for debugging the rest of the application.",
+    "files_called": [
+      "script.Parent.Parent"
+    ],
+    "key_code": "The script uses a `describe` block to group tests for the `DebugManager`. Each `it` block defines a specific test case. `expect()` is used to make assertions. For example, `expect(typeof(DebugManager)).to.equal('table')` verifies that the module returns a table, and `expect(function() ... end).never.to.throw()` ensures that logging functions can be called without causing an error."
   },
   "src/shared/GameData/BuildingsData.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A comprehensive data module that defines the properties and attributes of every building in the game. It serves as a central database for all building-related information, including their cost, size, storage capacity, production capabilities, maintenance costs, and defensive stats. The data is organized into a large table, with each key representing a unique building type.",
+    "purpose": "To provide a single, authoritative source of truth for all building data. This centralization makes it easy to balance the game, add new buildings, or modify existing ones without having to search through multiple scripts. It is a critical part of the game's data-driven architecture, read by numerous managers and systems on both the client and server.",
+    "files_called": [],
+    "key_code": "The module returns a single, large table where each key is a building's name (e.g., `BuildingsData.Keep`, `BuildingsData.Farm`). The value for each key is another table containing a wide range of properties defined by the `BuildingData` type, such as `cost`, `construction`, `storage_capacity`, `produces_resource`, `housing_capacity`, and `defense_value`."
   },
   "src/shared/GameData/GameData.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A central data module that aggregates all core game data. It imports and combines data from other specialized modules like `BuildingsData` and `UnitsData`. It also defines the properties for the different player factions, including their name, description, colors, and starting conditions.",
+    "purpose": "To act as the top-level container for all static game data. By consolidating all data sources into a single, easily accessible table, it simplifies data management and ensures that all parts of the game have a consistent view of the game's core configuration.",
+    "files_called": [
+      "script.BuildingsData",
+      "script.UnitsData"
+    ],
+    "key_code": "The module creates a `GameData` table and populates it by requiring `BuildingsData` and `UnitsData`. It also defines the `Factions` table, which contains detailed configuration for each playable faction, including their name, colors, and starting peasant count. The entire `GameData` table is then returned."
   },
   "src/shared/GameData/init.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "An older, alternative version of the main `GameData` module. It serves a similar purpose by aggregating core game data, such as `BuildingsData` and `UnitsData`, and defining faction properties. However, the faction data in this file appears to be different from the one in `src/shared/GameData/GameData.luau`, suggesting this might be a legacy or alternative configuration.",
+    "purpose": "To act as a container for a specific set of game configurations. This file is likely used for a different game mode, testing scenario, or represents an older version of the game's balance and setup. Its existence alongside another `GameData` file suggests a need for multiple, distinct game configurations.",
+    "files_called": [
+      "script.BuildingsData",
+      "script.UnitsData"
+    ],
+    "key_code": "Similar to the other `GameData` module, this script creates a `GameData` table, populates it by requiring `BuildingsData` and `UnitsData`, and defines a `Factions` table with starting conditions. The key difference lies in the specific values within the `Factions` table, such as different starting resources and peasant counts."
   },
   "src/shared/GameData/MapData.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A data module that defines the configurations for all playable maps in the game. Each map has properties such as its size, terrain type, maximum number of players, quadrant sizes, and resource density. It also includes helper functions to get a list of all available maps and to retrieve the configuration for a specific map by name.",
+    "purpose": "To provide a centralized and easily editable repository for all map-related data. This allows for the creation of diverse and balanced maps that can be selected in the game lobby. It is a key part of the game's data-driven design, allowing developers and designers to add or modify maps without changing game logic.",
+    "files_called": [],
+    "key_code": "The module returns a `MapData` table which contains a `Maps` table. This `Maps` table holds the configuration for each map, keyed by the map's name (e.g., `ClassicPlains`, `LargeContinent`). It also provides two helper functions: `getMap(mapName)` to retrieve a specific map's data, and `getMapList()` to get an array of all map names, which is useful for populating UI elements."
   },
   "src/shared/GameData/ResourcesData.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A data module that defines the properties of all the different resources available in the game. Each resource has a `display_name`, an `icon` for UI purposes, a boolean `is_tradeable` to determine if it can be bought or sold, and a `max_carry_amount` for units transporting it.",
+    "purpose": "To provide a centralized and easily editable repository for all resource-related data. This allows for consistent use of resource properties across the entire game, from UI displays to gameplay mechanics like trading and unit carrying capacity. It is a fundamental part of the game's data-driven architecture.",
+    "files_called": [],
+    "key_code": "The module returns a single `ResourcesData` table. Each key in this table is the name of a resource (e.g., `Wood`, `Gold`, `Food`), and the value is a table containing the resource's specific properties, as defined by the `ResourceData` type."
   },
   "src/shared/GameData/UnitsData.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A data module that defines the properties and attributes of every unit in the game. It serves as a central database for all unit-related information, including their cost, health, and combat stats.",
+    "purpose": "To provide a single, authoritative source of truth for all unit data. This centralization makes it easy to balance the game, add new units, or modify existing ones without having to search through multiple scripts. It is a critical part of the game's data-driven architecture, read by managers and systems on both the client and server.",
+    "files_called": [],
+    "key_code": "The module returns a single, large table where each key is a unit's name (e.g., `UnitsData.King`). The value for each key is another table containing a wide range of properties defined by the `UnitData` type, such as `cost`, `health`, and `combat`."
   },
   "src/shared/GameData.spec/BuildingsData.spec.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A test script for the `BuildingsData` module. It uses a BDD-style testing framework (likely TestEz) to verify the core functionality of the building data. The tests ensure that the module can be loaded, that it is a non-empty table, and that it contains essential buildings like the Keep with the correct data types for its properties.",
+    "purpose": "To ensure the reliability and stability of the `BuildingsData` module. By testing its public API, this script guarantees that the building data works as intended and that future changes do not break its core features, which are critical for the rest of the application.",
+    "files_called": [
+      "script.Parent.Parent.GameData"
+    ],
+    "key_code": "The script uses a `describe` block to group tests for the `BuildingsData` module. Each `it` block defines a specific test case. `expect()` is used to make assertions. For example, `expect(typeof(BuildingsData)).to.equal('table')` verifies that the module returns a table, and `expect(BuildingsData.Keep).to.be.a('table')` ensures that the Keep building is defined."
   },
   "src/shared/GameData.spec/ResourcesData.spec.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A test script for the `ResourcesData` module. It uses a BDD-style testing framework (likely TestEz) to verify the core functionality of the resource data. The tests ensure that the module can be loaded, that it is a non-empty table, and that it contains essential resources like Wood and Gold with the correct data types for their properties.",
+    "purpose": "To ensure the reliability and stability of the `ResourcesData` module. By testing its public API, this script guarantees that the resource data works as intended and that future changes do not break its core features, which are critical for the rest of the application.",
+    "files_called": [
+      "script.Parent.Parent.GameData.ResourcesData"
+    ],
+    "key_code": "The script uses a `describe` block to group tests for the `ResourcesData` module. Each `it` block defines a specific test case. `expect()` is used to make assertions. For example, `expect(typeof(ResourcesData)).to.equal('table')` verifies that the module returns a table, and `expect(ResourcesData.Wood).to.be.a('table')` ensures that the Wood resource is defined."
   },
   "src/shared/GameData.spec/UnitsData.spec.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A test script for the `UnitsData` module. It uses a BDD-style testing framework (likely TestEz) to verify the core functionality of the unit data. The tests ensure that the module can be loaded, that it is a non-empty table, and that it contains essential units like the Peasant and King with the correct data types for their properties.",
+    "purpose": "To ensure the reliability and stability of the `UnitsData` module. By testing its public API, this script guarantees that the unit data works as intended and that future changes do not break its core features, which are critical for the rest of the application.",
+    "files_called": [
+      "script.Parent.Parent.GameData"
+    ],
+    "key_code": "The script uses a `describe` block to group tests for the `UnitsData` module. Each `it` block defines a specific test case. `expect()` is used to make assertions. For example, `expect(UnitsData).to.be.a('table')` verifies that the module returns a table, and `expect(UnitsData.Peasant).to.be.ok()` ensures that the Peasant unit is defined."
   },
   "src/shared/PlayerData/init.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A simple module that returns the `PlayerManager` module.",
+    "purpose": "To provide a shorthand for accessing the `PlayerManager` module. This is likely a remnant of a previous organizational structure.",
+    "files_called": [
+      "script.PlayerManager"
+    ],
+    "key_code": "The module's only line of code is `return require(script.PlayerManager)`."
   },
   "src/shared/Remotes/GetStats.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A simple module that returns `true`.",
+    "purpose": "The purpose of this module is not immediately clear. It may be a placeholder or a flag for a feature that is not yet implemented.",
+    "files_called": [],
+    "key_code": "The module's only line of code is `return true`."
   },
   "src/ui/App.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "The main entry point for the UI. It uses React to render the different screens of the game, such as the main menu, settings, lobby, and HUD. It also handles the routing between these screens.",
+    "purpose": "To provide a single, consistent, and easily accessible source for the UI, ensuring that the correct screen is displayed at the right time. It also provides a way to pass data between screens, such as the game start data to the HUD.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Router",
+      "ReplicatedStorage.Shared.DebugManager",
+      "script.Parent.screens.MainMenu.MainMenu",
+      "script.Parent.screens.Settings.Settings",
+      "script.Parent.screens.Lobby.Lobby",
+      "script.Parent.screens.HUD.HUD",
+      "script.Parent.screens.PostGame.VictoryScreen",
+      "script.Parent.screens.PostGame.DefeatScreen",
+      "script.Parent.screens.Keybindings.Keybindings",
+      "script.Parent.components.Tooltip"
+    ],
+    "key_code": "The `App` component is a React component that renders the `Router` component. The `Router` component then renders the correct screen based on the current route. The `App` component also listens for the `GameStarted` and `GameLeft` events and updates the route accordingly."
   },
   "src/ui/LobbySettings.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A data module that defines all the configurable settings available in the game lobby. The lobby UI is built dynamically from this configuration, so adding, removing, or changing a setting here will automatically update the UI.",
+    "purpose": "To provide a single, authoritative source of truth for all lobby settings. This centralization makes it easy to add new settings or modify existing ones without having to search through multiple scripts. It is a critical part of the game's data-driven architecture, read by the lobby UI.",
+    "files_called": [],
+    "key_code": "The module returns a single, large table where each key is a category of settings (e.g., `LobbySettings.MapSettings`). The value for each key is another table containing a list of settings, each with an `id`, `label`, `type`, and `defaultValue`."
   },
   "src/ui/main.client.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "The main entry point for the UI. It creates a new ScreenGui and then uses ReactRoblox to render the `App` component into it.",
+    "purpose": "To initialize the UI and render the main `App` component. This script is the bridge between the game and the React-based UI.",
+    "files_called": [
+      "ReplicatedStorage.Shared.DebugManager",
+      "game.ReplicatedStorage.Packages.react",
+      "game.ReplicatedStorage.Packages.react-roblox",
+      "script.Parent.App"
+    ],
+    "key_code": "The script creates a new `ScreenGui` and then uses `ReactRoblox.createRoot()` to create a new root. It then calls `root:render()` to render the `App` component."
   },
   "src/ui/Router.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A simple router component that renders a component based on the current route.",
+    "purpose": "To provide a simple way to switch between different screens in the UI. It takes a `route` and a `routes` table as props and renders the component that corresponds to the current route.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The `Router` component is a React component that takes a `route` and a `routes` table as props. It then renders the component that corresponds to the current route. If no component is found for the current route, it renders nothing."
   },
   "src/ui/UIConfig.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A data module that defines the visual style of the UI. It contains information about fonts, colors, and sizes for various UI components. It also contains a detailed configuration for the HUD and the lobby page.",
+    "purpose": "To provide a single, authoritative source of truth for all UI styling. This centralization makes it easy to change the look and feel of the UI without having to search through multiple scripts. It is a critical part of the game's data-driven architecture, read by all UI components.",
+    "files_called": [],
+    "key_code": "The module returns a single, large table where each key is a category of UI settings (e.g., `UIConfig.Font`, `UIConfig.Color`, `UIConfig.HUD`). The value for each key is another table containing a list of settings for that category."
   },
   "src/ui/components/Button.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A simple button component that can be used throughout the UI. It takes a number of props to customize its appearance and behavior.",
+    "purpose": "To provide a reusable button component that can be used throughout the UI. This centralization makes it easy to change the look and feel of all buttons in the UI without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.UIConfig"
+    ],
+    "key_code": "The `Button` component is a React component that renders a `TextButton` with a number of props to customize its appearance and behavior. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/components/Checkbox.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A simple checkbox component that can be used throughout the UI. It takes a `checked` prop to determine whether it is checked or not, and an `onValueChanged` prop to handle when the checkbox is clicked.",
+    "purpose": "To provide a reusable checkbox component that can be used throughout the UI. This centralization makes it easy to change the look and feel of all checkboxes in the UI without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.UIConfig",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The `Checkbox` component is a React component that renders a `TextButton` with a `Frame` inside of it. The `Frame` is used to create the checkmark. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/components/MedievalCorners.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A decorative component that adds medieval-style corners to a frame. It takes a `size`, `color`, and `thickness` prop to customize its appearance.",
+    "purpose": "To provide a reusable component for adding medieval-style corners to frames. This centralization makes it easy to change the look and feel of all medieval-style corners in the UI without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.UIConfig"
+    ],
+    "key_code": "The `MedievalCorners` component is a React component that renders four `Frame` components, one for each corner. Each corner is made up of two `Frame` components, one for the horizontal line and one for the vertical line. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/components/Modal.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A generic modal component that can be used for overlays such as policies, menus, stats, etc. It takes a `title`, `visible`, `onClose`, and `children` prop to customize its appearance and behavior.",
+    "purpose": "To provide a reusable modal component that can be used throughout the UI. This centralization makes it easy to change the look and feel of all modals in the UI without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.UIConfig"
+    ],
+    "key_code": "The `Modal` component is a React component that renders a `ScreenGui` with a semi-transparent background and a centered scroll/parchment frame. The frame contains a header, a content area, and a footer. The content area is a `ScrollingFrame` that can be used to display any content. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/components/Panel.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A reusable panel component for consistent UI containers. It can be customized with a `medieval` prop to add medieval styling.",
+    "purpose": "To provide a reusable panel component that can be used throughout the UI. This centralization makes it easy to change the look and feel of all panels in the UI without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.UIConfig",
+      "script.Parent.MedievalCorners"
+    ],
+    "key_code": "The `Panel` component is a React component that renders a `Frame`. If the `medieval` prop is true, it also renders a `UIStroke` and the `MedievalCorners` component. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/components/Row.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A component that displays a label and a control in a single row.",
+    "purpose": "To provide a reusable component for displaying a label and a control in a single row. This centralization makes it easy to change the look and feel of all rows in the UI without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.UIConfig"
+    ],
+    "key_code": "The `Row` component is a React component that renders a `Frame` with a `UIListLayout`. The `Frame` contains a `TextLabel` and a `Frame` that contains the control. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/components/Slider.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A reusable slider component for things like volume control. It takes a `value`, `min`, `max`, and `onValueChanged` prop to customize its behavior.",
+    "purpose": "To provide a reusable slider component that can be used throughout the UI. This centralization makes it easy to change the look and feel of all sliders in the UI without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.UIConfig"
+    ],
+    "key_code": "The `Slider` component is a React component that renders a `Frame` with a `TextLabel`, a `Frame` for the slider, and a `TextButton` for the handle. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/components/Textbox.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A reusable textbox component. It takes a `Text` and `onTextChanged` prop to customize its behavior.",
+    "purpose": "To provide a reusable textbox component that can be used throughout the UI. This centralization makes it easy to change the look and feel of all textboxes in the UI without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.UIConfig",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The `Textbox` component is a React component that renders a `TextBox`. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/components/Title.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A reusable title component. It takes a `Text` prop to customize its behavior.",
+    "purpose": "To provide a reusable title component that can be used throughout the UI. This centralization makes it easy to change the look and feel of all titles in the UI without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.UIConfig"
+    ],
+    "key_code": "The `Title` component is a React component that renders a `TextLabel`. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/components/Toggle.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A reusable component for toggling boolean values or cycling through a list of options. It takes a `value`, `onValueChanged`, and `options` prop to customize its behavior.",
+    "purpose": "To provide a reusable component for toggling boolean values or cycling through a list of options. This centralization makes it easy to change the look and feel of all toggles in the UI without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.UIConfig"
+    ],
+    "key_code": "The `Toggle` component is a React component that renders a `Frame` with a `TextLabel` and two `TextButton` components. The `TextButton` components are used to cycle through the options. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/components/Tooltip.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A reusable tooltip component. It takes a `text` and `target` prop to customize its behavior.",
+    "purpose": "To provide a reusable tooltip component that can be used throughout the UI. This centralization makes it easy to change the look and feel of all tooltips in the UI without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.UIConfig"
+    ],
+    "key_code": "The `Tooltip` component is a React component that renders a `ScreenGui` with a `Frame` and a `TextLabel`. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/components/TutorialModal.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A modal that guides players through building required structures. It takes a `visible`, `currentStep`, and `onBuildRequested` prop to customize its behavior.",
+    "purpose": "To provide a tutorial for new players. This centralization makes it easy to change the look and feel of the tutorial without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.UIConfig",
+      "script.Parent.Modal"
+    ],
+    "key_code": "The `TutorialModal` component is a React component that renders a `Modal` component. The `Modal` component contains a `Frame` with a `TextLabel` and a `TextButton`. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/screens/HUD/AchievementNotification.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A toast notification for unlocked achievements. It takes an `achievement` prop to customize its behavior.",
+    "purpose": "To provide a reusable toast notification for unlocked achievements. This centralization makes it easy to change the look and feel of all achievement notifications in the UI without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.Parent.UIConfig"
+    ],
+    "key_code": "The `AchievementNotification` component is a React component that renders a `Frame` with a `TextLabel` and a `TextButton`. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/screens/HUD/BuildingMenu.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A menu that displays a list of buildings that can be built. It takes a `resources`, `selectedCategory`, `currentWallPiece`, `isPlacingWall`, `onBuildingSelected`, and `tooltip` prop to customize its behavior.",
+    "purpose": "To provide a menu for building buildings. This centralization makes it easy to change the look and feel of the building menu without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.Parent.UIConfig",
+      "game.ReplicatedStorage.Shared.GameData"
+    ],
+    "key_code": "The `BuildingMenu` component is a React component that renders a `Frame` with a `UIGridLayout`. The `Frame` contains a number of `TextButton` components, one for each building. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/screens/HUD/ConfirmDeleteModal.luau": {
     "description": "A React modal component that asks for confirmation before deleting a single building. Shows building type with friendly name, resource refund amount (50% of cost), and displays a warning that the action cannot be undone. Uses medieval styling with brown/gold colors.",
@@ -940,28 +1111,60 @@
     "key_code": "ConfirmDeleteModal.new() creates a centered modal dialog with building name, refund info, warning text, and Confirm/Cancel buttons. Uses React.createElement to build UI tree with medieval color scheme (browns: RGB 45,35,25 for background, golds: RGB 220,180,120 for titles, red: RGB 200,50,50 for warnings). Calls onConfirm or onCancel callbacks based on user choice."
   },
   "src/ui/screens/HUD/FogOverlay.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A simple fog of war status indicator.",
+    "purpose": "To provide a simple fog of war status indicator.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react"
+    ],
+    "key_code": "The `FogOverlay` component is a React component that renders a `TextLabel`."
   },
   "src/ui/screens/HUD/HeroAbilitiesPanel.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "Displays the King's hero abilities with cooldown indicators. It takes a `tooltip` prop to customize its behavior.",
+    "purpose": "To provide a reusable panel for displaying hero abilities. This centralization makes it easy to change the look and feel of the hero abilities panel without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.Parent.UIConfig",
+      "script.Parent.Parent.Parent.components.Panel"
+    ],
+    "key_code": "The `HeroAbilitiesPanel` component is a React component that renders a `Panel` component. The `Panel` component contains a `TextLabel` and a `Frame` with a `UIGridLayout`. The `Frame` contains a number of `TextButton` components, one for each ability. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/screens/HUD/HUD.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "The main component for the heads-up display. It renders all the other HUD components, such as the resource display, building menu, and minimap. It also handles the logic for showing and hiding the various modals.",
+    "purpose": "To provide a single, consistent, and easily accessible source for the HUD, ensuring that the correct information is displayed at the right time. It also provides a way to pass data between HUD components, such as the game start data to the resource display.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.Parent.UIConfig",
+      "ReplicatedStorage.Shared.DebugManager",
+      "script.Parent.ResourceDisplay",
+      "script.Parent.BuildingMenu",
+      "script.Parent.SelectionPanel",
+      "script.Parent.TrainingPanel",
+      "script.Parent.UnitSelectionPanel",
+      "script.Parent.WorkerAssignmentPanel",
+      "script.Parent.MiniMap",
+      "script.Parent.FogOverlay",
+      "script.Parent.Parent.Policies.Policies",
+      "script.Parent.Parent.Menu.Menu",
+      "script.Parent.Parent.Stats.Stats",
+      "script.Parent.Parent.Parent.components.TutorialModal",
+      "script.Parent.HeroAbilitiesPanel",
+      "script.Parent.UpgradePanel",
+      "script.Parent.TechTree",
+      "script.Parent.QuestTracker",
+      "script.Parent.AchievementNotification",
+      "script.Parent.ConfirmDeleteModal",
+      "script.Parent.MultiDeleteModal"
+    ],
+    "key_code": "The `HUD` component is a React component that renders a `ScreenGui` with a number of other components. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/screens/HUD/MiniMap.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "An interactive minimap with clickable camera movement and unit/building indicators.",
+    "purpose": "To provide a reusable minimap component. This centralization makes it easy to change the look and feel of the minimap without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.Parent.UIConfig"
+    ],
+    "key_code": "The `MiniMap` component is a React component that renders an `ImageButton` with a number of `Frame` components. The `Frame` components are used to display the unit dots and building icons. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/screens/HUD/MultiDeleteModal.luau": {
     "description": "A React modal component for confirming deletion of multiple buildings/walls at once. Features checkboxes for each building, shows friendly names (e.g., 'Woodcutters Post' instead of 'Woodcutters_Post_8820940408'), displays summary of selected buildings, total refund, and medieval-themed styling. Built as a proper React function component to support hooks.",
@@ -973,112 +1176,185 @@
     "key_code": "MultiDeleteModalComponent uses React.useState to track selectedStates for checkboxes (all selected by default). FRIENDLY_NAMES table maps building types to display names. Calculates selectedCount and buildingsByType for summary. Creates scrollable list of checkboxes for each building. Wrapper function MultiDeleteModal.new() calls React.createElement(MultiDeleteModalComponent, props) to maintain API compatibility. onConfirm callback receives array of selected buildings."
   },
   "src/ui/screens/HUD/QuestTracker.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A side panel showing active quests with progress.",
+    "purpose": "To provide a reusable quest tracker component. This centralization makes it easy to change the look and feel of the quest tracker without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.Parent.UIConfig",
+      "script.Parent.Parent.Parent.components.Panel"
+    ],
+    "key_code": "The `QuestTracker` component is a React component that renders a `Panel` component. The `Panel` component contains a `TextLabel` and a `Frame` with a `UIListLayout`. The `Frame` contains a number of `Frame` components, one for each quest. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/screens/HUD/ResourceDisplay.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A display for the player's resources.",
+    "purpose": "To provide a reusable resource display component. This centralization makes it easy to change the look and feel of the resource display without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.Parent.UIConfig"
+    ],
+    "key_code": "The `ResourceDisplay` component is a React component that renders a `Frame` with a `UIListLayout`. The `Frame` contains a number of `Frame` components, one for each resource. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/screens/HUD/SelectionPanel.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A panel that displays information about the currently selected units.",
+    "purpose": "To provide a reusable selection panel component. This centralization makes it easy to change the look and feel of the selection panel without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.Parent.UIConfig"
+    ],
+    "key_code": "The `SelectionPanel` component is a React component that renders a `Frame` with two `TextLabel` components. The first `TextLabel` is the header, and the second `TextLabel` displays the selected units. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/screens/HUD/TechTree.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A full-screen modal showing the technology research tree.",
+    "purpose": "To provide a reusable tech tree component. This centralization makes it easy to change the look and feel of the tech tree without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.Parent.UIConfig",
+      "script.Parent.Parent.Parent.components.Modal",
+      "script.Parent.Parent.Parent.components.Button"
+    ],
+    "key_code": "The `TechTree` component is a React component that renders a `Modal` component. The `Modal` component contains a `Frame` with a `UIGridLayout`. The `Frame` contains a number of `Frame` components, one for each technology. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/screens/HUD/TrainingPanel.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A panel that displays the training queue for a selected building.",
+    "purpose": "To provide a reusable training panel component. This centralization makes it easy to change the look and feel of the training panel without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "game.ReplicatedStorage.Shared.GameData",
+      "script.Parent.Parent.Parent.UIConfig"
+    ],
+    "key_code": "The `TrainingPanel` component is a React component that renders a `Frame` with a `UIGridLayout` and a `ScrollingFrame`. The `UIGridLayout` contains a number of `TextButton` components, one for each unit that can be trained. The `ScrollingFrame` contains a number of `Frame` components, one for each unit in the training queue. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/screens/HUD/UnitControls.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A placeholder component for displaying selected unit information and available actions.",
+    "purpose": "To provide a placeholder for a future unit controls component.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react"
+    ],
+    "key_code": "The `UnitControls` component is a React component that renders `nil`."
   },
   "src/ui/screens/HUD/UnitSelectionPanel.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A panel that displays information about the currently selected units, including their type, count, formation, and stance.",
+    "purpose": "To provide a reusable unit selection panel component. This centralization makes it easy to change the look and feel of the unit selection panel without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.Parent.UIConfig"
+    ],
+    "key_code": "The `UnitSelectionPanel` component is a React component that renders a `Frame` with a number of other components, including `TextLabel`s, `TextButton`s, and `Frame`s. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/screens/HUD/UpgradePanel.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A panel that displays available upgrades for a selected building.",
+    "purpose": "To provide a reusable upgrade panel component. This centralization makes it easy to change the look and feel of the upgrade panel without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.Parent.UIConfig",
+      "script.Parent.Parent.Parent.components.Panel",
+      "script.Parent.Parent.Parent.components.Button"
+    ],
+    "key_code": "The `UpgradePanel` component is a React component that renders a `Panel` component. The `Panel` component contains a number of other components, including `TextLabel`s, `Frame`s, and a `Button`. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/screens/HUD/WorkerAssignmentPanel.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A panel that displays information about workers assigned to a production building.",
+    "purpose": "To provide a reusable worker assignment panel component. This centralization makes it easy to change the look and feel of the worker assignment panel without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "game.ReplicatedStorage.Shared.GameData",
+      "script.Parent.Parent.Parent.UIConfig"
+    ],
+    "key_code": "The `WorkerAssignmentPanel` component is a React component that renders a `Frame` with a number of other components, including `TextLabel`s, `TextButton`s, and `ScrollingFrame`s. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/screens/Keybindings/Keybindings.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "The keybindings screen where players can remap controls.",
+    "purpose": "To provide a keybindings screen where players can remap controls. This centralization makes it easy to change the look and feel of the keybindings screen without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.Parent.UIConfig",
+      "script.Parent.Parent.Parent.components.Button",
+      "script.Parent.Parent.Parent.Parent.Client.Camera.KeybindingsManager"
+    ],
+    "key_code": "The `Keybindings` component is a React component that renders a `ScreenGui` with a `ScrollingFrame` and a number of other components. The `ScrollingFrame` contains a number of `Frame` components, one for each keybinding. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/screens/Lobby/Lobby.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "The lobby screen where players can change game settings and start the game.",
+    "purpose": "To provide a lobby screen where players can change game settings and start the game. This centralization makes it easy to change the look and feel of the lobby screen without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.Parent.UIConfig",
+      "script.Parent.Parent.Parent.LobbySettings",
+      "script.Parent.Parent.Parent.components.Button",
+      "script.Parent.Parent.Parent.components.Toggle",
+      "script.Parent.PlayerList",
+      "script.Parent.MapPreview",
+      "script.Parent.Parent.Parent.components.Row",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The `Lobby` component is a React component that renders a `Frame` with a number of other components, including `TextLabel`s, `TextButton`s, `Frame`s, and `ScrollingFrame`s. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/screens/Lobby/MapPreview.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A component that displays a preview of the selected map.",
+    "purpose": "To provide a reusable map preview component. This centralization makes it easy to change the look and feel of the map preview without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.Parent.UIConfig"
+    ],
+    "key_code": "The `MapPreview` component is a React component that renders a `Frame` with a `TextLabel` and a `Frame`. The `TextLabel` displays the map name, and the `Frame` displays the map preview. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/screens/Lobby/PlayerList.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A component that displays a list of players in the lobby.",
+    "purpose": "To provide a reusable player list component. This centralization makes it easy to change the look and feel of the player list without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.Parent.UIConfig"
+    ],
+    "key_code": "The `PlayerList` component is a React component that renders a `Frame` with a `UIListLayout`. The `Frame` contains a number of `Frame` components, one for each player. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/screens/Lobby/SelectionManager.client.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "Handles unit selection and visual feedback.",
+    "purpose": "To provide a reusable selection manager component. This centralization makes it easy to change the look and feel of the selection manager without having to search through multiple scripts.",
+    "files_called": [
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The `SelectionManager` is a module that handles unit selection and visual feedback. It provides functions for adding and removing units from the selection, clearing the selection, and getting the currently selected units. It also handles box selection and creating selection indicators for selected units."
   },
   "src/ui/screens/MainMenu/MainMenu.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "The main menu screen.",
+    "purpose": "To provide a main menu screen. This centralization makes it easy to change the look and feel of the main menu screen without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.Parent.UIConfig",
+      "script.Parent.Parent.Parent.components.Title",
+      "script.Parent.Parent.Parent.components.Button",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The `MainMenu` component is a React component that renders a `ScreenGui` with a `Frame` and a number of other components. The `Frame` contains the title and buttons. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/screens/Menu/Menu.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A modal for the in-game menu.",
+    "purpose": "To provide a reusable menu component. This centralization makes it easy to change the look and feel of the menu without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.Parent.components.Modal",
+      "script.Parent.Parent.Parent.UIConfig",
+      "ReplicatedStorage.Shared.DebugManager"
+    ],
+    "key_code": "The `Menu` component is a React component that renders a `Modal` component. The `Modal` component contains a `Frame` with a `UIListLayout`. The `Frame` contains a number of `TextButton` components, one for each menu option. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/screens/Policies/Policies.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A modal for managing kingdom policies.",
+    "purpose": "To provide a reusable policies component. This centralization makes it easy to change the look and feel of the policies without having to search through multiple scripts.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react",
+      "script.Parent.Parent.Parent.components.Modal",
+      "script.Parent.Parent.Parent.UIConfig"
+    ],
+    "key_code": "The `Policies` component is a React component that renders a `Modal` component. The `Modal` component contains a `Frame` with a `UIListLayout`. The `Frame` contains a number of `Frame` components, one for each policy category. Each policy category `Frame` contains a number of `Frame` components, one for each policy. The component gets its default styling from the `UIConfig` module."
   },
   "src/ui/screens/PostGame/DefeatScreen.luau": {
-    "description": "",
-    "purpose": "",
-    "files_called": "",
-    "key_code": ""
+    "description": "A placeholder component for the defeat screen.",
+    "purpose": "To provide a placeholder for a future defeat screen component.",
+    "files_called": [
+      "game.ReplicatedStorage.Packages.react"
+    ],
+    "key_code": "The `DefeatScreen` component is a React component that renders `nil`."
   },
   "src/ui/screens/PostGame/VictoryScreen.luau": {
     "description": "",

@@ -15,19 +15,27 @@ local WorkerDebug = DebugManager.createChannel("Worker", false) -- Workers gathe
 local HaulerDebug = DebugManager.createChannel("Hauler", false) -- Haulers transporting (enabled)
 local MovementDebug = DebugManager.createChannel("Movement", false) -- Movement (disabled, very spammy)
 
--- Job type mapping
-local JOB_TRANSFORMATIONS = {
-	Woodcutters_Post = "Woodcutter",
-	Stone_Quarry = "Stonemason",
-	Farm = "Farmer",
-	Iron_Mine = "Miner",
-	Smithy = "Blacksmith",
-	Weaponsmith = "Weaponsmith",
-	Bakery = "Baker",
-	Brewery = "Brewer",
-	Market = "Merchant",
-	Trading_Post = "Trader",
-}
+-- Generate worker job type from building data (data-driven!)
+local function getJobTypeForBuilding(buildingType: string): string?
+	local buildingData = GameData.Buildings[buildingType]
+	if not buildingData then
+		WorkerDebug:warn(`Building type not found: {buildingType}`)
+		return nil
+	end
+
+	-- Simply read from building data!
+	if buildingData.worker_job_type then
+		return buildingData.worker_job_type
+	end
+
+	-- Fallback for buildings without worker_job_type defined
+	if buildingData.requires_worker then
+		WorkerDebug:warn(`Building {buildingType} requires worker but has no worker_job_type defined!`)
+		return "Peasant" -- Safe fallback
+	end
+
+	return nil
+end
 
 export type WorkerTask = {
 	worker: Model,
@@ -121,13 +129,13 @@ function WorkerManager.assignWorkerToBuilding(worker: Model, building: Instance,
 		return
 	end
 
-	local jobType = JOB_TRANSFORMATIONS[buildingType]
+	local jobType = getJobTypeForBuilding(buildingType)
 	if not jobType then
 		WorkerDebug:warn(`No job type for {buildingType}`)
 		return
 	end
 
-	WorkerDebug:info(`Assigning peasant to {buildingType}`)
+	WorkerDebug:info(`Assigning peasant to {buildingType} as {jobType}`)
 
 	local task: WorkerTask = {
 		worker = worker,

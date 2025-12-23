@@ -2,7 +2,7 @@
 -- DebugManager: Centralized logging with channel support
 
 local DebugManager = {}
-DebugManager.Enabled = false -- DISABLED - Use regular print() statements instead
+DebugManager.Enabled = true -- ENABLED for troubleshooting HUD loading failure
 
 export type LogLevel = "info" | "warn" | "error"
 

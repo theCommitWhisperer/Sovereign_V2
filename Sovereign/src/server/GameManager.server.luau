@@ -26,6 +26,7 @@ local UnitManager = require(Managers.UnitManager)
 local ResourceNodeManager = require(Managers.ResourceNodeManager)
 local WorkerManager = require(Managers.WorkerManager)
 local TrainingManager = require(Managers.TrainingManager)
+local AIManager = require(Managers.AIManager)
 local CombatManager = require(Managers.CombatManager) -- Updated CombatManager
 local FormationManager = require(Managers.FormationManager)
 local HappinessManager = require(Managers.HappinessManager)
@@ -52,6 +53,8 @@ local UpgradeManager = require(Managers.UpgradeManager)
 local ResearchManager = require(Managers.ResearchManager)
 local QuestManager = require(Managers.QuestManager)
 local AchievementManager = require(Managers.AchievementManager)
+local GameplayEnhancementManager = require(Managers.GameplayEnhancementManager)
+local LobbyManager = require(Managers.LobbyManager)
 
 CombatManager.init()
 FormationManager.init()
@@ -75,6 +78,7 @@ UpgradeManager.init()
 ResearchManager.init()
 QuestManager.init()
 AchievementManager.init()
+GameplayEnhancementManager.init()
 
 -- Require from Systems subfolder
 local Systems = script.Parent.Systems
@@ -123,6 +127,11 @@ GetStatsEvent.Parent = RemoteEvents
 local CheckVisibilityFunc = Instance.new("RemoteFunction")
 CheckVisibilityFunc.Name = "CheckVisibility"
 CheckVisibilityFunc.Parent = RemoteEvents
+
+-- Create LobbyEvent for multiplayer lobby system
+local LobbyEvent = Instance.new("RemoteEvent")
+LobbyEvent.Name = "LobbyEvent"
+LobbyEvent.Parent = RemoteEvents
 
 GameManagerDebug:info("RemoteEvents created")
 
@@ -303,7 +312,7 @@ local function spawnInitialSetup(player: Player, factionData: any, spawnPointOve
 
 	-- 3. Spawn starting troops (if peace time is off, otherwise queue them)
 	local troopCount = calculateTroopCount(lobbySettings.startingTroops or "Standard")
-	local troopTypes = {"Archer", "Knight", "Light_Cavalry", "Macemen"}
+	local troopTypes = { "Archer", "Knight", "Light_Cavalry", "Macemen" }
 
 	if troopCount > 0 then
 		-- Check if peace time is active
@@ -353,7 +362,9 @@ local function spawnInitialSetup(player: Player, factionData: any, spawnPointOve
 				end
 			end)
 
-			GameManagerDebug:info(`{troopCount} troops queued for {player.Name} (will spawn after {peaceTimeMinutes} minutes)`)
+			GameManagerDebug:info(
+				`{troopCount} troops queued for {player.Name} (will spawn after {peaceTimeMinutes} minutes)`
+			)
 		end
 	end
 
@@ -376,6 +387,52 @@ local function spawnInitialSetup(player: Player, factionData: any, spawnPointOve
 
 	GameManagerDebug:info(
 		`Spawned {factionData.StartingPeasants} peasants and resource nodes for {player.Name} in {factionData.Name}`
+	)
+end
+
+-- AI-specific spawn function (doesn't require Player object)
+local function spawnAIInitialSetup(ownerId: number, ownerName: string, factionData: any, spawnPoint: CFrame, lobbySettings: any)
+	GameManagerDebug:info(`AI {ownerName} spawning as {factionData.Name}`)
+
+	-- 1. Spawn peasants around the spawn point (further away to avoid building collision - 50 studs)
+	for i = 1, factionData.StartingPeasants do
+		local angle = (math.pi * 2 * i) / factionData.StartingPeasants
+		local offset = Vector3.new(math.cos(angle) * 50, 0, math.sin(angle) * 50)
+		local peasantSpawnPos = spawnPoint.Position + offset
+		UnitManager.createUnit("Peasant", ownerId, peasantSpawnPos, factionData.Name)
+	end
+
+	-- 2. Spawn starting troops (AI doesn't support peace time delays, spawn immediately)
+	-- Place troops further away than peasants to avoid congestion (60 studs)
+	local troopCount = calculateTroopCount(lobbySettings.startingTroops or "Standard")
+	local troopTypes = { "Archer", "Knight", "Light_Cavalry", "Macemen" }
+
+	if troopCount > 0 then
+		for i = 1, troopCount do
+			local troopType = troopTypes[((i - 1) % #troopTypes) + 1]
+			local angle = (math.pi * 2 * i) / troopCount
+			local offset = Vector3.new(math.cos(angle) * 60, 0, math.sin(angle) * 60)
+			local troopSpawnPos = spawnPoint.Position + offset
+			UnitManager.createUnit(troopType, ownerId, troopSpawnPos, factionData.Name)
+		end
+		GameManagerDebug:info(`Spawned {troopCount} troops for AI {ownerName}`)
+	end
+
+	-- 3. Spawn resource nodes in distinct areas around the spawn
+	local woodAreaCenter = spawnPoint.Position + Vector3.new(-80, 0, 80)
+	ResourceNodeManager.spawnNodesNearPosition(woodAreaCenter, 60, "Wood", 25)
+
+	local stoneAreaCenter = spawnPoint.Position + Vector3.new(80, 0, 80)
+	ResourceNodeManager.spawnNodesNearPosition(stoneAreaCenter, 50, "Stone", 20)
+
+	local fertileAreaCenter = spawnPoint.Position + Vector3.new(-80, 0, -80)
+	ResourceNodeManager.spawnNodesNearPosition(fertileAreaCenter, 50, "Food", 15)
+
+	local ironAreaCenter = spawnPoint.Position + Vector3.new(80, 0, -80)
+	ResourceNodeManager.spawnNodesNearPosition(ironAreaCenter, 40, "Iron_Ore", 12)
+
+	GameManagerDebug:info(
+		`Spawned {factionData.StartingPeasants} peasants and resource nodes for AI {ownerName} in {factionData.Name}`
 	)
 end
 
@@ -433,6 +490,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		local peaceTimeStr = settings.peaceTime or "10 minutes"
 		local selectedMap = settings.map or "ClassicPlains"
 		local showTutorial = if settings.showTutorial ~= nil then settings.showTutorial else true
+		local factionFromSettings = settings.faction -- From multiplayer lobby
 
 		-- Set the active map and configure SpawnManager
 		if not MapManager.setMap(selectedMap) then
@@ -463,15 +521,18 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		-- Assign player to a quadrant using SpawnManager
 		local quadrant = SpawnManager.assignPlayerToQuadrant(player.UserId)
 
-		-- Map quadrants to factions
-		local quadrantToFaction = {
-			[1] = "Kingdom", -- Northwest
-			[2] = "Empire", -- Northeast
-			[3] = "Tribes", -- Southwest
-			[4] = "IronLegion", -- Southeast
-		}
+		-- Use faction from lobby if provided, otherwise map quadrants to factions
+		local factionName = factionFromSettings
+		if not factionName then
+			local quadrantToFaction = {
+				[1] = "Kingdom", -- Northwest
+				[2] = "Empire", -- Northeast
+				[3] = "Tribes", -- Southwest
+				[4] = "IronLegion", -- Southeast
+			}
+			factionName = quadrantToFaction[quadrant] or "Kingdom"
+		end
 
-		local factionName = quadrantToFaction[quadrant] or "Kingdom"
 		local factionData = GameData.Factions[factionName]
 
 		-- Override spawn point with quadrant-specific spawn
@@ -488,7 +549,8 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		playerData.Resources.Stone = calculateStartingResources(settings.startingResources or "Standard", "Stone")
 		playerData.Resources.Gold = calculateStartingResources(settings.startingGold or "Standard", "Gold")
 		playerData.Resources.Food = calculateStartingResources(settings.startingFood or "Standard", "Food")
-		playerData.Resources.Iron_Bars = calculateStartingResources(settings.startingResources or "Standard", "Iron_Bars")
+		playerData.Resources.Iron_Bars =
+			calculateStartingResources(settings.startingResources or "Standard", "Iron_Bars")
 		playerData.Resources.Weapons = calculateStartingResources(settings.startingResources or "Standard", "Weapons")
 
 		-- Spawn initial setup with quadrant spawn point
@@ -524,7 +586,36 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		task.wait(0.1) -- Brief delay to ensure all data is initialized
 		EconomyDashboardManager.sendUpdate(player)
 
-		GameManagerDebug:info(`{player.Name} spawned as Kingdom`)
+		GameManagerDebug:info(`{player.Name} spawned as {factionName}`)
+
+		-- Spawn AI players if any from multiplayer lobby (check happens on first player only)
+		local aiPlayers = LobbyManager.getAIPlayersForGame()
+		if aiPlayers and #aiPlayers > 0 then
+			GameManagerDebug:info(`Spawning {#aiPlayers} AI players for multiplayer game`)
+			for _, aiData in ipairs(aiPlayers) do
+				-- Assign quadrant and get spawn point
+				local aiQuadrant = SpawnManager.assignPlayerToQuadrant(aiData.UserId)
+				local aiSpawnPoint = SpawnManager.getPlayerSpawnPoint(aiData.UserId)
+				local aiFactionData = GameData.Factions[aiData.Faction]
+
+				if not aiFactionData then
+					GameManagerDebug:warn(`Unknown faction for AI: {aiData.Faction}`)
+					continue
+				end
+
+				-- Spawn initial setup for AI (units, troops, resources)
+				spawnAIInitialSetup(aiData.UserId, aiData.Name, aiFactionData, aiSpawnPoint, settings)
+
+				-- Register AI with AIManager for autonomous behavior
+				AIManager.registerAI(aiData.UserId, aiData.Name, aiData.Faction, aiSpawnPoint)
+
+				GameManagerDebug:info(`Spawned AI player {aiData.Name} as {aiData.Faction} in quadrant {aiQuadrant}`)
+			end
+
+			-- Clear AI players after spawning (so they don't spawn again for other players)
+			LobbyManager.clearAIPlayers()
+			GameManagerDebug:info("AI players spawned and cleared from lobby")
+		end
 	elseif action == "StartPlacement" then
 		GameManagerDebug:info(`{player.Name} wants to place: {data}`)
 
@@ -566,7 +657,8 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				PlayerManager.deductResources(player, buildingInfo.cost)
 
 				-- Create the CFrame from data (use sent CFrame if available)
-				local cframe = data.cframe or CFrame.new(data.position) * CFrame.Angles(0, math.rad(data.rotationY or 0), 0)
+				local cframe = data.cframe
+					or CFrame.new(data.position) * CFrame.Angles(0, math.rad(data.rotationY or 0), 0)
 
 				-- Create the building (pass wall piece type and rotation for manual selection)
 				local building = BuildingManager.createBuilding(
@@ -608,7 +700,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 								local owner = unit:GetAttribute("Owner")
 								if unitType == "Peasant" and not isWorking and owner == player.UserId then
 									WorkerManager.assignWorkerToBuilding(unit, building, player.UserId)
-				
+
 									break
 								end
 							end
@@ -629,7 +721,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 								or unitType == "Ox" and not isHauling and not isWorking and owner == player.UserId
 							then
 								WorkerManager.assignHauler(unit, player.UserId)
-				
+
 								break
 							end
 						end
@@ -695,12 +787,8 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				facingDirection = Vector3.new(facingDirection.X, 0, facingDirection.Z).Unit -- Keep it horizontal
 
 				-- Create formation
-				local formation = FormationManager.createFormation(
-					data.formationType,
-					units,
-					data.targetPosition,
-					facingDirection
-				)
+				local formation =
+					FormationManager.createFormation(data.formationType, units, data.targetPosition, facingDirection)
 
 				if formation then
 					-- Move units to their formation positions
@@ -823,6 +911,40 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 					else
 						GameManagerDebug:warn(`{player.Name} tried to delete building they don't own`)
 					end
+				end
+			end
+		end
+	elseif action == "UndoDeletion" then
+		-- Handle undo building deletion
+		if typeof(data) == "table" and data.buildingType and data.position then
+			GameManagerDebug:info(`{player.Name} wants to undo deletion: {data.buildingType}`)
+
+			local buildingInfo = GameData.Buildings[data.buildingType]
+			if buildingInfo then
+				-- Create building without charging resources (skipCost = true)
+				local building = BuildingManager.createBuilding(
+					player,
+					data.buildingType,
+					CFrame.new(data.position), -- Convert Vector3 to CFrame
+					nil, -- wallPieceType
+					nil, -- manualRotation
+					true -- skipCost parameter
+				)
+
+				if building then
+					-- Restore rotation if provided
+					if data.rotation and building.PrimaryPart then
+						building.PrimaryPart.Orientation = data.rotation
+					end
+
+					GameManagerDebug:info(`Successfully restored {data.buildingType} for {player.Name}`)
+
+					-- Notify client
+					GameEvent:FireClient(player, "BuildingRestored", {
+						buildingType = data.buildingType,
+					})
+				else
+					GameManagerDebug:warn(`Failed to restore {data.buildingType} for {player.Name}`)
 				end
 			end
 		end
@@ -959,6 +1081,36 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		-- Notify client that cleanup is complete
 		GameEvent:FireClient(player, "GameLeft", {})
 	end
+end)
+
+-- Handle lobby events for multiplayer
+LobbyEvent.OnServerEvent:Connect(function(player, action, ...)
+	GameManagerDebug:info(`Lobby event from {player.Name}: {action}`)
+
+	if action == "JoinLobby" then
+		LobbyManager.addPlayer(player)
+	elseif action == "LeaveLobby" then
+		LobbyManager.removePlayer(player)
+	elseif action == "AddAI" then
+		LobbyManager.addAI(player)
+	elseif action == "RemovePlayer" then
+		local targetUserId = ...
+		LobbyManager.removePlayerOrAI(player, targetUserId)
+	elseif action == "VoteSetting" then
+		local settingId, value = ...
+		LobbyManager.voteSetting(player, settingId, value)
+	elseif action == "SelectFaction" then
+		local faction = ...
+		LobbyManager.selectFaction(player, faction)
+	elseif action == "ToggleReady" then
+		LobbyManager.toggleReady(player)
+	end
+end)
+
+-- Handle player disconnecting from lobby
+Players.PlayerRemoving:Connect(function(player)
+	-- Remove from lobby if they're in it
+	LobbyManager.removePlayer(player)
 end)
 
 GameManagerDebug:info("Server ready!")
