@@ -226,7 +226,7 @@ function WallSystem.initialize()
 	-- Visual updates only happen when new walls are placed via WallSystem.registerWall()
 	-- Use WallSystem.updateAllWalls() manually if you want to fix existing walls
 
-	print("[WallSystem] Initialized wall grid (auto-update disabled)")
+	-- print("[WallSystem] Initialized wall grid (auto-update disabled)")
 end
 
 -- Force update of all walls in the grid (useful for fixing mismatched pieces)
@@ -236,7 +236,7 @@ function WallSystem.updateAllWalls()
 			updateWallVisuals(x, z)
 		end
 	end
-	print("[WallSystem] Forced update of all wall visuals")
+	-- print("[WallSystem] Forced update of all wall visuals")
 end
 
 return WallSystem

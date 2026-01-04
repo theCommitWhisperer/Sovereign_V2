@@ -10,7 +10,7 @@ local StarterPlayer = game:GetService("StarterPlayer")
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local GameManagerDebug = DebugManager.createChannel("GameManager", true) -- Enabled for debugging
+local GameManagerDebug = DebugManager.createChannel("GameManager", true)
 
 GameManagerDebug:info("Loading server-side managers...")
 
@@ -32,8 +32,13 @@ local FormationManager = require(Managers.FormationManager)
 local HappinessManager = require(Managers.HappinessManager)
 local TaxManager = require(Managers.TaxManager)
 local RevoltManager = require(Managers.RevoltManager)
+
+-- Import FormationCohesion for formation movement tracking
+local FormationCohesion = require(script.Parent.Systems.FormationCohesion)
+local SpawnPointSystem = require(script.Parent.Systems.SpawnPointSystem)
 local FactionManager = require(Managers.FactionManager)
 local PopulationManager = require(Managers.PopulationManager)
+local IdlePeasantManager = require(Managers.IdlePeasantManager)
 local ConsumptionManager = require(Managers.ConsumptionManager)
 local MaintenanceManager = require(Managers.MaintenanceManager)
 local EventManager = require(Managers.EventManager)
@@ -82,6 +87,7 @@ GameplayEnhancementManager.init()
 
 -- Require from Systems subfolder
 local Systems = script.Parent.Systems
+local PathfindingIntegration = require(Systems.PathfindingIntegration)
 local MovementSystem = require(Systems.MovementSystem)
 local VikingRaidSystem = require(Systems.VikingRaidSystem)
 local PopulationSystem = require(Systems.PopulationSystem)
@@ -95,6 +101,13 @@ local CaravanSystem = require(Systems.CaravanSystem)
 local DashboardSystem = require(Systems.DashboardSystem)
 local VictorySystem = require(Systems.VictorySystem)
 local WallSystemServer = require(Systems.WallSystemServer)
+
+-- Initialize pathfinding first (required by MovementSystem)
+GameManagerDebug:info("Initializing A* grid-based pathfinding...")
+local currentMap = MapManager.getCurrentMap()
+local mapSize = currentMap and currentMap.Size or 1024
+PathfindingIntegration.initialize(mapSize)
+GameManagerDebug:info("Pathfinding initialized for map size: " .. mapSize)
 
 -- Initialize systems
 PopulationSystem.init()
@@ -186,7 +199,7 @@ local function setupKingHealthMonitoring(player: Player, character: Model)
 
 	-- Handle death
 	local deathConnection = humanoid.Died:Connect(function()
-		GameManagerDebug:warn(`King {player.Name} has died!`)
+		-- GameManagerDebug:warn(`King {player.Name} has died!`)
 		GameEvent:FireClient(player, "KingHealthUpdate", {
 			health = 0,
 			maxHealth = humanoid.MaxHealth,
@@ -302,13 +315,9 @@ local function spawnInitialSetup(player: Player, factionData: any, spawnPointOve
 	-- 1. Player's character IS the King - we'll tag it when character loads
 	GameManagerDebug:info(`Player {player.Name} will be the King (character-based)`)
 
-	-- 2. Spawn peasants around the spawn point
-	for i = 1, factionData.StartingPeasants do
-		local angle = (math.pi * 2 * i) / factionData.StartingPeasants
-		local offset = Vector3.new(math.cos(angle) * 15, 0, math.sin(angle) * 15)
-		local peasantSpawnPos = spawnPoint.Position + offset
-		UnitManager.createUnit("Peasant", player.UserId, peasantSpawnPos, factionData.Name)
-	end
+	-- 2. NO KEEP SPAWNED - Player must place their Keep manually
+	-- The first building they place MUST be a Keep
+	GameManagerDebug:info(`{player.Name} will need to place their Keep manually`)
 
 	-- 3. Spawn starting troops (if peace time is off, otherwise queue them)
 	local troopCount = calculateTroopCount(lobbySettings.startingTroops or "Standard")
@@ -392,31 +401,53 @@ end
 
 -- AI-specific spawn function (doesn't require Player object)
 local function spawnAIInitialSetup(ownerId: number, ownerName: string, factionData: any, spawnPoint: CFrame, lobbySettings: any)
-	GameManagerDebug:info(`AI {ownerName} spawning as {factionData.Name}`)
+	GameManagerDebug:info("AI " .. ownerName .. " spawning as " .. factionData.Name)
 
-	-- 1. Spawn peasants around the spawn point (further away to avoid building collision - 50 studs)
-	for i = 1, factionData.StartingPeasants do
-		local angle = (math.pi * 2 * i) / factionData.StartingPeasants
-		local offset = Vector3.new(math.cos(angle) * 50, 0, math.sin(angle) * 50)
-		local peasantSpawnPos = spawnPoint.Position + offset
-		UnitManager.createUnit("Peasant", ownerId, peasantSpawnPos, factionData.Name)
-	end
+	-- 1. Spawn Keep at the spawn point (AI gets Keep at game start, same as players)
+	local keep = BuildingManager.createBuilding(ownerId, "Keep", spawnPoint, nil, nil, true)
+	if keep then
+		GameManagerDebug:info("Spawned Keep for AI " .. ownerName)
 
-	-- 2. Spawn starting troops (AI doesn't support peace time delays, spawn immediately)
-	-- Place troops further away than peasants to avoid congestion (60 studs)
-	local troopCount = calculateTroopCount(lobbySettings.startingTroops or "Standard")
-	local troopTypes = { "Archer", "Knight", "Light_Cavalry", "Macemen" }
+		-- Spawn starting peasants using SpawnPointSystem (same as player implementation)
+		local peasantCount = 3
+		local spawnPositions = SpawnPointSystem.getSpawnPositions(keep, {
+			pattern = "circle",
+			radius = 12,
+			count = peasantCount,
+			offset = Vector3.new(0, 0, 0),
+		})
 
-	if troopCount > 0 then
-		for i = 1, troopCount do
-			local troopType = troopTypes[((i - 1) % #troopTypes) + 1]
-			local angle = (math.pi * 2 * i) / troopCount
-			local offset = Vector3.new(math.cos(angle) * 60, 0, math.sin(angle) * 60)
-			local troopSpawnPos = spawnPoint.Position + offset
-			UnitManager.createUnit(troopType, ownerId, troopSpawnPos, factionData.Name)
+		GameManagerDebug:info(`Got {#spawnPositions} spawn positions from SpawnPointSystem for AI {ownerName}`)
+
+		if #spawnPositions > 0 then
+			for i, position in ipairs(spawnPositions) do
+				local peasant = UnitManager.createUnit("Peasant", ownerId, position, factionData.Name)
+				if peasant then
+					GameManagerDebug:info(`Spawned peasant {i}/{peasantCount} for AI {ownerName}`)
+				else
+					GameManagerDebug:warn(`Failed to spawn peasant {i} for AI {ownerName}`)
+				end
+			end
+			GameManagerDebug:info(`Spawned {#spawnPositions} peasants around Keep for AI {ownerName}`)
+		else
+			-- Fallback: spawn at building position if no SpawnPoint found
+			GameManagerDebug:warn(`No SpawnPoint found in Keep for AI {ownerName}, using fallback spawn`)
+			local keepPos = keep.PrimaryPart.Position
+			for i = 1, peasantCount do
+				local angle = (math.pi * 2 * (i - 1)) / peasantCount
+				local offset = Vector3.new(math.cos(angle) * 12, 0, math.sin(angle) * 12)
+				local position = keepPos + offset
+				UnitManager.createUnit("Peasant", ownerId, position, factionData.Name)
+			end
+			GameManagerDebug:info(`Spawned {peasantCount} peasants using fallback for AI {ownerName}`)
 		end
-		GameManagerDebug:info(`Spawned {troopCount} troops for AI {ownerName}`)
+	else
+		GameManagerDebug:warn("Failed to spawn Keep for AI " .. ownerName)
 	end
+
+	-- Wait to ensure Keep is fully registered before spawning troops
+	-- 2. No starting troops for AI - they will train units as needed
+	-- Note: AI starts with only their Keep and will build/train units through normal gameplay
 
 	-- 3. Spawn resource nodes in distinct areas around the spawn
 	local woodAreaCenter = spawnPoint.Position + Vector3.new(-80, 0, 80)
@@ -432,7 +463,7 @@ local function spawnAIInitialSetup(ownerId: number, ownerName: string, factionDa
 	ResourceNodeManager.spawnNodesNearPosition(ironAreaCenter, 40, "Iron_Ore", 12)
 
 	GameManagerDebug:info(
-		`Spawned {factionData.StartingPeasants} peasants and resource nodes for AI {ownerName} in {factionData.Name}`
+		"Spawned Keep and resource nodes for AI " .. ownerName .. " in " .. factionData.Name
 	)
 end
 
@@ -627,14 +658,47 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				return
 			end
 
-			if PlayerManager.hasEnoughResources(player, buildingInfo.cost) then
-				GameManagerDebug:info(`Approving placement for {player.Name}: {data}`)
+			-- Check if player has any buildings (Keep is required first)
+			local hasBuildings = false
+			local hasKeep = false
+			for _, building in playerData.Buildings do
+				if building and building.Parent then
+					hasBuildings = true
+					-- Check if building name starts with "Keep" (handles "Keep_12345" etc)
+					if string.match(building.Name, "^Keep") then
+						hasKeep = true
+						break
+					end
+				end
+			end
+
+			-- Enforce Keep placement requirement
+			if not hasKeep and data ~= "Keep" then
+				GameManagerDebug:warn(`{player.Name} must place a Keep first`)
+				GameEvent:FireClient(player, "Error", {
+					message = "You must place your Keep before other buildings!",
+				})
+				return
+			end
+
+			-- First building (Keep) is always free
+			local isFirstBuilding = not hasBuildings and data == "Keep"
+
+			if isFirstBuilding or PlayerManager.hasEnoughResources(player, buildingInfo.cost) then
+				if isFirstBuilding then
+					GameManagerDebug:info(`Approving FREE Keep placement for {player.Name} (first building)`)
+				else
+					GameManagerDebug:info(`Approving placement for {player.Name}: {data}`)
+				end
 				-- Tell client to start placement mode
 				GameEvent:FireClient(player, "StartPlacement", data)
 			else
 				GameManagerDebug:warn(`{player.Name} cannot afford {data}`)
 				GameManagerDebug:info(`Current resources:`, playerData.Resources)
 				GameManagerDebug:info(`Required:`, buildingInfo.cost)
+				GameEvent:FireClient(player, "Error", {
+					message = `Not enough resources to build {data}`,
+				})
 			end
 		end
 	elseif action == "PlacementEnded" then
@@ -652,9 +716,24 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				return
 			end
 
-			if PlayerManager.hasEnoughResources(player, buildingInfo.cost) then
-				-- Deduct resources
-				PlayerManager.deductResources(player, buildingInfo.cost)
+			-- Check if this is the first building (Keep should be free)
+			local hasBuildings = false
+			for _, building in playerData.Buildings do
+				if building and building.Parent then
+					hasBuildings = true
+					break
+				end
+			end
+
+			local isFirstBuilding = not hasBuildings and data.buildingName == "Keep"
+
+			if isFirstBuilding or PlayerManager.hasEnoughResources(player, buildingInfo.cost) then
+				-- Deduct resources (unless it's the free first Keep)
+				if not isFirstBuilding then
+					PlayerManager.deductResources(player, buildingInfo.cost)
+				else
+					GameManagerDebug:info(`Placing FREE Keep for {player.Name} (first building)`)
+				end
 
 				-- Create the CFrame from data (use sent CFrame if available)
 				local cframe = data.cframe
@@ -671,8 +750,60 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 
 				if building then
 					-- DEBUG: log final building position for ground alignment checks
-					if building.PrimaryPart then
-						print("[DEBUG] Building placed:", data.buildingName, "at", building.PrimaryPart.Position)
+					-- if building.PrimaryPart then
+					-- 	print("[DEBUG] Building placed:", data.buildingName, "at", building.PrimaryPart.Position)
+					-- end
+
+					-- Special handling for Keep placement
+					if data.buildingName == "Keep" then
+						GameManagerDebug:info(`Keep placed by {player.Name}, spawning initial peasants`)
+
+						-- Get player's faction
+						local playerFaction = playerData.Faction or "Kingdom"
+
+						-- Use SpawnPointSystem to get spawn positions from the Keep's SpawnPoint part
+						local peasantCount = 3 -- Starting peasants
+						local spawnPositions = SpawnPointSystem.getSpawnPositions(building, {
+							pattern = "circle",
+							radius = 12,
+							count = peasantCount,
+							offset = Vector3.new(0, 0, 0),
+						})
+
+						GameManagerDebug:info(`Got {#spawnPositions} spawn positions from SpawnPointSystem`)
+
+						if #spawnPositions > 0 then
+							for i, position in ipairs(spawnPositions) do
+								local peasant = UnitManager.createUnit("Peasant", player.UserId, position, playerFaction)
+								if peasant then
+									GameManagerDebug:info(`Spawned peasant {i}/{peasantCount} at {position} for {player.Name}`)
+									-- Add peasant to idle behavior
+									IdlePeasantManager.addIdlePeasant(peasant, player.UserId)
+								else
+									GameManagerDebug:warn(`Failed to spawn peasant {i} for {player.Name}`)
+								end
+							end
+							GameManagerDebug:info(`Spawned {#spawnPositions} peasants around Keep for {player.Name}`)
+						else
+							-- Fallback: spawn at building position if no SpawnPoint found
+							GameManagerDebug:warn(`No SpawnPoint found in Keep, using fallback spawn`)
+							local keepPos = building.PrimaryPart.Position
+							for i = 1, peasantCount do
+								local angle = (math.pi * 2 * (i - 1)) / peasantCount
+								local offset = Vector3.new(math.cos(angle) * 12, 0, math.sin(angle) * 12)
+								local position = keepPos + offset
+								local peasant = UnitManager.createUnit("Peasant", player.UserId, position, playerFaction)
+								if peasant then
+									IdlePeasantManager.addIdlePeasant(peasant, player.UserId)
+								end
+							end
+						end
+
+						-- Notify client that Keep is placed (important for tutorial/UI)
+						GameEvent:FireClient(player, "KeepPlaced", {
+							position = building.PrimaryPart.Position,
+							peasantsSpawned = peasantCount,
+						})
 					end
 
 					-- Track achievements and quests
@@ -707,25 +838,8 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 						end
 					end
 
-					-- Auto-assign a hauler if we have available peasants
-					for _, unit in playerData.Units do
-						if unit and unit.Parent then
-							local unitType = unit:GetAttribute("UnitType")
-							local isHauling = unit:GetAttribute("IsHauling")
-							local isWorking = unit:GetAttribute("IsWorking")
-
-							-- CHECK: Don't assign Vikings as haulers!
-							local owner = unit:GetAttribute("Owner")
-							if
-								unitType == "Peasant"
-								or unitType == "Ox" and not isHauling and not isWorking and owner == player.UserId
-							then
-								WorkerManager.assignHauler(unit, player.UserId)
-
-								break
-							end
-						end
-					end
+					-- Note: Haulers are automatically assigned by WorkerManager when buildings produce resources
+					-- No need to manually assign haulers here
 
 					-- Send updated resources to client
 					GameEvent:FireClient(player, "UpdateResources", {
@@ -755,6 +869,8 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				unitToMove:SetAttribute("CombatTarget", nil)
 				unitToMove:SetAttribute("TargetPosition", data.targetPosition)
 				unitToMove:SetAttribute("IsMoving", true)
+				-- Clear pathfinding failure - player command overrides previous failures
+				unitToMove:SetAttribute("PathfindingFailed", nil)
 				GameManagerDebug:info(`Unit {data.unitId} target set to {data.targetPosition}`)
 			end
 		end
@@ -791,14 +907,23 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 					FormationManager.createFormation(data.formationType, units, data.targetPosition, facingDirection)
 
 				if formation then
+					-- Generate unique formation ID
+					local formationId = `Formation_{player.UserId}_{tick()}`
+
+					-- Register formation with FormationCohesion system
+					FormationCohesion.registerFormation(formationId, units)
+
 					-- Move units to their formation positions
 					for unit, position in pairs(formation.positions) do
 						unit:SetAttribute("CombatTarget", nil)
 						unit:SetAttribute("TargetPosition", position)
 						unit:SetAttribute("IsMoving", true)
+						unit:SetAttribute("FormationId", formationId) -- Track formation membership
+						-- Clear pathfinding failure - player command overrides previous failures
+						unit:SetAttribute("PathfindingFailed", nil)
 					end
 
-					GameManagerDebug:info(`Formation created with {#units} units`)
+					GameManagerDebug:info(`Formation {formationId} created with {#units} units`)
 				end
 			else
 				-- Not enough units, move individually
@@ -806,6 +931,8 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 					unit:SetAttribute("CombatTarget", nil)
 					unit:SetAttribute("TargetPosition", data.targetPosition)
 					unit:SetAttribute("IsMoving", true)
+					-- Clear pathfinding failure - player command overrides previous failures
+					unit:SetAttribute("PathfindingFailed", nil)
 				end
 			end
 		end
@@ -1100,8 +1227,8 @@ LobbyEvent.OnServerEvent:Connect(function(player, action, ...)
 		local settingId, value = ...
 		LobbyManager.voteSetting(player, settingId, value)
 	elseif action == "SelectFaction" then
-		local faction = ...
-		LobbyManager.selectFaction(player, faction)
+		local faction, targetUserId = ...
+		LobbyManager.selectFaction(player, faction, targetUserId)
 	elseif action == "ToggleReady" then
 		LobbyManager.toggleReady(player)
 	end

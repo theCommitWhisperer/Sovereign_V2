@@ -142,6 +142,6 @@ player.AncestryChanged:Connect(function()
 	clearHighlight()
 end)
 
-print("[DeletionController] Deletion visual feedback system initialized")
+-- print("[DeletionController] Deletion visual feedback system initialized")
 
 return {}

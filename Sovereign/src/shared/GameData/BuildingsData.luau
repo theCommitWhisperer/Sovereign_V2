@@ -1,7 +1,30 @@
 --!strict
 -- BuildingsData: Definitions for all buildings
 
+local WorkerPointsConfig = require(script.Parent.WorkerPointsConfig)
+
 local BuildingsData = {}
+
+-- Worker point configuration for production buildings
+export type WorkerPointConfig = {
+	entrance_point: string?, -- Name of the BuildingEntrance part (default: "BuildingEntrance")
+	rest_point: string?, -- Name of the WorkerRestPosition part (default: "WorkerRestPosition")
+	production_point: string?, -- Name of the ProductionStation part (default: "ProductionStation")
+	dropoff_point: string?, -- Name of the ResourceDropoff part (default: "ResourceDropoff")
+	pickup_point: string?, -- Name of the ResourcePickup part (default: "ResourcePickup")
+}
+
+-- Storage point configuration for storage buildings
+export type StoragePointConfig = {
+	Wood: string?, -- Name of the wood storage point (default: "StorageAreaWood")
+	Stone: string?, -- Name of the stone storage point (default: "StorageAreaStone")
+	Food: string?, -- Name of the food storage point (default: "StorageAreaFood")
+	Iron_Ore: string?, -- Name of the iron storage point (default: "StorageAreaIron")
+	Iron_Bars: string?, -- Name of the iron bars storage point (default: "StorageAreaIron")
+	Gold: string?, -- Name of the gold storage point (default: "StorageAreaGold")
+	Weapons: string?, -- Name of the weapons storage point (default: "StorageAreaWeapons")
+	default: string?, -- Name of the general storage point (default: "StorageAreaGeneral")
+}
 
 export type BuildingData = {
 	model_asset_name: string?,
@@ -29,6 +52,8 @@ export type BuildingData = {
 	defense_value: number?,
 	attack_range: number?,
 	attack_damage: number?,
+	worker_points: WorkerPointConfig?, -- NEW: Configuration for worker navigation points
+	storage_points: StoragePointConfig?, -- NEW: Configuration for storage area points
 }
 
 -- ========================================
@@ -54,6 +79,15 @@ BuildingsData.Keep = {
 	components = {},
 	can_train_units = { "Peasant" },
 	max_queue_size = 5,
+	storage_points = {
+		Wood = "StorageAreaWood",
+		Stone = "StorageAreaStone",
+		Gold = "StorageAreaGold",
+		Food = "StorageAreaFood",
+		Iron_Bars = "StorageAreaIron",
+		Weapons = "StorageAreaWeapons",
+		default = "StorageAreaGeneral",
+	},
 } :: BuildingData
 
 -- ========================================
@@ -263,6 +297,13 @@ BuildingsData["Smelter"] = {
 	consumes_resource = "Iron_Ore",
 	consumption_rate = 2.0,
 	maintenance_cost = { Wood = 1 },
+	worker_points = {
+		entrance_point = "BuildingEntrance",
+		rest_point = "WorkerRestPosition",
+		production_point = "ProductionStation",
+		dropoff_point = "ResourceDropoff",
+		pickup_point = "ResourcePickup",
+	},
 } :: BuildingData
 
 BuildingsData["Weaponsmith"] = {
@@ -286,6 +327,7 @@ BuildingsData["Weaponsmith"] = {
 	consumes_resource = "Iron_Bars",
 	consumption_rate = 3.0,
 	maintenance_cost = { Wood = 1, Gold = 1 },
+	worker_points = WorkerPointsConfig.STANDARD_PRODUCTION,
 } :: BuildingData
 
 BuildingsData["Armory"] = {
@@ -300,6 +342,7 @@ BuildingsData["Armory"] = {
 	storage_capacity = { Weapons = 200, Iron_Bars = 100 },
 	components = {},
 	popularity_impact = 1,
+	storage_points = WorkerPointsConfig.STORAGE_MILITARY,
 } :: BuildingData
 
 BuildingsData["Training Ground"] = {
@@ -389,6 +432,13 @@ BuildingsData["Lumberjack"] = {
 	production_rate = 1,
 	requires_worker = true,
 	worker_job_type = "Woodcutter",
+	worker_points = {
+		entrance_point = "BuildingEntrance",
+		rest_point = "WorkerRestPosition",
+		production_point = "ProductionStation",
+		dropoff_point = "ResourceDropoff",
+		pickup_point = "ResourcePickup",
+	},
 } :: BuildingData
 
 BuildingsData["Stone Quarry"] = {
@@ -406,6 +456,13 @@ BuildingsData["Stone Quarry"] = {
 	production_rate = 0.8,
 	requires_worker = true,
 	worker_job_type = "Stonemason",
+	worker_points = {
+		entrance_point = "BuildingEntrance",
+		rest_point = "WorkerRestPosition",
+		production_point = "ProductionStation",
+		dropoff_point = "ResourceDropoff",
+		pickup_point = "ResourcePickup",
+	},
 } :: BuildingData
 
 BuildingsData["Iron Mine"] = {
@@ -424,6 +481,13 @@ BuildingsData["Iron Mine"] = {
 	requires_worker = true,
 	worker_job_type = "Miner",
 	maintenance_cost = { Wood = 1 },
+	worker_points = {
+		entrance_point = "BuildingEntrance",
+		rest_point = "WorkerRestPosition",
+		production_point = "ProductionStation",
+		dropoff_point = "ResourceDropoff",
+		pickup_point = "ResourcePickup",
+	},
 } :: BuildingData
 
 BuildingsData["Storehouse"] = {
@@ -442,6 +506,13 @@ BuildingsData["Storehouse"] = {
 		Weapons = 100,
 	},
 	components = {},
+	storage_points = {
+		Wood = "StorageAreaWood",
+		Stone = "StorageAreaStone",
+		Iron_Bars = "StorageAreaIron",
+		Weapons = "StorageAreaWeapons",
+		default = "StorageAreaGeneral",
+	},
 } :: BuildingData
 
 BuildingsData["Market"] = {
@@ -571,13 +642,21 @@ BuildingsData["Potato Farm"] = {
 	components = {},
 	produces_resource = "Food",
 	production_rate = 2,
+	production_time = 5, -- 5 seconds per food unit
+	production_output = 1, -- Produces 1 food per cycle
 	requires_worker = true,
 	worker_job_type = "Farmer",
+	worker_points = {
+		entrance_point = "BuildingEntrance",
+		production_point = "ProductionStation",
+		dropoff_point = "ResourceDropoff",
+		pickup_point = "ResourcePickup",
+	},
 	maintenance_cost = { Wood = 0.5 },
 } :: BuildingData
 
 BuildingsData["Sheep Farm"] = {
-	model_asset_name = "Pig_Farm",
+	model_asset_name = "Sheep_Farm",
 	icon_asset_id = "rbxassetid://137615559583462",
 	type = "Building",
 	subtype = "Food Production",
@@ -589,13 +668,21 @@ BuildingsData["Sheep Farm"] = {
 	components = {},
 	produces_resource = "Food",
 	production_rate = 2,
+	production_time = 5, -- 5 seconds per food unit
+	production_output = 1, -- Produces 1 food per cycle
 	requires_worker = true,
 	worker_job_type = "Farmer",
+	worker_points = {
+		entrance_point = "BuildingEntrance",
+		production_point = "ProductionStation",
+		dropoff_point = "ResourceDropoff",
+		pickup_point = "ResourcePickup",
+	},
 	maintenance_cost = { Wood = 0.5 },
 } :: BuildingData
 
 BuildingsData["Cow Farm"] = {
-	model_asset_name = "Pig_Farm",
+	model_asset_name = "Cow_Farm",
 	icon_asset_id = "rbxassetid://107699847865234",
 	type = "Building",
 	subtype = "Food Production",
@@ -607,8 +694,16 @@ BuildingsData["Cow Farm"] = {
 	components = {},
 	produces_resource = "Food",
 	production_rate = 2,
+	production_time = 5, -- 5 seconds per food unit
+	production_output = 1, -- Produces 1 food per cycle
 	requires_worker = true,
 	worker_job_type = "Farmer",
+	worker_points = {
+		entrance_point = "BuildingEntrance",
+		production_point = "ProductionStation",
+		dropoff_point = "ResourceDropoff",
+		pickup_point = "ResourcePickup",
+	},
 	maintenance_cost = { Wood = 0.5 },
 } :: BuildingData
 
@@ -725,7 +820,7 @@ BuildingsData["Brewery"] = {
 } :: BuildingData
 
 BuildingsData["Granary"] = {
-	model_asset_name = "Storehouse",
+	model_asset_name = "Granary",
 	icon_asset_id = "rbxassetid://89283451013010",
 	type = "Building",
 	subtype = "Storage",
@@ -948,5 +1043,37 @@ BuildingsData["Celtic Cross"] = {
 	popularity_impact = 8,
 	deletion_confirmation_required = false,
 } :: BuildingData
+
+-- ========================================
+-- AUTO-POPULATE WORKER POINTS
+-- ========================================
+-- Automatically add worker_points to all production buildings that don't have them explicitly set
+-- This ensures backward compatibility while allowing custom configurations
+
+for buildingName, buildingData in BuildingsData do
+	-- Add standard worker points to all buildings that require workers but don't have explicit worker_points
+	if buildingData.requires_worker and not buildingData.worker_points then
+		buildingData.worker_points = WorkerPointsConfig.STANDARD_PRODUCTION
+	end
+
+	-- Add storage points to buildings with storage capacity but no explicit storage_points
+	if buildingData.storage_capacity and not buildingData.storage_points then
+		local hasMultipleResourceTypes = 0
+		for _ in buildingData.storage_capacity do
+			hasMultipleResourceTypes = hasMultipleResourceTypes + 1
+		end
+
+		-- Only add storage points if building stores multiple resource types
+		if hasMultipleResourceTypes >= 3 then
+			buildingData.storage_points = WorkerPointsConfig.STANDARD_STORAGE_FULL
+		elseif buildingData.storage_capacity.Food and hasMultipleResourceTypes <= 2 then
+			buildingData.storage_points = WorkerPointsConfig.STORAGE_FOOD_ONLY
+		elseif buildingData.storage_capacity.Weapons then
+			buildingData.storage_points = WorkerPointsConfig.STORAGE_MILITARY
+		else
+			buildingData.storage_points = WorkerPointsConfig.STORAGE_GENERAL
+		end
+	end
+end
 
 return BuildingsData

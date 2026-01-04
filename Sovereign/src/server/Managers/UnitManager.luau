@@ -7,12 +7,15 @@ local ServerStorage = game:GetService("ServerStorage")
 
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local UnitManagerDebug = DebugManager.createChannel("UnitManager", true) -- Enabled for AI debugging
+local UnitManagerDebug = DebugManager.createChannel("UnitManager", false)
 local Managers = script.Parent
 local CombatManager = require(Managers.CombatManager)
 local MoraleManager = require(Managers.MoraleManager)
 local FormationManager = require(Managers.FormationManager)
 local PlayerManager = require(Managers.PlayerManager)
+
+-- Import new A* pathfinding integration
+local PathfindingIntegration = require(script.Parent.Parent.Systems.PathfindingIntegration)
 
 local UnitManager = {}
 
@@ -204,6 +207,7 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 	-- Set unit attributes BEFORE parenting
 	unit:SetAttribute("UnitType", unitType)
 	unit:SetAttribute("Owner", ownerId)
+	unit:SetAttribute("OwnerId", ownerId) -- For compatibility with WorkerManager
 	unit:SetAttribute("UnitId", unit.Name)
 
 	-- Set initial position (use PivotTo for unanchored models)
@@ -308,6 +312,11 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 		end
 	end)
 
+	-- Clean up pathfinding mover when unit is destroyed
+	unit.Destroying:Connect(function()
+		PathfindingIntegration.removeUnit(unit)
+	end)
+
 	return unit
 end
 
@@ -321,6 +330,9 @@ function UnitManager.destroyRandomUnit(player: Player)
 	local unitToDestroy = playerData.Units[randomIndex]
 
 	if unitToDestroy then
+		-- Clean up pathfinding mover for this unit
+		PathfindingIntegration.removeUnit(unitToDestroy)
+
 		PlayerManager.removeUnit(player, unitToDestroy)
 		PlayerManager.updatePlayerStats(player)
 		unitToDestroy:Destroy()

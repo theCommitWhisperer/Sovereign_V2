@@ -112,7 +112,7 @@ local function getBuildingsInScreenBox(topLeft: Vector2, bottomRight: Vector2): 
 	end
 
 	if #foldersToSearch == 0 then
-		print("[DeletionInputHandler] No Buildings or PlacedWalls folder found")
+		-- print("[DeletionInputHandler] No Buildings or PlacedWalls folder found")
 		return buildings
 	end
 
@@ -175,7 +175,7 @@ local function getBuildingsInScreenBox(topLeft: Vector2, bottomRight: Vector2): 
 		end
 	end
 
-	print(string.format("[DeletionInputHandler] Found %d buildings in selection box", #buildings))
+	-- print(string.format("[DeletionInputHandler] Found %d buildings in selection box", #buildings))
 	return buildings
 end
 
@@ -204,7 +204,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end
 
 	if gameProcessed then
-		print("[DeletionInputHandler] Input was game processed, ignoring")
+		-- print("[DeletionInputHandler] Input was game processed, ignoring")
 		return
 	end
 
@@ -212,7 +212,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		dragStartPosition = UserInputService:GetMouseLocation()
 		isDragging = false -- Wait to see if it's a drag or click
-		print("[DeletionInputHandler] Mouse down at", dragStartPosition)
+		-- print("[DeletionInputHandler] Mouse down at", dragStartPosition)
 	end
 end)
 
@@ -230,7 +230,7 @@ UserInputService.InputChanged:Connect(function(input, gameProcessed)
 			if not isDragging then
 				isDragging = true
 				selectionBox = createSelectionBox()
-				print("[DeletionInputHandler] Started dragging, distance:", distance)
+				-- print("[DeletionInputHandler] Started dragging, distance:", distance)
 			end
 
 			if isDragging and selectionBox then
@@ -246,7 +246,7 @@ UserInputService.InputEnded:Connect(function(input, gameProcessed)
 	end
 
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		print("[DeletionInputHandler] Mouse released. isDragging:", isDragging, "dragStartPosition:", dragStartPosition)
+		-- print("[DeletionInputHandler] Mouse released. isDragging:", isDragging, "dragStartPosition:", dragStartPosition)
 
 		if isDragging and dragStartPosition then
 			-- Complete drag selection
@@ -260,45 +260,45 @@ UserInputService.InputEnded:Connect(function(input, gameProcessed)
 				math.max(dragStartPosition.Y, endPos.Y)
 			)
 
-			print(string.format("[DeletionInputHandler] Selection box: (%d,%d) to (%d,%d)",
-				topLeft.X, topLeft.Y, bottomRight.X, bottomRight.Y))
+			-- print(string.format("[DeletionInputHandler] Selection box: (%d,%d) to (%d,%d)",
+			-- 	topLeft.X, topLeft.Y, bottomRight.X, bottomRight.Y))
 
 			selectedBuildings = getBuildingsInScreenBox(topLeft, bottomRight)
 
 			if #selectedBuildings > 0 then
-				print(string.format("[DeletionInputHandler] Selected %d buildings for deletion", #selectedBuildings))
+				-- print(string.format("[DeletionInputHandler] Selected %d buildings for deletion", #selectedBuildings))
 				fireMultiDeleteEvent()
 			else
-				print("[DeletionInputHandler] No buildings found in selection")
+				-- print("[DeletionInputHandler] No buildings found in selection")
 			end
 		elseif dragStartPosition and not isDragging then
 			-- Single click - use mouse.Target to find clicked building
-			print("[DeletionInputHandler] Single click detected, checking mouse target")
+			-- print("[DeletionInputHandler] Single click detected, checking mouse target")
 			local mouse = player:GetMouse()
 			local target = mouse.Target
 
 			if target then
-				print("[DeletionInputHandler] Mouse target:", target.Name, "ClassName:", target.ClassName)
+				-- print("[DeletionInputHandler] Mouse target:", target.Name, "ClassName:", target.ClassName)
 				local building = findBuildingModelFromPart(target)
 
 				if building then
-					print("[DeletionInputHandler] Found building model:", building.Name)
-					print("[DeletionInputHandler] Can delete?", canDeleteBuilding(building))
-					print("[DeletionInputHandler] Is protected?", isProtectedBuilding(building))
+					-- print("[DeletionInputHandler] Found building model:", building.Name)
+					-- print("[DeletionInputHandler] Can delete?", canDeleteBuilding(building))
+					-- print("[DeletionInputHandler] Is protected?", isProtectedBuilding(building))
 				else
-					print("[DeletionInputHandler] No building model found from hit part")
+					-- print("[DeletionInputHandler] No building model found from hit part")
 				end
 
 				if building and canDeleteBuilding(building) and not isProtectedBuilding(building) then
-					print("[DeletionInputHandler] Found valid building for single deletion:", building.Name)
+					-- print("[DeletionInputHandler] Found valid building for single deletion:", building.Name)
 					-- Fire single-building delete event
 					selectedBuildings = { building }
 					fireMultiDeleteEvent()
 				else
-					print("[DeletionInputHandler] Building not valid for deletion")
+					-- print("[DeletionInputHandler] Building not valid for deletion")
 				end
 			else
-				print("[DeletionInputHandler] No mouse target found")
+				-- print("[DeletionInputHandler] No mouse target found")
 			end
 		end
 
@@ -327,6 +327,6 @@ deleteModeEvent.Event:Connect(function(isActive: boolean)
 	end
 end)
 
-print("[DeletionInputHandler] Drag-to-delete system initialized")
+-- print("[DeletionInputHandler] Drag-to-delete system initialized")
 
 return {}

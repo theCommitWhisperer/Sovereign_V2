@@ -773,7 +773,7 @@ function HUD:undoLastDeletion()
 	local history = self.state.deletionHistory
 	if #history == 0 then
 		HUDDebug:warn("No deletions to undo")
-		print("[UNDO] No deletions in history to undo")
+		-- print("[UNDO] No deletions in history to undo")
 		return
 	end
 
@@ -1497,7 +1497,7 @@ function HUD:render()
 					buildings = self.state.buildingsToDelete,
 					totalRefund = self.state.multiDeleteRefund,
 					onConfirm = function(selectedBuildings)
-						print(string.format("[HUD] Multi-delete confirmed with %d buildings", #selectedBuildings))
+						-- print(string.format("[HUD] Multi-delete confirmed with %d buildings", #selectedBuildings))
 
 						-- Get RemoveWallPiece event for walls
 						local RemoteEvents = ReplicatedStorage:FindFirstChild("RemoteEvents")
@@ -1534,24 +1534,24 @@ function HUD:render()
 
 						-- Delete buildings
 						for _, buildingInfo in selectedBuildings do
-							print(
-								string.format(
-									"[HUD] Deleting: %s (isWall: %s)",
-									buildingInfo.name,
-									tostring(buildingInfo.isWall)
-								)
-							)
+							-- print(
+							-- 	string.format(
+							-- 		"[HUD] Deleting: %s (isWall: %s)",
+							-- 		buildingInfo.name,
+							-- 		tostring(buildingInfo.isWall)
+							-- 	)
+							-- )
 							if buildingInfo.isWall then
 								-- Delete wall piece
 								if removePieceEvent then
-									print("[HUD] Firing RemoveWallPiece for wall:", buildingInfo.name)
+									-- print("[HUD] Firing RemoveWallPiece for wall:", buildingInfo.name)
 									removePieceEvent:FireServer(buildingInfo.model)
 								else
 									warn("[HUD] RemoveWallPiece event not found!")
 								end
 							else
 								-- Delete building
-								print("[HUD] Firing DeleteBuilding for building:", buildingInfo.name)
+								-- print("[HUD] Firing DeleteBuilding for building:", buildingInfo.name)
 								self.gameEvent:FireServer("DeleteBuilding", { buildingId = buildingInfo.name })
 							end
 						end

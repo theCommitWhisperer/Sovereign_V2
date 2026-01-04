@@ -87,7 +87,12 @@ function Toggle:render()
 				Name = "ValueLabel",
 				AutomaticSize = Enum.AutomaticSize.X,
 				Size = UDim2.new(0, 0, 1, 0),
-				Text = " " .. tostring(value) .. " ",
+				Text = " " .. (
+					if typeof(value) == "boolean" then
+						(if value then "Enabled" else "Disabled")
+					else
+						tostring(value)
+				) .. " ",
 				FontFace = UIConfig.Font.Default,
 				TextColor3 = UIConfig.Color.Primary,
 				TextSize = 22,

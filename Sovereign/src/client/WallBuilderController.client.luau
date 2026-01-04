@@ -550,7 +550,7 @@ mouse.Button1Down:Connect(function()
 				-- Check if it's owned by the player
 				if model:GetAttribute("Owner") == player.UserId then
 					removePieceEvent:FireServer(model)
-					print("[WallBuilderController] Removing wall piece:", model.Name)
+					-- print("[WallBuilderController] Removing wall piece:", model.Name)
 				end
 			end
 		end
@@ -625,7 +625,7 @@ gameEvent.OnClientEvent:Connect(function(action, data)
 	if action == "StartPlacement" then
 		-- Check if it's a wall building request
 		if data and (data == "Stone_Wall" or string.find(tostring(data), "Wall")) then
-			print("[WallBuilderController] Starting wall placement:", data)
+			-- print("[WallBuilderController] Starting wall placement:", data)
 
 			-- Reset any existing wall placement state
 			isDragging = false
@@ -681,7 +681,7 @@ end
 
 deleteModeEvent.Event:Connect(function(isActive: boolean)
 	isDeleteModeActive = isActive
-	print("[WallBuilderController] Delete mode:", isActive)
+	-- print("[WallBuilderController] Delete mode:", isActive)
 end)
 
 -- === SYNC ENDPOINTS FROM SERVER ===
@@ -694,7 +694,7 @@ task.spawn(function()
 		end)
 		if success and serverEndpoints then
 			wallEndpoints = serverEndpoints
-			print(string.format("[WallBuilderController] Synced %d wall endpoints from server", #wallEndpoints))
+			-- print(string.format("[WallBuilderController] Synced %d wall endpoints from server", #wallEndpoints))
 		else
 			warn("[WallBuilderController] Failed to sync endpoints from server")
 		end
@@ -703,6 +703,6 @@ task.spawn(function()
 	end
 end)
 
-print("[WallBuilderController] Wall Builder Ready")
+-- print("[WallBuilderController] Wall Builder Ready")
 
 return {}

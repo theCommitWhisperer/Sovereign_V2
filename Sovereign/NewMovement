@@ -1,0 +1,8 @@
+SpawnPoint
+WorkerIdlePoint
+WorkerWorkingPoint
+DefaultStoragePoint
+LogStoragePoint
+StoneStoragePoint
+
+Use BuildingsData, GameData, etc. to pass in what Points are available

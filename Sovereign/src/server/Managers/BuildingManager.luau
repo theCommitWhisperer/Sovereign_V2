@@ -11,7 +11,10 @@ local WallSystem = require(script.Parent.Parent.Systems.WallSystem)
 
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local StorageDebug = DebugManager.createChannel("Storage", false)
-local channel = DebugManager.createChannel("BuildingManager", true) -- Enable debug for AI building issues
+local channel = DebugManager.createChannel("BuildingManager", false)
+
+-- Import new A* pathfinding integration
+local PathfindingIntegration = require(script.Parent.Parent.Systems.PathfindingIntegration)
 
 local BuildingManager = {}
 
@@ -28,7 +31,7 @@ end
 
 -- Check if a position is clear of other buildings and units
 local function isPositionClear(position: Vector3, minimumDistance: number): boolean
-	minimumDistance = minimumDistance or 25 -- Default 25 studs minimum distance
+	minimumDistance = minimumDistance or 20 -- Default 20 studs minimum distance (reduced from 25)
 
 	-- Check against all existing buildings
 	local buildingsFolder = Workspace:FindFirstChild("Buildings")
@@ -196,8 +199,16 @@ function BuildingManager.createBuilding(
 		end
 	end
 
-	-- Add ownership attribute
+	-- Anchor all parts in the building to prevent physics movement
+	for _, descendant in building:GetDescendants() do
+		if descendant:IsA("BasePart") then
+			descendant.Anchored = true
+		end
+	end
+
+	-- Add ownership attributes
 	building:SetAttribute("Owner", ownerId)
+	building:SetAttribute("OwnerId", ownerId) -- For compatibility with WorkerManager
 	building:SetAttribute("BuildingType", buildingName)
 	building:SetAttribute("IsConstructed", true)
 
@@ -225,6 +236,14 @@ function BuildingManager.createBuilding(
 		WallSystem.registerWall(building)
 	end
 
+	-- Add building as obstacle to A* pathfinding grid
+	PathfindingIntegration.addObstacle(building)
+
+	-- Listen for building destruction to remove from pathfinding grid
+	building.Destroying:Connect(function()
+		PathfindingIntegration.removeObstacle(building)
+	end)
+
 	-- Lazy-load GameplayEnhancementManager to avoid circular dependency (only for real players)
 	if not isAI then
 		local success, err = pcall(function()
@@ -238,12 +257,15 @@ function BuildingManager.createBuilding(
 
 	-- Track in player data (only for real players, not AI)
 	if not isAI and typeof(player) == "Instance" then
-		PlayerManager.addBuilding(player :: Player, building)
+		local actualPlayer = player
+		PlayerManager.addBuilding(actualPlayer, building)
 
 		-- Special case for Keep
-		local playerData = PlayerManager.get(player :: Player)
+		local playerData = PlayerManager.get(actualPlayer)
 		if playerData and buildingName == "Keep" then
 			playerData.Keep = building
+			channel:info("Keep registered for " .. actualPlayer.Name)
+			-- Note: Peasant spawning is now handled by GameManager using SpawnPointSystem
 		end
 	end
 
@@ -265,6 +287,8 @@ end
 
 -- Add resources to a building's storage
 function BuildingManager.addToStorage(building: Instance, resourceType: string, amount: number): number
+	StorageDebug:info(`addToStorage called: building={building.Name}, resourceType={resourceType}, amount={amount}`)
+
 	if not BuildingStorage[building] then
 		StorageDebug:warn(`Building {building.Name} has no storage initialized`)
 		return 0 -- Building has no storage

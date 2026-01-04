@@ -51,11 +51,11 @@ local LOD_CONFIG = {
 local isMobile = isMobileDevice()
 local config = isMobile and LOD_CONFIG.mobile or LOD_CONFIG.desktop
 
-print(string.format("[WallRenderer] Running on %s device", isMobile and "MOBILE" or "DESKTOP"))
-print(string.format("[WallRenderer] LOD distances: High=%.0f, Medium=%.0f, Low=%.0f",
-	config.highDetailDistance,
-	config.mediumDetailDistance,
-	config.lowDetailDistance))
+-- print(string.format("[WallRenderer] Running on %s device", isMobile and "MOBILE" or "DESKTOP"))
+-- print(string.format("[WallRenderer] LOD distances: High=%.0f, Medium=%.0f, Low=%.0f",
+-- 	config.highDetailDistance,
+-- 	config.mediumDetailDistance,
+-- 	config.lowDetailDistance))
 
 -- Wall tracking
 type WallLODData = {
@@ -70,7 +70,7 @@ local lastUpdateTime = 0
 
 -- Initialize renderer
 function WallRenderer.initialize()
-	print("[WallRenderer] Initializing...")
+	-- print("[WallRenderer] Initializing...")
 
 	buildingsFolder = Workspace:WaitForChild("Buildings") :: Folder
 
@@ -101,7 +101,7 @@ function WallRenderer.initialize()
 		end
 	end)
 
-	print(string.format("[WallRenderer] Tracking %d walls", #trackedWalls))
+	-- print(string.format("[WallRenderer] Tracking %d walls", #trackedWalls))
 end
 
 -- Track a wall for LOD management
@@ -231,7 +231,7 @@ function WallRenderer.startLODUpdates()
 		end
 	end)
 
-	print("[WallRenderer] LOD update loop started")
+	-- print("[WallRenderer] LOD update loop started")
 end
 
 -- Get statistics
@@ -264,14 +264,14 @@ end
 -- Debug: Print stats
 function WallRenderer.printStats()
 	local stats = WallRenderer.getStats()
-	print(string.format(
-		"[WallRenderer] Walls: %d total | High: %d | Medium: %d | Low: %d | Culled: %d",
-		stats.totalWalls,
-		stats.highLOD,
-		stats.mediumLOD,
-		stats.lowLOD,
-		stats.culled
-	))
+	-- print(string.format(
+	-- 	"[WallRenderer] Walls: %d total | High: %d | Medium: %d | Low: %d | Culled: %d",
+	-- 	stats.totalWalls,
+	-- 	stats.highLOD,
+	-- 	stats.mediumLOD,
+	-- 	stats.lowLOD,
+	-- 	stats.culled
+	-- ))
 end
 
 -- Initialize automatically

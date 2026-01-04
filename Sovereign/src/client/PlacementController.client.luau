@@ -429,40 +429,22 @@ local function updateGhostPosition()
 			neighborParams.FilterDescendantsInstances = { ghostBuilding, player.Character, debugFolder }
 			neighborParams.FilterType = Enum.RaycastFilterType.Exclude
 
-			local searchBox = Vector3.new(35, 35, 35)
-			local nearbyParts = Workspace:GetPartBoundsInBox(ghostBuilding:GetPivot(), searchBox, neighborParams)
 			local minDist = SNAP_RADIUS
-
-			if #nearbyParts > 0 then
-				print(string.format("[Placement] Found %d nearby parts", #nearbyParts))
-			end
 
 			for _, part in ipairs(nearbyParts) do
 				local model = findBuildingModelFromPart(part)
 				if model and model ~= ghostBuilding then
 					local bType = model:GetAttribute("BuildingType")
 					if bType and (bType == "Stone_Wall" or string.find(bType, "Wall") or bType == "Tower") then
-						print(
-							string.format(
-								"[Placement] Checking neighbor: %s (Type: %s). Ghost CPs: %d",
-								model.Name,
-								bType,
-								#ghostCPs
-							)
-						)
 						local gCP, nCP = findNearestConnectionPoints(ghostBuilding, model)
 						if gCP and nCP then
 							local d = (gCP.Position - nCP.Position).Magnitude
-							print(string.format("[Placement]   Found matching CPs, distance: %.2f", d))
 							if d < minDist then
 								minDist = d
 								connectedNeighbor = model
 								bestGCP = gCP
 								bestNCP = nCP
 							end
-						else
-							local neighborCPs = findConnectionPoints(model)
-							print(string.format("[Placement]   No matching CPs (neighbor has %d CPs)", #neighborCPs))
 						end
 					end
 				end
@@ -472,16 +454,6 @@ local function updateGhostPosition()
 		-- 3. EXECUTE SNAP
 		if connectedNeighbor and bestGCP and bestNCP then
 			local snapDist = (bestGCP.Position - bestNCP.Position).Magnitude
-			print(
-				string.format(
-					"[Placement] Snapping to %s. Distance: %.2f\n  [Placement] Ghost CP at %s\n  [Placement] Neighbor CP at %s",
-					connectedNeighbor.Name,
-					snapDist,
-					tostring(bestGCP.Position),
-					tostring(bestNCP.Position)
-				)
-			)
-
 			-- A. Calculate Vector Diff for perfect alignment.
 			local diffVector = bestNCP.Position - bestGCP.Position
 			-- B. Add a small "nudge" to prevent Z-fighting/overlap.
@@ -508,17 +480,6 @@ local function updateGhostPosition()
 
 				ghostBuilding:PivotTo(adjustedCF)
 
-				print(
-					string.format(
-						"[Placement] Grid placement for %s at grid (%d, %d), rotation %d°\n  [Placement] Model CFrame: %s",
-						assetName,
-						gridX,
-						gridZ,
-						rotation,
-						tostring(adjustedCF)
-					)
-				)
-
 				if #ghostCPs > 0 then
 					updateDebugVisuals(ghostCPs[1].Position, nil)
 				end
@@ -533,15 +494,6 @@ local function updateGhostPosition()
 
 				local currentCPPos = primaryCP.Position
 				local diff = targetPos - currentCPPos
-
-				print(
-					string.format(
-						"[Placement] Fallback grid placement.\n  [Placement] Grid Target: %s\n  [Placement] Current CP: %s\n  [Placement] Delta: %s",
-						tostring(targetPos),
-						tostring(currentCPPos),
-						tostring(diff)
-					)
-				)
 
 				ghostBuilding:PivotTo(ghostBuilding:GetPivot() + diff)
 				updateDebugVisuals(primaryCP.Position, nil)
@@ -586,9 +538,23 @@ local function updateGhostPosition()
 		end
 	else
 		-- Non-wall placement
-		local _, size = getSafeBounds(ghostBuilding)
-		local snappedPos = Vector3.new(snappedX, groundY + size.Y / 2, snappedZ)
-		ghostBuilding:PivotTo(CFrame.new(snappedPos) * CFrame.Angles(0, math.rad(manualRotation), 0))
+		if ghostBuilding and ghostBuilding:IsA("Model") then
+			-- First position at ground level to get accurate bounding box
+			local tempPos = Vector3.new(snappedX, groundY, snappedZ)
+			ghostBuilding:PivotTo(CFrame.new(tempPos) * CFrame.Angles(0, math.rad(manualRotation), 0))
+
+			-- Calculate correct Y position based on bounding box bottom
+			local boundingCFrame, boundingSize = getSafeBounds(ghostBuilding)
+			local currentPivot = ghostBuilding:GetPivot()
+
+			-- Calculate how far the bottom of the model is from the pivot
+			local bottomOffset = (boundingCFrame.Position.Y - boundingSize.Y / 2) - currentPivot.Position.Y
+
+			-- Position so the bottom sits on the ground
+			local finalY = groundY - bottomOffset
+			local snappedPos = Vector3.new(snappedX, finalY, snappedZ)
+			ghostBuilding:PivotTo(CFrame.new(snappedPos) * CFrame.Angles(0, math.rad(manualRotation), 0))
+		end
 
 		local collisionParams = OverlapParams.new()
 		collisionParams.FilterDescendantsInstances = { ghostBuilding, player.Character, debugFolder }
@@ -715,13 +681,6 @@ UserInputService.InputBegan:Connect(function(input, gp)
 				manualRotation = manualRotation,
 				wallPieceType = pieceType,
 			}
-			print(
-				string.format(
-					"[Placement] FINAL PLACEMENT. Type: %s, CFrame: %s",
-					pieceType or currentBuildingName,
-					tostring(pivot)
-				)
-			)
 			gameEvent:FireServer("PlaceBuilding", data)
 
 			local isWall = currentBuildingName == "Stone_Wall" or currentBuildingName == "Wall_Segment"

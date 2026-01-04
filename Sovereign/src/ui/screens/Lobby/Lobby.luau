@@ -10,7 +10,7 @@ local PlayerList = require(script.Parent.PlayerList)
 local MapPreview = require(script.Parent.MapPreview)
 local Row = require(script.Parent.Parent.Parent.components.Row)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local LobbyDebug = DebugManager.createChannel("Lobby", true)
+local LobbyDebug = DebugManager.createChannel("Lobby", false)
 
 local Lobby = React.Component:extend("Lobby")
 
@@ -39,7 +39,9 @@ local function getInitialState()
 end
 
 function Lobby:init()
+	LobbyDebug:info("Lobby:init() - Initializing lobby component")
 	self.state = getInitialState()
+	LobbyDebug:info("Initial lobby state created", { mapCount = #self.state.maps })
 
 	-- Track if game is starting to prevent double-clicks
 	self.isStartingGame = false
@@ -48,12 +50,15 @@ function Lobby:init()
 	self.countdownThread = nil
 
 	-- Setup lobby event listener
+	LobbyDebug:info("Waiting for RemoteEvents")
 	local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
 	local LobbyEvent = RemoteEvents:WaitForChild("LobbyEvent")
 	local GameEvent = RemoteEvents:WaitForChild("GameEvent")
+	LobbyDebug:info("RemoteEvents found and connected")
 
 	-- Listen for lobby state updates from server
 	self.lobbyConnection = LobbyEvent.OnClientEvent:Connect(function(action, data)
+		LobbyDebug:info("Received LobbyEvent from server", { action = action })
 		if action == "LobbyStateUpdate" then
 			-- Convert server players to UI format
 			local playersArray = {}
@@ -73,6 +78,7 @@ function Lobby:init()
 				countdownActive = data.CountdownActive,
 				countdownTimeRemaining = data.CountdownTimeRemaining,
 			}
+			LobbyDebug:info("Players updated", { playerCount = #playersArray })
 
 			-- Sync settings from server
 			for key, value in pairs(data.Settings) do
@@ -144,6 +150,7 @@ function Lobby:init()
 	end)
 
 	-- Join the lobby when component mounts
+	LobbyDebug:info("Sending JoinLobby request to server")
 	LobbyEvent:FireServer("JoinLobby")
 
 	self.addAI = function()
@@ -166,9 +173,11 @@ function Lobby:init()
 		LobbyEvent:FireServer("VoteSetting", settingId, newValue)
 	end
 
-	self.selectFaction = function(faction)
-		LobbyDebug:info("Faction selected:", faction)
-		LobbyEvent:FireServer("SelectFaction", faction)
+	self.selectFaction = function(faction, targetUserId)
+		-- If targetUserId is not provided, assume it's for the local player
+		local userId = targetUserId or localPlayer.UserId
+		LobbyDebug:info("Faction selected", { faction = faction, userId = userId })
+		LobbyEvent:FireServer("SelectFaction", faction, userId)
 	end
 
 	self.toggleReady = function()
@@ -200,39 +209,6 @@ function Lobby:willUnmount()
 			LobbyEvent:FireServer("LeaveLobby")
 		end
 	end
-end
-
--- Helper to create faction button
-function Lobby:createFactionButton(faction, order)
-	local lobbyConfig = UIConfig.LobbyPage
-	local isSelected = self.state.myFaction == faction
-	local isTaken = false
-
-	-- Check if faction is taken by someone else
-	for _, player in ipairs(self.state.players) do
-		if player.faction == faction and player.userId ~= localPlayer.UserId then
-			isTaken = true
-			break
-		end
-	end
-
-	return React.createElement("TextButton", {
-		LayoutOrder = order,
-		Text = faction,
-		Size = UDim2.new(0.15, 0, 0.7, 0),
-		BackgroundColor3 = if isSelected then Color3.fromRGB(100, 200, 100)
-			elseif isTaken then Color3.fromRGB(100, 100, 100)
-			else Color3.fromRGB(50, 50, 50),
-		TextColor3 = if isTaken then Color3.fromRGB(150, 150, 150) else lobbyConfig.MapSelectorTextColor,
-		FontFace = UIConfig.Font.Default,
-		TextSize = 16,
-		BorderSizePixel = 0,
-		[React.Event.MouseButton1Click] = function()
-			if not isTaken then
-				self.selectFaction(faction)
-			end
-		end,
-	})
 end
 
 -- Helper function to render a list of settings from the config
@@ -466,6 +442,8 @@ function Lobby:render()
 							players = self.state.players,
 							onAddAI = self.addAI,
 							onRemovePlayer = self.removePlayer,
+							onSelectFaction = self.selectFaction,
+							localPlayerId = localPlayer.UserId,
 							Size = UDim2.new(1, 0, 0, 250),
 							Button = Button,
 						}),
@@ -608,47 +586,19 @@ function Lobby:render()
 							SortOrder = Enum.SortOrder.LayoutOrder,
 							Padding = UDim.new(0, 10),
 						}),
-						-- Faction Selector
-						FactionFrame = React.createElement("Frame", {
-							LayoutOrder = 1,
-							Size = UDim2.new(1, 0, 0, 50),
-							BackgroundColor3 = lobbyConfig.PanelBackgroundColor,
-							BackgroundTransparency = lobbyConfig.PanelBackgroundTransparency,
-							BorderSizePixel = 0,
-						}, {
-							UIListLayout = React.createElement("UIListLayout", {
-								FillDirection = Enum.FillDirection.Horizontal,
-								HorizontalAlignment = Enum.HorizontalAlignment.Center,
-								VerticalAlignment = Enum.VerticalAlignment.Center,
-								Padding = UDim.new(0, 10),
-							}),
-							Label = React.createElement("TextLabel", {
-								LayoutOrder = 0,
-								Text = "Faction:",
-								Size = UDim2.new(0.25, 0, 1, 0),
-								FontFace = UIConfig.Font.Default,
-								TextColor3 = lobbyConfig.OptionsTextColor,
-								TextSize = 18,
-								BackgroundTransparency = 1,
-							}),
-							Kingdom = self:createFactionButton("Kingdom", 1),
-							Empire = self:createFactionButton("Empire", 2),
-							Tribes = self:createFactionButton("Tribes", 3),
-							IronLegion = self:createFactionButton("IronLegion", 4),
-						}),
 						-- Countdown Display (if active)
 						CountdownLabel = self.state.countdownActive and React.createElement("TextLabel", {
-							LayoutOrder = 2,
+							LayoutOrder = 1,
 							Text = "Starting in " .. math.ceil(self.state.countdownTimeRemaining) .. "...",
-							Size = UDim2.new(1, 0, 0, 40),
+							Size = UDim2.new(1, 0, 0, 50),
 							FontFace = UIConfig.Font.Title,
 							TextColor3 = Color3.fromRGB(255, 200, 0),
 							TextSize = 24,
 							BackgroundTransparency = 1,
 						}) or nil,
-						-- Ready Button
-						ReadyButton = React.createElement("TextButton", {
-							LayoutOrder = 3,
+						-- Ready Button (hidden when countdown is active)
+						ReadyButton = not self.state.countdownActive and React.createElement("TextButton", {
+							LayoutOrder = 1,
 							Text = if self.state.isReady then "Not Ready" else "Ready",
 							AutomaticSize = Enum.AutomaticSize.X,
 							Size = UDim2.fromOffset(0, 50),
@@ -661,10 +611,10 @@ function Lobby:render()
 							[React.Event.MouseButton1Click] = function()
 								self.toggleReady()
 							end,
-						}),
+						}) or nil,
 						BackButton = React.createElement("TextButton", {
-							LayoutOrder = 4,
-							Text = "Back",
+							LayoutOrder = 3,
+							Text = if self.state.countdownActive then "Cancel" else "Back",
 							AutomaticSize = Enum.AutomaticSize.X,
 							Size = UDim2.fromOffset(0, 40),
 							BackgroundTransparency = 1,
@@ -672,8 +622,12 @@ function Lobby:render()
 							TextColor3 = lobbyConfig.BackButtonTextColor,
 							TextSize = lobbyConfig.BackButtonTextSize,
 							[React.Event.MouseButton1Click] = function()
-								if navigate then
-									navigate("mainMenu")
+								if self.state.countdownActive then
+									self.toggleReady()
+								else
+									if navigate then
+										navigate("mainMenu")
+									end
 								end
 							end,
 						}),

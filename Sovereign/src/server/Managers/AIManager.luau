@@ -85,6 +85,11 @@ type AIState = {
 local aiStates: { [number]: AIState } = {}
 local AI_BASE_RESOURCE_AMOUNT = 50 -- Base resources AI gets periodically
 
+-- Get AI state by ownerId (used by other managers like PopulationManager)
+function AIManager.getState(ownerId)
+	return aiStates[ownerId]
+end
+
 -- Register an AI player with difficulty
 function AIManager.registerAI(
 	ownerId: number,
@@ -107,7 +112,7 @@ function AIManager.registerAI(
 		faction = faction,
 		spawnPoint = spawnPoint,
 		difficulty = aiDifficulty,
-		hasKeep = false,
+		hasKeep = true, -- Keep spawned at game start by GameManager
 		hasStorehouse = false,
 		hasGranary = false,
 		lastBuildTime = 0,
@@ -120,14 +125,19 @@ function AIManager.registerAI(
 			Iron_Bars = 20,
 			Weapons = 10,
 		},
-		buildings = {},
-		units = {},
+		buildings = {}, -- Keep will be added by GameManager
+		units = {}, -- Starting peasants will be added by GameManager
 		buildingCount = 0,
+		unitCount = 0,
 		-- Personality traits
 		preferredUnitType = preferredUnit,
 		buildingBias = buildingBias,
 		aggressionBonus = aggressionBonus,
 	}
+
+	-- Register with PopulationManager for automatic population growth
+	local PopulationManager = require(script.Parent.PopulationManager)
+	PopulationManager.createAI(ownerId, ownerName)
 
 	AIDebug:info(
 		`Registered AI player: {ownerName} ({faction}) - Difficulty: {aiDifficulty}, Prefers: {preferredUnit}, Bias: {buildingBias}, Aggression: +{math.floor(aggressionBonus * 100)}%`
@@ -152,15 +162,13 @@ function AIManager.runAILoop(ownerId: number)
 	-- Initial setup delay to ensure units are spawned and settled
 	task.wait(math.max(config.startDelay, 5)) -- At least 5 seconds delay
 
-	-- Build Keep first (at spawn point - units are 50+ studs away)
-	AIManager.buildKeep(ownerId)
-	task.wait(2)
+	-- Keep and starting peasants already spawned by GameManager (same as players)
+	-- No need to build Keep or train initial peasants here
 
-	-- Build Storehouse (40 studs from Keep for Wood/Stone/Iron)
+	-- Build economy buildings
 	AIManager.buildStorehouse(ownerId)
 	task.wait(2)
 
-	-- Build Granary (for Food storage)
 	AIManager.buildGranary(ownerId)
 	task.wait(3)
 
@@ -229,6 +237,49 @@ function AIManager.buildKeep(ownerId: number)
 	end
 end
 
+-- Train initial peasants after Keep is built (similar to player starting units)
+function AIManager.trainInitialPeasants(ownerId, count)
+	local state = aiStates[ownerId]
+	if not state or not state.hasKeep then
+		AIDebug:warn("Cannot train initial peasants - no Keep built yet")
+		return
+	end
+
+	count = count or 5 -- Default to 5 peasants
+	local UnitManager = require(script.Parent.UnitManager)
+
+	AIDebug:info(state.ownerName .. " training " .. count .. " initial peasants")
+
+	for i = 1, count do
+		-- Spawn peasants 30-50 studs away from Keep in random directions
+		local angle = math.random() * math.pi * 2
+		local distance = math.random(30, 50)
+		local spawnOffset = Vector3.new(
+			math.cos(angle) * distance,
+			0,
+			math.sin(angle) * distance
+		)
+		local basePos = state.spawnPoint.Position + spawnOffset
+		local spawnPos = Vector3.new(basePos.X, 10, basePos.Z)
+
+		-- Create peasant unit
+		AIDebug:info("[PEASANT SPAWN] AIManager.trainInitialPeasants - " .. state.ownerName .. " spawning peasant #" .. i .. " at " .. tostring(spawnPos))
+		local peasant = UnitManager.createUnit("Peasant", ownerId, spawnPos, state.faction)
+		if peasant then
+			table.insert(state.units, peasant)
+			state.unitCount = state.unitCount + 1
+			AIDebug:info("[PEASANT SPAWN] AIManager - Successfully spawned peasant for " .. state.ownerName)
+		end
+
+		-- Stagger spawning to avoid pathfinding congestion
+		if i < count then
+			task.wait(0.5)
+		end
+	end
+
+	AIDebug:info(state.ownerName .. " finished training initial peasants")
+end
+
 -- Build Storehouse for AI
 function AIManager.buildStorehouse(ownerId: number)
 	local state = aiStates[ownerId]
@@ -285,73 +336,89 @@ function AIManager.attemptBuilding(ownerId: number)
 		return
 	end
 
-	-- Count existing building types for strategic building
-	local buildingCounts = {
-		Barracks = 0,
-		["Archery Range"] = 0,
-		Lumbermill = 0,
-		Farm = 0,
-		["Stone Mine"] = 0,
-	}
+	-- Count existing building types dynamically
+	local buildingCounts = {}
 
 	for _, building in state.buildings do
 		if building and building.Parent then
 			local buildingType = building:GetAttribute("BuildingType")
-			if buildingCounts[buildingType] then
-				buildingCounts[buildingType] += 1
+			if buildingType then
+				buildingCounts[buildingType] = (buildingCounts[buildingType] or 0) + 1
 			end
 		end
 	end
 
-	-- Strategic building selection based on AI personality and what's needed
-	local buildingOptions = {}
+	-- Categorize buildings from GameData dynamically
 	local economyBuildings = {}
 	local militaryBuildings = {}
+	local storageBuildings = {}
 
-	-- Economy buildings
-	if buildingCounts["Farm"] == 0 then
-		table.insert(economyBuildings, "Farm")
-	end
-	if buildingCounts["Lumbermill"] == 0 then
-		table.insert(economyBuildings, "Lumbermill")
-	end
-	if buildingCounts["Stone Mine"] == 0 then
-		table.insert(economyBuildings, "Stone Mine")
+	for buildingName, buildingData in pairs(GameData.Buildings) do
+		-- Skip the Keep (main building)
+		if buildingName == "Keep" then
+			continue
+		end
+
+		-- Skip buildings without model assets (can't be placed by AI)
+		if not buildingData.model_asset_name then
+			continue
+		end
+
+		-- Categorize based on building properties
+		if buildingData.can_train_units then
+			-- Military building (can train units)
+			table.insert(militaryBuildings, buildingName)
+		elseif buildingData.produces_resource then
+			-- Economy building (produces resources)
+			table.insert(economyBuildings, buildingName)
+		elseif buildingData.storage_capacity then
+			-- Storage building
+			table.insert(storageBuildings, buildingName)
+		end
 	end
 
-	-- Military buildings
-	if buildingCounts["Barracks"] < 2 then
-		table.insert(militaryBuildings, "Barracks")
+	-- Build priority list based on what's missing
+	local buildingOptions = {}
+
+	-- Always prioritize storage if we have none
+	for _, buildingName in storageBuildings do
+		if not buildingCounts[buildingName] or buildingCounts[buildingName] == 0 then
+			table.insert(buildingOptions, buildingName)
+		end
 	end
-	if buildingCounts["Archery Range"] < 1 then
-		table.insert(militaryBuildings, "Archery Range")
+
+	-- Add economy buildings we don't have yet
+	for _, buildingName in economyBuildings do
+		if not buildingCounts[buildingName] or buildingCounts[buildingName] == 0 then
+			table.insert(buildingOptions, buildingName)
+		end
+	end
+
+	-- Add military buildings (limited quantities)
+	for _, buildingName in militaryBuildings do
+		local maxCount = 2 -- Max 2 of each military building
+		if not buildingCounts[buildingName] or buildingCounts[buildingName] < maxCount then
+			table.insert(buildingOptions, buildingName)
+		end
 	end
 
 	-- AI personality influences building priority
-	if state.buildingBias == "economy" then
-		-- Economy-focused AI: prioritize economy buildings
-		for _, building in economyBuildings do
-			table.insert(buildingOptions, building)
+	if state.buildingBias == "military" then
+		-- Military-focused: reverse order to prioritize military
+		local temp = {}
+		for i = #buildingOptions, 1, -1 do
+			table.insert(temp, buildingOptions[i])
 		end
-		for _, building in militaryBuildings do
-			table.insert(buildingOptions, building)
-		end
-	else
-		-- Military-focused AI: prioritize military buildings
-		for _, building in militaryBuildings do
-			table.insert(buildingOptions, building)
-		end
-		for _, building in economyBuildings do
-			table.insert(buildingOptions, building)
-		end
+		buildingOptions = temp
 	end
 
-	-- If all priorities met, add any random building based on bias
+	-- Fallback: if no options, pick from available buildings
 	if #buildingOptions == 0 then
-		if state.buildingBias == "economy" then
-			buildingOptions = { "Farm", "Lumbermill", "Barracks" }
-		else
-			buildingOptions = { "Barracks", "Archery Range", "Farm" }
+		for _, buildingName in economyBuildings do
+			table.insert(buildingOptions, buildingName)
+		end
+		for _, buildingName in militaryBuildings do
+			table.insert(buildingOptions, buildingName)
 		end
 	end
 
@@ -410,14 +477,42 @@ function AIManager.attemptTraining(ownerId: number)
 
 	local randomUnit = unitOptions[math.random(1, #unitOptions)]
 
-	-- Spawn near Keep
-	local spawnOffset = Vector3.new(math.random(-15, 15), 0, math.random(-15, 15))
-	local spawnPos = state.spawnPoint.Position + spawnOffset
+	-- Only spawn units if Keep has been built
+	if not state.hasKeep then
+		AIDebug:warn(`{state.ownerName} cannot train {randomUnit} - no Keep built yet`)
+		return
+	end
+
+	-- Spawn away from Keep to avoid pathfinding issues (30-50 studs away in random direction)
+	local angle = math.random() * math.pi * 2 -- Random angle in radians
+	local distance = math.random(30, 50) -- 30-50 studs away
+	local spawnOffset = Vector3.new(
+		math.cos(angle) * distance,
+		0,
+		math.sin(angle) * distance
+	)
+	local basePos = state.spawnPoint.Position + spawnOffset
+	-- Use Y=10 as starting point (typical ground height) - physics will adjust
+	local spawnPos = Vector3.new(basePos.X, 10, basePos.Z)
+
+	AIDebug:info(state.ownerName .. " spawning " .. randomUnit .. " at " .. tostring(spawnPos) .. " (distance: " .. distance .. " studs)")
 
 	local unit = UnitManager.createUnit(randomUnit, ownerId, spawnPos, state.faction)
 	if unit then
 		table.insert(state.units, unit)
-		AIDebug:info(`{state.ownerName} trained {randomUnit}`)
+		AIDebug:info(state.ownerName .. " trained " .. randomUnit .. " successfully")
+
+		-- TESTING: Immediately send ALL units to move (for debugging)
+		task.wait(0.5) -- Small delay to ensure unit is fully created
+		local spawnPos = state.spawnPoint.Position
+		-- Fix Y coordinate to ground level for pathfinding
+		local targetPos = Vector3.new(spawnPos.X + 100, 0, spawnPos.Z)
+		unit:SetAttribute("TargetPosition", targetPos)
+		unit:SetAttribute("IsMoving", true)
+		local hasHumanoid = unit:FindFirstChildOfClass("Humanoid") ~= nil
+		local hasPrimaryPart = unit.PrimaryPart ~= nil
+		AIDebug:info(`[TEST] Sent {randomUnit} to move to {targetPos}`)
+		AIDebug:info(`[TEST] Unit components - IsMoving: {unit:GetAttribute("IsMoving")}, Humanoid: {hasHumanoid}, PrimaryPart: {hasPrimaryPart}`)
 	end
 end
 
@@ -476,25 +571,57 @@ function AIManager.placeBuilding(ownerId: number, buildingName: string, cframe: 
 		groundY = groundResult.Position.Y
 	end
 
-	-- Use the same formula as PlacementController (line 590)
-	local buildingSize = buildingInfo.size or Vector3.new(10, 10, 10)
-	local adjustedY = groundY + buildingSize.Y / 2
+	-- Get the building model template to measure its bounding box
+	local Assets = ReplicatedStorage:FindFirstChild("Assets")
+	local buildingAssets = Assets and Assets:FindFirstChild("Buildings")
+	local assetName = buildingInfo.model_asset_name or buildingName
 
-	-- Create adjusted CFrame with proper ground height
-	local adjustedCFrame = CFrame.new(position.X, adjustedY, position.Z) * (cframe - cframe.Position)
+	if not buildingAssets then
+		AIDebug:warn(`No building assets found`)
+		return nil
+	end
 
-	AIDebug:info(`AI placing {buildingName} - Ground Y: {groundY}, Size Y: {buildingSize.Y}, Final Y: {adjustedY}`)
+	local template = buildingAssets:FindFirstChild(assetName)
+	if not template or not template:IsA("Model") then
+		AIDebug:warn(`No template found for {assetName}`)
+		return nil
+	end
 
-	-- Use BuildingManager to create the building (handles all validation and collision)
-	-- Pass ownerId (number) instead of Player object - BuildingManager now supports both
+	-- Create a temporary clone to measure bounding box (don't parent it yet)
+	local tempModel = template:Clone()
+	tempModel.Parent = nil -- Keep unparented for measurement
+
+	-- Get bounding box of the template
+	local boundingCFrame, boundingSize = tempModel:GetBoundingBox()
+	local tempPivot = tempModel:GetPivot()
+
+	-- Calculate bottom offset (distance from pivot to bottom of model)
+	local bottomOffset = (boundingCFrame.Position.Y - boundingSize.Y / 2) - tempPivot.Position.Y
+
+	-- Calculate final Y position so bottom sits on ground
+	local finalY = groundY - bottomOffset
+	local finalCFrame = CFrame.new(position.X, finalY, position.Z) * (cframe - cframe.Position)
+
+	-- Clean up temp model
+	tempModel:Destroy()
+
+	AIDebug:info(`AI placing {buildingName} - Ground Y: {groundY}, Pivot Y: {finalY}, Bottom Offset: {bottomOffset}`)
+
+	-- Now create the building at the correct final position
+	-- BuildingManager will check collisions at this position
 	local building = BuildingManager.createBuilding(
 		ownerId, -- AI uses ownerId instead of Player
 		buildingName,
-		adjustedCFrame,
+		finalCFrame,
 		nil, -- wallPieceType
 		nil, -- manualRotation
 		true -- skipCost = true for AI
 	)
+
+	if not building then
+		AIDebug:warn(`Failed to create {buildingName} for {state.ownerName} - likely collision`)
+		return nil
+	end
 
 	if building then
 		-- Add AI-specific attributes
@@ -556,9 +683,27 @@ function AIManager.launchAttackWave(ownerId: number)
 
 	-- Command units to move to target
 	for _, unit in combatUnits do
+		-- Verify unit has required components
+		local hasHumanoid = unit:FindFirstChildOfClass("Humanoid") ~= nil
+		local hasPrimaryPart = unit.PrimaryPart ~= nil
+
+		if not hasHumanoid or not hasPrimaryPart then
+			AIDebug:warn(`Unit {unit.Name} missing components - Humanoid: {hasHumanoid}, PrimaryPart: {hasPrimaryPart}`)
+		end
+
+		-- Check if pathfinding recently failed (respect MovementSystem cooldown)
+		local pathfindingFailed = unit:GetAttribute("PathfindingFailed")
+		if pathfindingFailed and (tick() - pathfindingFailed) < 30 then
+			AIDebug:warn(`{unit.Name} pathfinding failed recently, skipping attack command`)
+			return -- Don't spam pathfinding
+		end
+
 		-- Set unit destination attribute for movement system
-		unit:SetAttribute("AIDestination", targetPosition)
+		unit:SetAttribute("TargetPosition", targetPosition)
+		unit:SetAttribute("IsMoving", true)
 		unit:SetAttribute("AICommand", "Attack")
+
+		AIDebug:info(`Set {unit.Name} to move to {targetPosition} - IsMoving: {unit:GetAttribute("IsMoving")}`)
 	end
 
 	AIDebug:info(`{state.ownerName} launched attack wave with {#combatUnits} units to {targetPosition}`)
@@ -617,7 +762,18 @@ function AIManager.managePeasants(ownerId: number)
 
 		-- Send peasant to gather if resource found
 		if nearestResource then
-			peasant:SetAttribute("AIDestination", nearestResource:GetPivot().Position)
+			-- Check if pathfinding recently failed (respect MovementSystem cooldown)
+			local pathfindingFailed = peasant:GetAttribute("PathfindingFailed")
+			if pathfindingFailed and (tick() - pathfindingFailed) < 30 then
+				-- Don't spam pathfinding - skip this peasant
+				return
+			end
+
+			local resourcePos = nearestResource:GetPivot().Position
+			-- Fix Y coordinate to ground level for pathfinding
+			local groundPos = Vector3.new(resourcePos.X, 0, resourcePos.Z)
+			peasant:SetAttribute("TargetPosition", groundPos)
+			peasant:SetAttribute("IsMoving", true)
 			peasant:SetAttribute("AICommand", "Gather")
 			peasant:SetAttribute("TargetResource", nearestResource)
 		end
@@ -710,9 +866,19 @@ function AIManager.sendScout(ownerId: number)
 	if #enemyKeeps > 0 then
 		local targetKeep = enemyKeeps[math.random(1, #enemyKeeps)]
 		local targetPos = targetKeep:GetPivot().Position
+		-- Check if pathfinding recently failed (respect MovementSystem cooldown)
+		local pathfindingFailed = scoutUnit:GetAttribute("PathfindingFailed")
+		if pathfindingFailed and (tick() - pathfindingFailed) < 30 then
+			AIDebug:warn(`{state.ownerName} scout pathfinding failed recently, waiting for cooldown`)
+			return -- Don't spam pathfinding
+		end
+
+		-- Fix Y coordinate to ground level for pathfinding
+		local groundPos = Vector3.new(targetPos.X, 0, targetPos.Z)
 
 		-- Send scout to enemy base
-		scoutUnit:SetAttribute("AIDestination", targetPos)
+		scoutUnit:SetAttribute("TargetPosition", groundPos)
+		scoutUnit:SetAttribute("IsMoving", true)
 		scoutUnit:SetAttribute("AICommand", "Scout")
 
 		AIDebug:info(`{state.ownerName} sent scout to enemy territory`)
@@ -741,7 +907,9 @@ function AIManager.checkDefensiveStatus(ownerId: number)
 		if building and building.Parent then
 			local buildingType = building:GetAttribute("BuildingType")
 			if buildingType == "Keep" then
-				keepPosition = building:GetPivot().Position
+				local pivotPos = building:GetPivot().Position
+				-- Fix Y coordinate to ground level for pathfinding
+				keepPosition = Vector3.new(pivotPos.X, 0, pivotPos.Z)
 				break
 			end
 		end
@@ -773,9 +941,14 @@ function AIManager.checkDefensiveStatus(ownerId: number)
 			if unit and unit.Parent then
 				local unitType = unit:GetAttribute("UnitType")
 				if unitType and unitType ~= "Peasant" then
-					-- Send units back to defend Keep
-					unit:SetAttribute("AIDestination", keepPosition)
-					unit:SetAttribute("AICommand", "Defend")
+					-- Check if pathfinding recently failed (respect MovementSystem cooldown)
+					local pathfindingFailed = unit:GetAttribute("PathfindingFailed")
+					if not (pathfindingFailed and (tick() - pathfindingFailed) < 30) then
+						-- Send units back to defend Keep
+						unit:SetAttribute("TargetPosition", keepPosition)
+						unit:SetAttribute("IsMoving", true)
+						unit:SetAttribute("AICommand", "Defend")
+					end
 				end
 			end
 		end
@@ -801,7 +974,9 @@ function AIManager.findNearestEnemyTarget(ownerId: number, aiPosition: Vector3):
 		-- Find enemy Keeps (not AI's own)
 		if buildingType == "Keep" and buildingOwner and buildingOwner ~= ownerId then
 			local buildingPos = building:GetPivot().Position
-			local distance = (buildingPos - aiPosition).Magnitude
+			-- Fix Y coordinate to ground level for pathfinding
+			local groundPos = Vector3.new(buildingPos.X, 0, buildingPos.Z)
+			local distance = (groundPos - aiPosition).Magnitude
 
 			-- Count enemy's nearby units (within 150 studs of their Keep)
 			local enemyUnitCount = 0
@@ -818,7 +993,7 @@ function AIManager.findNearestEnemyTarget(ownerId: number, aiPosition: Vector3):
 			end
 
 			table.insert(enemyTargets, {
-				position = buildingPos,
+				position = groundPos, -- Use ground position for movement target
 				distance = distance,
 				unitCount = enemyUnitCount,
 				score = (1000 / distance) - (enemyUnitCount * 10), -- Higher score = better target
@@ -851,8 +1026,40 @@ function AIManager.getValidBuildingPosition(ownerId: number, buildingName: strin
 		return nil
 	end
 
+	-- Get all buildings in workspace for collision checking
+	local BuildingsFolder = Workspace:FindFirstChild("Buildings")
+	local UnitsFolder = Workspace:FindFirstChild("Units")
+	local ResourceNodesFolder = Workspace:FindFirstChild("ResourceNodes")
+
+	local allBuildings = {}
+	if BuildingsFolder then
+		for _, building in BuildingsFolder:GetChildren() do
+			if building:IsA("Model") then
+				table.insert(allBuildings, building)
+			end
+		end
+	end
+
+	local allUnits = {}
+	if UnitsFolder then
+		for _, unit in UnitsFolder:GetChildren() do
+			if unit:IsA("Model") then
+				table.insert(allUnits, unit)
+			end
+		end
+	end
+
+	local allResourceNodes = {}
+	if ResourceNodesFolder then
+		for _, node in ResourceNodesFolder:GetChildren() do
+			if node:IsA("Model") then
+				table.insert(allResourceNodes, node)
+			end
+		end
+	end
+
 	-- Try multiple positions
-	for _ = 1, 10 do
+	for _ = 1, 15 do -- Increased attempts from 10 to 15
 		-- Generate random position near spawn (expanded range for larger estates)
 		local angle = math.random() * math.pi * 2
 		local distance = math.random(30, 200) -- Expanded from 25-70 to 30-200 for larger estates
@@ -860,14 +1067,45 @@ function AIManager.getValidBuildingPosition(ownerId: number, buildingName: strin
 		local offsetZ = math.sin(angle) * distance
 		local testPosition = state.spawnPoint * CFrame.new(offsetX, 0, offsetZ)
 
-		-- Check if position is clear (simple check - just distance from other buildings)
+		-- Check if position is clear (check against ALL buildings, units, and resources)
 		local isClear = true
-		for _, existingBuilding in state.buildings do
+		local minimumBuildingDistance = 20 -- Distance from other buildings
+		local minimumUnitDistance = 15 -- Distance from units (peasants, soldiers)
+		local minimumResourceDistance = 12 -- Distance from resource nodes (trees, stone)
+
+		-- Check against buildings
+		for _, existingBuilding in allBuildings do
 			if existingBuilding and existingBuilding.Parent then
 				local dist = (existingBuilding:GetPivot().Position - testPosition.Position).Magnitude
-				if dist < 30 then -- Minimum 30 studs between buildings
+				if dist < minimumBuildingDistance then
 					isClear = false
 					break
+				end
+			end
+		end
+
+		-- Check against units (don't place on peasants!)
+		if isClear then
+			for _, unit in allUnits do
+				if unit and unit.Parent then
+					local dist = (unit:GetPivot().Position - testPosition.Position).Magnitude
+					if dist < minimumUnitDistance then
+						isClear = false
+						break
+					end
+				end
+			end
+		end
+
+		-- Check against resource nodes (don't place on trees!)
+		if isClear then
+			for _, node in allResourceNodes do
+				if node and node.Parent then
+					local dist = (node:GetPivot().Position - testPosition.Position).Magnitude
+					if dist < minimumResourceDistance then
+						isClear = false
+						break
+					end
 				end
 			end
 		end

@@ -305,7 +305,7 @@ function WallSystemServer.initialize()
 					registerWallEndpoints(piece, point.position, point.rotation or 0, point.type)
 				end
 			end
-			print(string.format("[WallSystemServer] Placed %d wall pieces for %s", #pathData, player.Name))
+			-- print(string.format("[WallSystemServer] Placed %d wall pieces for %s", #pathData, player.Name))
 		else
 			warn(string.format("[WallSystemServer] Blocked Build (%s): %s", player.Name, err))
 		end
@@ -326,14 +326,14 @@ function WallSystemServer.initialize()
 					-- Unregister endpoints before destroying
 					unregisterWallEndpoints(model)
 					model:Destroy()
-					print(string.format("[WallSystemServer] Removed wall piece for %s", player.Name))
+					-- print(string.format("[WallSystemServer] Removed wall piece for %s", player.Name))
 				end
 			end
 		end
 	end)
 
 	-- Initialize existing walls on server start
-	print("[WallSystemServer] Scanning for existing walls...")
+	-- print("[WallSystemServer] Scanning for existing walls...")
 	local BuildingsFolder = Workspace:FindFirstChild("Buildings")
 	if BuildingsFolder then
 		for _, child in BuildingsFolder:GetChildren() do
@@ -363,11 +363,11 @@ function WallSystemServer.initialize()
 				end
 			end
 		end
-		print(string.format("[WallSystemServer] Registered %d wall endpoints from existing walls", #wallEndpoints))
+		-- print(string.format("[WallSystemServer] Registered %d wall endpoints from existing walls", #wallEndpoints))
 	end
 
-	print("[WallSystemServer] Wall System Ready (MaxSegmentLength: 128)")
-	print("[WallSystemServer] Initialized with RemoteEvents")
+	-- print("[WallSystemServer] Wall System Ready (MaxSegmentLength: 128)")
+	-- print("[WallSystemServer] Initialized with RemoteEvents")
 end
 
 return WallSystemServer

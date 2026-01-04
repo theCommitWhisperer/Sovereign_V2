@@ -1,174 +1,315 @@
 --!strict
--- MovementSystem: Handles server-side unit movement with pathfinding
+-- MovementSystem: Production-ready server-side unit movement with A* grid-based pathfinding
 
 local RunService = game:GetService("RunService")
-local PathfindingService = game:GetService("PathfindingService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local MovementDebug = DebugManager.createChannel("Movement", false)
+local MovementDebug = DebugManager.createChannel("Movement", true)
+
+-- Import new A* pathfinding system
+local PathfindingIntegration = require(script.Parent.PathfindingIntegration)
 
 local MovementSystem = {}
 
-MovementDebug:info("MovementSystem loading...")
+-- PRODUCTION CONFIGURATION
+local CONFIG = {
+	TARGET_CHANGE_THRESHOLD = 5, -- Studs - how far target must move to recalculate
+	ARRIVAL_DISTANCE = 5, -- Studs - distance to consider "arrived"
+	DEFAULT_SPEED = 16, -- Studs per second
+	MAX_UNITS_PER_FRAME = 50, -- Throttle to prevent lag spikes
+	ENABLE_PERFORMANCE_MONITORING = true,
+	STUCK_DETECTION_TIME = 5, -- Seconds before considering a unit stuck
+	STUCK_DISTANCE_THRESHOLD = 2, -- Studs - if unit moves less than this in STUCK_DETECTION_TIME
+	MAX_PATHFIND_RETRIES = 3, -- Maximum pathfinding retries before giving up
+	PATHFIND_RETRY_DELAY = 2, -- Seconds to wait before retrying failed pathfinding
+}
 
--- Store active paths for each unit
-local activePaths = {}
+-- Track last target position for each unit to detect changes
+local lastTargetPositions = {}
 
--- Create a path for a unit
-local function createPath(unit: Model, targetPos: Vector3)
-	local humanoid = unit:FindFirstChildOfClass("Humanoid")
-	if not humanoid or not unit.PrimaryPart then
-		return nil
+-- Track unit positions for stuck detection
+local unitPositionHistory = {}
+
+-- Track pathfinding failures for retry limiting
+local pathfindingFailures = {} -- {[unit] = {count = number, lastAttempt = tick()}}
+
+-- Track active paths for units
+local unitPaths = {} -- {[unit] = {path = {Vector3}, index = number}}
+
+-- Performance monitoring
+local unitsProcessedThisSecond = 0
+local lastPerformanceLog = tick()
+
+MovementDebug:info("MovementSystem loading with production A* pathfinding...")
+
+-- Check if target position has changed significantly
+local function hasTargetChanged(unit, newTarget)
+	local lastTarget = lastTargetPositions[unit]
+	if not lastTarget then
+		return true
 	end
 
-	-- Create path with agent parameters
-	local path = PathfindingService:CreatePath({
-		AgentRadius = 2,
-		AgentHeight = 5,
-		AgentCanJump = true,
-		WaypointSpacing = 4,
-		Costs = {
-			Water = math.huge, -- Avoid water
+	-- Consider target changed if moved more than threshold
+	return (lastTarget - newTarget).Magnitude > CONFIG.TARGET_CHANGE_THRESHOLD
+end
+
+-- Detect if a unit is stuck
+local function isUnitStuck(unit)
+	if not unit.PrimaryPart then
+		return false
+	end
+
+	local history = unitPositionHistory[unit]
+	if not history then
+		unitPositionHistory[unit] = {
+			position = unit.PrimaryPart.Position,
+			timestamp = tick(),
 		}
-	})
-
-	-- Compute path
-	local success, errorMsg = pcall(function()
-		path:ComputeAsync(unit.PrimaryPart.Position, targetPos)
-	end)
-
-	if not success then
-		MovementDebug:warn(`Path computation failed for {unit.Name}: {errorMsg}`)
-		return nil
+		return false
 	end
 
-	if path.Status == Enum.PathStatus.NoPath then
-		MovementDebug:warn(`No path found for {unit.Name}`)
-		return nil
-	end
+	local timeSinceLastCheck = tick() - history.timestamp
+	if timeSinceLastCheck >= CONFIG.STUCK_DETECTION_TIME then
+		local distanceMoved = (unit.PrimaryPart.Position - history.position).Magnitude
 
-	if path.Status == Enum.PathStatus.Success then
-		return path
-	end
-
-	return nil
-end
-
--- Handle path blocked events
-local function setupPathBlockedListener(unit: Model, path: Path)
-	local connection
-	connection = path.Blocked:Connect(function(blockedWaypointIndex)
-		MovementDebug:warn(`Path blocked for {unit.Name} at waypoint {blockedWaypointIndex}`)
-
-		-- Mark as blocked and clear path to force recalculation
-		if activePaths[unit] then
-			activePaths[unit].blocked = true
-			activePaths[unit] = nil
+		if distanceMoved < CONFIG.STUCK_DISTANCE_THRESHOLD then
+			-- Unit is stuck - reset history and return true
+			unitPositionHistory[unit] = {
+				position = unit.PrimaryPart.Position,
+				timestamp = tick(),
+			}
+			return true
+		else
+			-- Unit is moving - update history
+			unitPositionHistory[unit] = {
+				position = unit.PrimaryPart.Position,
+				timestamp = tick(),
+			}
 		end
-
-		connection:Disconnect()
-	end)
-end
-
--- Follow path waypoints
-local function followPath(unit: Model, path: Path)
-	local humanoid = unit:FindFirstChildOfClass("Humanoid")
-	if not humanoid then
-		return
 	end
 
-	local waypoints = path:GetWaypoints()
-
-	-- Store path data
-	activePaths[unit] = {
-		path = path,
-		waypoints = waypoints,
-		currentWaypointIndex = 2, -- Start at 2 (skip current position)
-		blocked = false,
-	}
-
-	-- Setup blocked listener
-	setupPathBlockedListener(unit, path)
-
-	MovementDebug:info(`Unit {unit.Name} starting path with {#waypoints} waypoints`)
+	return false
 end
 
--- Update all moving units
+-- Clean up unit tracking data
+local function cleanupUnit(unit)
+	lastTargetPositions[unit] = nil
+	unitPositionHistory[unit] = nil
+	pathfindingFailures[unit] = nil
+	unitPaths[unit] = nil
+	PathfindingIntegration.unregisterMover(unit)
+end
+
+-- Update all moving units using A* pathfinding
 function MovementSystem.update()
 	local unitsFolder = workspace:FindFirstChild("Units")
 	if not unitsFolder then
 		return
 	end
 
+	local unitsProcessedThisFrame = 0
+
+	-- Process each unit that wants to move
 	for _, unit in unitsFolder:GetChildren() do
-		if unit:IsA("Model") and unit:GetAttribute("IsMoving") then
+		if not unit:IsA("Model") then
+			continue
+		end
+
+		-- Throttle processing to prevent lag
+		if unitsProcessedThisFrame >= CONFIG.MAX_UNITS_PER_FRAME then
+			MovementDebug:warn("Unit processing throttled - too many units this frame")
+			break
+		end
+
+		-- Validate unit has essential components
+		if not unit.PrimaryPart then
+			continue
+		end
+
+		if unit:GetAttribute("IsMoving") then
+			-- Skip units that recently failed pathfinding (30 second cooldown)
+			local failedTime = unit:GetAttribute("PathfindingFailed")
+			if failedTime and (tick() - failedTime) < 30 then
+				continue
+			end
+
+			unitsProcessedThisFrame = unitsProcessedThisFrame + 1
+			unitsProcessedThisSecond = unitsProcessedThisSecond + 1
+
 			local targetPos = unit:GetAttribute("TargetPosition")
 
-			if targetPos and typeof(targetPos) == "Vector3" and unit.PrimaryPart then
-				local humanoid = unit:FindFirstChildOfClass("Humanoid")
-
-				if humanoid then
-					-- Check if we already have an active path
-					local pathData = activePaths[unit]
-
-					if not pathData then
-						-- No path exists - create one
-						local path = createPath(unit, targetPos)
-						if path then
-							followPath(unit, path)
-							pathData = activePaths[unit]
-						else
-							-- Fallback to direct movement if pathfinding fails
-							humanoid:MoveTo(targetPos)
-							MovementDebug:warn(`Using direct movement for {unit.Name} (pathfinding failed)`)
-						end
+			if targetPos and typeof(targetPos) == "Vector3" then
+				-- Wrap in pcall for safety
+				local success, result = pcall(function()
+					-- Check if unit is close enough to target
+					local distance = (unit.PrimaryPart.Position - targetPos).Magnitude
+					if distance < CONFIG.ARRIVAL_DISTANCE then
+						-- Arrived at destination
+						unit:SetAttribute("IsMoving", false)
+						unit:SetAttribute("TargetPosition", nil)
+						cleanupUnit(unit)
+						MovementDebug:info("Unit " .. unit.Name .. " arrived at destination")
+						return
 					end
 
-					-- If we have path data, follow waypoints
-					if pathData and pathData.waypoints then
-						local waypoints = pathData.waypoints
-						local currentIndex = pathData.currentWaypointIndex
+					-- Check for stuck units
+					if isUnitStuck(unit) then
+						MovementDebug:warn("Unit " .. unit.Name .. " appears stuck, recalculating path")
+						-- Force recalculation by clearing last target
+						lastTargetPositions[unit] = nil
+					end
 
-						if currentIndex <= #waypoints then
-							local waypoint = waypoints[currentIndex]
+					-- Check if target has changed (unit was redirected)
+					local targetChanged = hasTargetChanged(unit, targetPos)
 
-							-- Move to current waypoint
-							humanoid:MoveTo(waypoint.Position)
+					-- Get unit speed from Humanoid WalkSpeed or use default
+					local speed = CONFIG.DEFAULT_SPEED
+					local humanoid = unit:FindFirstChildOfClass("Humanoid")
+					if humanoid and humanoid.WalkSpeed > 0 then
+						speed = math.clamp(humanoid.WalkSpeed, 1, 100)
+					end
 
-							-- Check if we reached this waypoint
-							local distance = (unit.PrimaryPart.Position - waypoint.Position).Magnitude
-							if distance < 4 then
-								-- Move to next waypoint
-								pathData.currentWaypointIndex = currentIndex + 1
-								MovementDebug:info(`Unit {unit.Name} reached waypoint {currentIndex}/{#waypoints}`)
+					-- Start or restart pathfinding if target changed
+					if PathfindingIntegration.isInitialized() and targetChanged then
+						-- Check if we should retry pathfinding (retry limiting)
+						local failureData = pathfindingFailures[unit]
+						local canRetry = true
+
+						if failureData then
+							-- Check if max retries exceeded
+							if failureData.count >= CONFIG.MAX_PATHFIND_RETRIES then
+								-- Check if enough time has passed to reset retry counter
+								if tick() - failureData.lastAttempt >= CONFIG.PATHFIND_RETRY_DELAY then
+									-- Reset retry counter after delay
+									pathfindingFailures[unit] = nil
+									failureData = nil
+								else
+									-- Too many retries, don't spam pathfinding
+									canRetry = false
+								end
+							elseif tick() - failureData.lastAttempt < 0.5 then
+								-- Don't retry more than twice per second
+								canRetry = false
 							end
-						else
-							-- Reached end of path - check if we're at target
-							local finalDistance = (unit.PrimaryPart.Position - targetPos).Magnitude
-							if finalDistance < 5 then
-								unit:SetAttribute("IsMoving", false)
-								unit:SetAttribute("TargetPosition", nil)
-								activePaths[unit] = nil
-								MovementDebug:info(`Unit {unit.Name} arrived at destination`)
+						end
+
+						if canRetry then
+							-- Get path from PathfindingIntegration
+							local path = PathfindingIntegration.getPath(unit, targetPos)
+							local pathSuccess = path ~= nil and path ~= nil and #path > 0
+							if pathSuccess and path then
+								-- Store path in local table
+								unitPaths[unit] = {
+									path = path,
+									index = 1,
+								}
+
+								-- Move humanoid to first waypoint
+								local humanoid = unit:FindFirstChildOfClass("Humanoid")
+								if humanoid and #path > 0 then
+									humanoid:MoveTo(path[1])
+									MovementDebug:info(`Unit {unit.Name} starting path with {#path} waypoints to {path[1]}`)
+								end
+
+								-- Remember this target position
+								lastTargetPositions[unit] = targetPos
+								-- Clear failure tracking on success
+								pathfindingFailures[unit] = nil
+								if targetChanged then
+									MovementDebug:info("Unit " .. unit.Name .. " redirected to new target")
+								end
 							else
-								-- Recalculate path if we're not at target
-								MovementDebug:warn(`Unit {unit.Name} finished path but not at target, recalculating...`)
-								activePaths[unit] = nil
+								-- Track failure
+								if not pathfindingFailures[unit] then
+									pathfindingFailures[unit] = {count = 1, lastAttempt = tick()}
+								else
+									pathfindingFailures[unit].count = pathfindingFailures[unit].count + 1
+									pathfindingFailures[unit].lastAttempt = tick()
+								end
+
+								-- Only stop movement if we've exceeded max retries
+								if pathfindingFailures[unit].count >= CONFIG.MAX_PATHFIND_RETRIES then
+									MovementDebug:warn(`Failed to find path for {unit.Name} after {CONFIG.MAX_PATHFIND_RETRIES} attempts, stopping movement`)
+									unit:SetAttribute("IsMoving", false)
+									unit:SetAttribute("TargetPosition", nil)
+									-- Set a cooldown to prevent other systems from immediately re-commanding movement
+									unit:SetAttribute("PathfindingFailed", tick())
+									cleanupUnit(unit)
+								end
 							end
 						end
 					end
+
+					-- Handle path following for units with active paths
+					local pathData = unitPaths[unit]
+					if pathData and pathData.path and #pathData.path > 0 then
+						local currentWaypoint = pathData.path[pathData.index]
+						if currentWaypoint and unit.PrimaryPart then
+							local distanceToWaypoint = (unit.PrimaryPart.Position - currentWaypoint).Magnitude
+
+							-- If we're close to current waypoint, move to next one
+							if distanceToWaypoint < 3 then
+								pathData.index = pathData.index + 1
+
+								if pathData.index <= #pathData.path then
+									-- Move to next waypoint
+									local humanoid = unit:FindFirstChildOfClass("Humanoid")
+									if humanoid then
+										humanoid:MoveTo(pathData.path[pathData.index])
+										MovementDebug:info(`Unit {unit.Name} reached waypoint {pathData.index - 1}/{#pathData.path}, moving to next`)
+									end
+								else
+									-- Reached end of path
+									MovementDebug:info(`Unit {unit.Name} reached final destination`)
+									unitPaths[unit] = nil
+								end
+							end
+						end
+					end
+				end)
+
+				if not success then
+					warn("Error processing unit " .. unit.Name .. ": " .. tostring(result))
+					unit:SetAttribute("IsMoving", false)
+					cleanupUnit(unit)
 				end
 			else
 				-- No valid target - stop moving
 				unit:SetAttribute("IsMoving", false)
-				activePaths[unit] = nil
+				cleanupUnit(unit)
 			end
 		else
-			-- Unit stopped moving - clear path data
-			if activePaths[unit] then
-				activePaths[unit] = nil
+			-- Unit stopped moving - clean up
+			if lastTargetPositions[unit] or unitPositionHistory[unit] then
+				cleanupUnit(unit)
 			end
 		end
+	end
+end
+
+-- Get movement statistics
+function MovementSystem.getStats()
+	local activeUnits = 0
+	for _ in pairs(lastTargetPositions) do
+		activeUnits = activeUnits + 1
+	end
+
+	return {
+		activeMovingUnits = activeUnits,
+		unitsProcessedLastSecond = unitsProcessedThisSecond,
+		config = CONFIG,
+	}
+end
+
+-- Update configuration at runtime
+function MovementSystem.setConfig(key, value)
+	if CONFIG[key] ~= nil then
+		CONFIG[key] = value
+		MovementDebug:info("Config updated: " .. key .. " = " .. tostring(value))
+		return true
+	else
+		warn("Invalid config key: " .. key)
+		return false
 	end
 end
 
@@ -177,6 +318,26 @@ RunService.Heartbeat:Connect(function()
 	MovementSystem.update()
 end)
 
-MovementDebug:info("MovementSystem initialized successfully with pathfinding!")
+-- Performance monitoring loop
+if CONFIG.ENABLE_PERFORMANCE_MONITORING then
+	task.spawn(function()
+		while true do
+			task.wait(1)
+
+			local now = tick()
+			if now - lastPerformanceLog >= 1 then
+				if unitsProcessedThisSecond > 100 then
+					MovementDebug:warn("High unit processing load: " .. unitsProcessedThisSecond .. " units/second")
+				end
+
+				-- Reset counter
+				unitsProcessedThisSecond = 0
+				lastPerformanceLog = now
+			end
+		end
+	end)
+end
+
+MovementDebug:info("MovementSystem initialized successfully with production A* pathfinding!")
 
 return MovementSystem

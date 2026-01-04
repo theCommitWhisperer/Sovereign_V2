@@ -212,15 +212,16 @@
     "key_code": "Listens for MouseButton1 input. On InputBegan, it either selects a single unit or starts a box selection. On InputEnded, it finds all units within the box. It uses a GUI Frame for the selection box and creates visual indicators under selected units. A 'SelectionChanged' BindableEvent is fired when the selection changes."
   },
   "src/server/GameManager.server.luau": {
-    "description": "The main server-side coordinator for the entire game. It initializes all other server-side managers and systems, handles player joining and leaving, and processes game events received from clients.",
-    "purpose": "To act as the central hub of all server-side game logic, orchestrating everything from starting a game session to handling in-game actions like building, training units, and combat.",
+    "description": "The main server-side coordinator for the entire game. It initializes all other server-side managers and systems, handles player joining and leaving, and processes game events received from clients. Manages initial setup for both players and AI, including Keep spawning and starting peasant allocation.",
+    "purpose": "To act as the central hub of all server-side game logic, orchestrating everything from starting a game session to handling in-game actions like building, training units, and combat. Ensures players and AI start with identical economic conditions (1 Keep + 1 peasant).",
     "files_called": [
       "ReplicatedStorage.Shared.GameData",
       "ReplicatedStorage.Shared.DebugManager",
       "All modules in src/server/Managers",
-      "All modules in src/server/Systems"
+      "All modules in src/server/Systems",
+      "script.Parent.Managers.UnitManager"
     ],
-    "key_code": "Initializes all server managers and systems. The GameEvent.OnServerEvent connection is a large dispatcher for all client actions, such as 'StartGame', 'PlaceBuilding', 'MoveUnit', and 'AttackTarget'. It handles player data setup on join and cleanup on leave. It also provides the server-side implementation for the 'CheckVisibility' RemoteFunction used by the Fog of War system."
+    "key_code": "Initializes all server managers and systems. The GameEvent.OnServerEvent connection is a large dispatcher for all client actions, such as 'StartGame', 'PlaceBuilding', 'MoveUnit', and 'AttackTarget'. spawnInitialSetup() handles player spawn with resource nodes and troops. spawnAIInitialSetup() spawns AI Keep, 1 starting peasant (15 studs from Keep), and resource nodes. Starting peasant enables economy bootstrapping for both players and AI."
   },
   "src/server/TestRunner.server.luau": {
     "description": "This script is intended to run automated tests for the project using the TestEz testing framework. The code is currently commented out.",
@@ -260,16 +261,17 @@
     "key_code": "The 'ACHIEVEMENTS' table defines all achievements and their requirements. 'PlayerStats' and 'PlayerAchievements' tables store the progress for each player. 'incrementStat' and 'setStat' are called by other managers to update player progress. 'checkAchievements' is then called to see if any new achievements have been unlocked. 'unlockAchievement' grants rewards via the PlayerManager and fires a client notification."
   },
   "src/server/Managers/BuildingManager.luau": {
-    "description": "Handles the server-side logic for creating and managing buildings. It validates placement, creates the building models, sets their attributes, and manages their storage if they have any.",
-    "purpose": "To be the single source of truth for all building-related actions on the server, ensuring buildings are created correctly, ownership is set, and data is properly managed.",
+    "description": "Handles the server-side logic for creating and managing buildings. It validates placement, creates the building models, sets their attributes, and manages their storage if they have any. Special handling for Keep placement includes spawning a starting peasant for player economy bootstrapping.",
+    "purpose": "To be the single source of truth for all building-related actions on the server, ensuring buildings are created correctly, ownership is set, and data is properly managed. Coordinates initial peasant spawning when players place their Keep.",
     "files_called": [
       "ReplicatedStorage.Shared.GameData",
       "script.Parent.PlayerManager",
       "script.Parent.SpawnManager",
       "script.Parent.Parent.Systems.WallSystem",
-      "ReplicatedStorage.Shared.DebugManager"
+      "ReplicatedStorage.Shared.DebugManager",
+      "script.Parent.UnitManager"
     ],
-    "key_code": "The 'createBuilding' function validates placement, finds or creates the model asset, sets 'Owner' and 'BuildingType' attributes, and registers walls with the WallSystem. It initializes storage for buildings with capacity. 'addToStorage' and 'takeFromStorage' manage building inventories."
+    "key_code": "The 'createBuilding' function validates placement, finds or creates the model asset, sets 'Owner' and 'BuildingType' attributes, and registers walls with the WallSystem. It initializes storage for buildings with capacity. Special case for Keep (line 264): registers Keep to playerData and spawns 1 starting peasant 15 studs away using UnitManager.createUnit(). 'addToStorage' and 'takeFromStorage' manage building inventories."
   },
   "src/server/Managers/CaravanManager.luau": {
     "description": "Handles the logic for NPC merchant caravans and trade routes. It defines available routes, allows players to send caravans, and processes the outcome (success or failure) when the caravan 'arrives'.",

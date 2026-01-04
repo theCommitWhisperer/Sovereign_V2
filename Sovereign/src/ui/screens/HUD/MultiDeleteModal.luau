@@ -271,9 +271,9 @@ local function MultiDeleteModalComponent(props: Props)
 					TextColor3 = Color3.new(1, 1, 1),
 					AutoButtonColor = selectedCount > 0,
 					[React.Event.MouseButton1Click] = function()
-						print("[MultiDeleteModal] Destroy button clicked. selectedCount:", selectedCount)
+						-- print("[MultiDeleteModal] Destroy button clicked. selectedCount:", selectedCount)
 						if selectedCount == 0 then
-							print("[MultiDeleteModal] No buildings selected, returning")
+							-- print("[MultiDeleteModal] No buildings selected, returning")
 							return
 						end
 
@@ -285,7 +285,7 @@ local function MultiDeleteModalComponent(props: Props)
 							end
 						end
 
-						print("[MultiDeleteModal] Calling onConfirm with", #selectedBuildings, "buildings")
+						-- print("[MultiDeleteModal] Calling onConfirm with", #selectedBuildings, "buildings")
 						props.onConfirm(selectedBuildings)
 					end,
 				}, {

@@ -1,3 +1,14 @@
 {
-    "stylua.targetReleaseVersion": "latest"
+  "editor.formatOnSave": false,
+  "editor.formatOnType": false,
+  "editor.formatOnPaste": false,
+  "luau-lsp.enabled": false,
+  "luau-lsp.diagnostics.enabled": false,
+  "editor.codeActionsOnSave": {
+    "source.fixAll": "never"
+  },
+  "[luau]": {
+    "editor.formatOnSave": false,
+    "editor.defaultFormatter": null
+  }
 }

@@ -14,7 +14,12 @@
       "Bash(findstr:*)",
       "Bash(git mv:*)",
       "Bash(move DeletionController.client.luau DeletionVisualFeedback.client.luau)",
-      "Bash(move DragDeleteController.client.luau DeletionInputHandler.client.luau)"
+      "Bash(move DragDeleteController.client.luau DeletionInputHandler.client.luau)",
+      "Bash(rojo build:*)",
+      "Bash(python:*)",
+      "Bash(move:*)",
+      "Bash(move /Y PathfindingIntegration_Smart.luau PathfindingIntegration.luau:*)",
+      "Bash(ls:*)"
     ],
     "deny": [],
     "ask": []

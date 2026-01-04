@@ -2,7 +2,7 @@
 -- DebugManager: Centralized logging with channel support
 
 local DebugManager = {}
-DebugManager.Enabled = true -- ENABLED for troubleshooting HUD loading failure
+DebugManager.Enabled = false -- Disabled - use individual channel settings
 
 export type LogLevel = "info" | "warn" | "error"
 
@@ -41,20 +41,17 @@ local logHistory = {}
 
 -- Log with a specific level
 local function logWithLevel(level: LogLevel, channelName: string, message: string, data: any?)
-	-- Note: Channel methods now handle the enabled check (global OR channel-specific)
-
-	local prefix = if level == "error" then "❌" elseif level == "warn" then "⚠️" else "ℹ️"
-	local formattedData = formatData(data)
-	local fullMessage = `{prefix} [{channelName}] {message}{formattedData}`
-	table.insert(logHistory, fullMessage)
+	local formattedMessage = `[{channelName}] {message}{formatData(data)}`
 
 	if level == "error" then
-		warn(fullMessage) -- Use warn instead of error to avoid halting execution
+		warn(`❌ ERROR: {formattedMessage}`)
 	elseif level == "warn" then
-		warn(fullMessage)
+		warn(`⚠️ WARN: {formattedMessage}`)
 	else
-		print(fullMessage)
+		print(`ℹ️ INFO: {formattedMessage}`)
 	end
+
+	table.insert(logHistory, formattedMessage)
 end
 
 function DebugManager.getLogHistory(): {string}

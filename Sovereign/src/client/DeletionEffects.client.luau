@@ -128,4 +128,4 @@ GameEvent.OnClientEvent:Connect(function(action, data)
 	end
 end)
 
-print("[DeletionEffects] Loaded")
+-- print("[DeletionEffects] Loaded")

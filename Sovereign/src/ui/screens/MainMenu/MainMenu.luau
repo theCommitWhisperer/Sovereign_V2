@@ -73,6 +73,7 @@ function MainMenu:render()
 				BackgroundTransparency = 1,
 				TextXAlignment = Enum.TextXAlignment.Left,
 				OnClick = function()
+					MainMenuDebug:info("PlayGameButton clicked - Navigating to lobby")
 					self.props.navigate("lobby")
 				end,
 			}),
@@ -85,6 +86,7 @@ function MainMenu:render()
 				BackgroundTransparency = 1,
 				TextXAlignment = Enum.TextXAlignment.Left,
 				OnClick = function()
+					MainMenuDebug:info("SettingsGameButton clicked - Navigating to settings")
 					self.props.navigate("settings")
 				end,
 			}),
@@ -97,6 +99,7 @@ function MainMenu:render()
 				BackgroundTransparency = 1,
 				TextXAlignment = Enum.TextXAlignment.Left,
 				OnClick = function()
+					MainMenuDebug:info("ExitGameButton clicked - Kicking player")
 					game:GetService("Players").LocalPlayer:Kick("Player exited the game.")
 				end,
 			}),

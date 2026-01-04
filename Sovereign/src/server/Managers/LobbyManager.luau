@@ -5,7 +5,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local LobbyDebug = DebugManager.createChannel("LobbyManager", true)
+local LobbyDebug = DebugManager.createChannel("LobbyManager", false)
 
 local LobbyManager = {}
 
@@ -66,24 +66,24 @@ local function getOrCreateLobby(): LobbySession
 			Players = {},
 			Settings = {
 				selectedMap = "Default Map",
-				startingTroops = "Normal",
-				startingGold = "Normal",
-				startingFood = "Normal",
-				startingWeapons = "Normal",
-				startingResources = "Normal",
+				startingTroops = "Standard",
+				startingGold = "Standard",
+				startingFood = "Standard",
+				startingWeapons = "Bronze",
+				startingResources = "Standard",
 				gameSpeed = "Normal",
-				resourceDensity = "Normal",
-				victoryCondition = "Domination",
-				peaceTime = "5 Minutes",
-				wildlifeHostility = "Normal",
-				unitMorale = "Enabled",
-				abilityToTrade = "Enabled",
-				randomEvents = "Enabled",
-				legendsMode = "Disabled",
-				vikingRaids = "Enabled",
-				honor = "100",
-				rank = "1",
-				showTutorial = "Disabled",
+				resourceDensity = "Standard",
+				victoryCondition = "Conquest",
+				peaceTime = "10 minutes",
+				wildlifeHostility = "Peaceful",
+				unitMorale = true,
+				abilityToTrade = true,
+				randomEvents = true,
+				legendsMode = false,
+				vikingRaids = false,
+				honor = "Standard",
+				rank = "Knight",
+				showTutorial = true,
 			},
 			SettingsVotes = {},
 			CountdownActive = false,
@@ -205,7 +205,7 @@ function LobbyManager.removePlayerOrAI(requestingPlayer: Player, targetUserId: n
 end
 
 -- Vote on a setting value
-function LobbyManager.voteSetting(player: Player, settingId: string, value: string)
+function LobbyManager.voteSetting(player: Player, settingId: string, value: any)
 	local lobby = getOrCreateLobby()
 
 	if not lobby.SettingsVotes[settingId] then
@@ -213,7 +213,7 @@ function LobbyManager.voteSetting(player: Player, settingId: string, value: stri
 	end
 
 	lobby.SettingsVotes[settingId][player.UserId] = value
-	LobbyDebug:info(player.Name .. " voted for " .. settingId .. " = " .. value)
+	LobbyDebug:info(player.Name .. " voted for " .. settingId, { value = value })
 
 	-- Calculate the most popular vote for this setting
 	local voteCounts: { [string]: number } = {}
@@ -238,12 +238,15 @@ function LobbyManager.voteSetting(player: Player, settingId: string, value: stri
 	LobbyManager.broadcastLobbyState()
 end
 
--- Select a faction for a player
-function LobbyManager.selectFaction(player: Player, faction: string)
+-- Select a faction for a player (or AI)
+function LobbyManager.selectFaction(player: Player, faction: string, targetUserId: number?)
 	local lobby = getOrCreateLobby()
 
-	if not lobby.Players[player.UserId] then
-		LobbyDebug:warn("Player not in lobby:", player.Name)
+	-- Default to the requesting player if no target specified
+	local userId = targetUserId or player.UserId
+
+	if not lobby.Players[userId] then
+		LobbyDebug:warn("Target player not in lobby", { userId = userId })
 		return
 	end
 
@@ -257,14 +260,14 @@ function LobbyManager.selectFaction(player: Player, faction: string)
 	end
 
 	if not isValidFaction then
-		LobbyDebug:warn("Invalid faction:", faction)
+		LobbyDebug:warn("Invalid faction", { faction = faction })
 		return
 	end
 
 	-- Check if faction is already taken (no duplicates)
-	for userId, lobbyPlayer in pairs(lobby.Players) do
-		if userId ~= player.UserId and lobbyPlayer.SelectedFaction == faction then
-			LobbyDebug:warn("Faction already taken:", faction)
+	for existingUserId, lobbyPlayer in pairs(lobby.Players) do
+		if existingUserId ~= userId and lobbyPlayer.SelectedFaction == faction then
+			LobbyDebug:warn("Faction already taken", { faction = faction })
 			-- Send error to client
 			local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
 			local LobbyEvent = RemoteEvents:FindFirstChild("LobbyEvent")
@@ -275,8 +278,8 @@ function LobbyManager.selectFaction(player: Player, faction: string)
 		end
 	end
 
-	lobby.Players[player.UserId].SelectedFaction = faction
-	LobbyDebug:info(player.Name .. " selected faction:", faction)
+	lobby.Players[userId].SelectedFaction = faction
+	LobbyDebug:info("Faction selected for player", { playerName = lobby.Players[userId].Name, faction = faction })
 
 	-- Broadcast updated lobby state
 	LobbyManager.broadcastLobbyState()
