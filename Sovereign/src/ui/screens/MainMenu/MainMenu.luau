@@ -90,9 +90,22 @@ function MainMenu:render()
 					self.props.navigate("settings")
 				end,
 			}),
+			MapEditorButton = React.createElement(Button, {
+				Name = "MapEditorButton",
+				LayoutOrder = 5,
+				Size = UDim2.new(1, 0, 0, 40),
+				Text = "Map Editor",
+				TextSize = 40,
+				BackgroundTransparency = 1,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				OnClick = function()
+					MainMenuDebug:info("MapEditorButton clicked - Navigating to mapEditor")
+					self.props.navigate("mapEditor")
+				end,
+			}),
 			ExitGameButton = React.createElement(Button, {
 				Name = "ExitGameButton",
-				LayoutOrder = 5,
+				LayoutOrder = 6,
 				Size = UDim2.new(1, 0, 0, 40),
 				Text = "Exit",
 				TextSize = 40,

@@ -60,6 +60,7 @@ local QuestManager = require(Managers.QuestManager)
 local AchievementManager = require(Managers.AchievementManager)
 local GameplayEnhancementManager = require(Managers.GameplayEnhancementManager)
 local LobbyManager = require(Managers.LobbyManager)
+local MapEditorManager = require(Managers.MapEditorManager)
 
 CombatManager.init()
 FormationManager.init()
@@ -146,6 +147,11 @@ CheckVisibilityFunc.Parent = RemoteEvents
 local LobbyEvent = Instance.new("RemoteEvent")
 LobbyEvent.Name = "LobbyEvent"
 LobbyEvent.Parent = RemoteEvents
+
+-- Create MapEditorEvent for map editor system
+local MapEditorEvent = Instance.new("RemoteEvent")
+MapEditorEvent.Name = "MapEditorEvent"
+MapEditorEvent.Parent = RemoteEvents
 
 GameManagerDebug:info("RemoteEvents created")
 
@@ -1248,6 +1254,53 @@ end)
 Players.PlayerRemoving:Connect(function(player)
 	-- Remove from lobby if they're in it
 	LobbyManager.removePlayer(player)
+end)
+
+-- Handle map editor events
+MapEditorEvent.OnServerEvent:Connect(function(player, action, ...)
+	GameManagerDebug:info(`MapEditor event from {player.Name}: {action}`)
+
+	if action == "EnterEditor" then
+		local mapId = ...
+		MapEditorManager.enterEditor(player, mapId)
+	elseif action == "LeaveEditor" then
+		MapEditorManager.leaveEditor(player)
+	elseif action == "PaintTerrain" then
+		local strokes = ...
+		MapEditorManager.paintTerrain(player, strokes)
+	elseif action == "SetBaseTerrain" then
+		local data = ...
+		MapEditorManager.setBaseTerrain(player, data)
+	elseif action == "PlaceFeature" then
+		local feature = ...
+		MapEditorManager.placeFeature(player, feature)
+	elseif action == "MoveFeature" then
+		local data = ...
+		MapEditorManager.moveFeature(player, data)
+	elseif action == "DeleteFeature" then
+		local data = ...
+		MapEditorManager.deleteFeature(player, data)
+	elseif action == "UpdateSpawnZone" then
+		local data = ...
+		MapEditorManager.updateSpawnZone(player, data)
+	elseif action == "UpdateMapSettings" then
+		local data = ...
+		MapEditorManager.updateMapSettings(player, data)
+	elseif action == "SaveMap" then
+		MapEditorManager.saveMap(player)
+	elseif action == "LoadMap" then
+		local mapId = ...
+		MapEditorManager.loadMap(player, mapId)
+	elseif action == "ListMaps" then
+		MapEditorManager.listMaps(player)
+	elseif action == "ExportMap" then
+		MapEditorManager.exportMap(player)
+	end
+end)
+
+-- Clean up map editor session when player leaves
+Players.PlayerRemoving:Connect(function(player)
+	MapEditorManager.leaveEditor(player)
 end)
 
 GameManagerDebug:info("Server ready!")

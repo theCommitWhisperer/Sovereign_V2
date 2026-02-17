@@ -12,6 +12,7 @@ local HUD = require(script.Parent.screens.HUD.HUD)
 local VictoryScreen = require(script.Parent.screens.PostGame.VictoryScreen)
 local DefeatScreen = require(script.Parent.screens.PostGame.DefeatScreen)
 local Keybindings = require(script.Parent.screens.Keybindings.Keybindings)
+local MapEditor = require(script.Parent.screens.MapEditor.MapEditor)
 
 -- Components
 local Tooltip = require(script.Parent.components.Tooltip)
@@ -36,6 +37,7 @@ function App:init()
 		victory = VictoryScreen,
 		defeat = DefeatScreen,
 		keybindings = Keybindings,
+		mapEditor = MapEditor,
 	}
 
 	local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
