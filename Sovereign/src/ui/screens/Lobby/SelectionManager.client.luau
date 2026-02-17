@@ -61,7 +61,7 @@ end
 -- Add a unit to selection
 function SelectionManager.addToSelection(unit: Model)
 	-- Check if unit belongs to player
-	local owner = unit:GetAttribute("Owner")
+	local owner = unit:GetAttribute("OwnerId")
 	if owner ~= player.UserId then
 		return
 	end
@@ -158,7 +158,7 @@ local function getUnitsInBox(topLeft: Vector2, bottomRight: Vector2): { Model }
 	for _, unit in unitsFolder:GetChildren() do
 		if unit:IsA("Model") and unit:GetAttribute("UnitType") and unit.PrimaryPart then
 			-- Check if unit belongs to player
-			if unit:GetAttribute("Owner") == player.UserId then
+			if unit:GetAttribute("OwnerId") == player.UserId then
 				-- Convert world position to screen position
 				local screenPos, onScreen = worldToScreen(unit.PrimaryPart.Position)
 

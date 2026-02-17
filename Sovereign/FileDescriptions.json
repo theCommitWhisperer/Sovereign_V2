@@ -1266,7 +1266,7 @@
   },
   "src/ui/screens/Keybindings/Keybindings.luau": {
     "description": "The keybindings screen where players can remap controls.",
-    "purpose": "To provide a keybindings screen where players can remap controls. This centralization makes it easy to change the look and feel of the keybindings screen without having to search through multiple scripts.",
+    "purpose": "To provide a keybindings screen where players can remap controls. This centralization makes it easy to change the look and feel of the keybindings screen without having to search through multiple not showing on the map, soscripts.",
     "files_called": [
       "game.ReplicatedStorage.Packages.react",
       "script.Parent.Parent.Parent.UIConfig",

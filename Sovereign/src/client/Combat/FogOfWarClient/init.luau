@@ -32,7 +32,7 @@ local function updateVisibility()
 	if unitsFolder then
 		for _, unit in unitsFolder:GetChildren() do
 			if unit:IsA("Model") and unit.PrimaryPart then
-				local owner = unit:GetAttribute("Owner")
+				local owner = unit:GetAttribute("OwnerId")
 
 				-- Always show own units
 				if owner == player.UserId then
@@ -96,7 +96,7 @@ local function updateVisibility()
 	if buildingsFolder then
 		for _, building in buildingsFolder:GetChildren() do
 			if building:IsA("Model") and building.PrimaryPart then
-				local owner = building:GetAttribute("Owner")
+				local owner = building:GetAttribute("OwnerId")
 
 				-- Always show own buildings
 				if owner == player.UserId then
@@ -225,7 +225,7 @@ local function setupObjectListeners()
 		unitsFolder.ChildAdded:Connect(function(unit)
 			task.wait(0.1)  -- Small delay to ensure attributes are set
 			if unit:IsA("Model") and unit.PrimaryPart then
-				local owner = unit:GetAttribute("Owner")
+				local owner = unit:GetAttribute("OwnerId")
 				if owner ~= player.UserId then
 					-- Immediately check and hide if not visible
 					local success, isVisible = pcall(function()
@@ -247,7 +247,7 @@ local function setupObjectListeners()
 		buildingsFolder.ChildAdded:Connect(function(building)
 			task.wait(0.1)  -- Small delay to ensure attributes are set
 			if building:IsA("Model") and building.PrimaryPart then
-				local owner = building:GetAttribute("Owner")
+				local owner = building:GetAttribute("OwnerId")
 				if owner ~= player.UserId then
 					-- Immediately check and hide if not visible
 					local success, isVisible = pcall(function()

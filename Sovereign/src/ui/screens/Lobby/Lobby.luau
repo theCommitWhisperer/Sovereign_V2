@@ -9,6 +9,7 @@ local Toggle = require(script.Parent.Parent.Parent.components.Toggle)
 local PlayerList = require(script.Parent.PlayerList)
 local MapPreview = require(script.Parent.MapPreview)
 local Row = require(script.Parent.Parent.Parent.components.Row)
+local MapData = require(ReplicatedStorage.Shared.GameData.MapData)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local LobbyDebug = DebugManager.createChannel("Lobby", false)
 
@@ -16,13 +17,16 @@ local Lobby = React.Component:extend("Lobby")
 
 local localPlayer = Players.LocalPlayer
 local FACTIONS = { "Kingdom", "Empire", "Tribes", "IronLegion" }
+local MEDIEVAL_BUTTON_IMAGE = "rbxassetid://93664952098994"
 
 -- Helper function to generate the initial state from the settings config
 local function getInitialState()
 	local state = {
 		players = {},
-		maps = { "Default Map", "Forest Lands", "Desert Sands", "Frozen Peaks" },
-		selectedMap = "Default Map",
+		mapKeys = MapData.getMapList(),
+		selectedMap = MapData.DefaultMap,
+		spawnSelections = {},  -- { [spawnNumber] = { userId, name } }
+		mySpawn = nil,
 		myFaction = nil,
 		isReady = false,
 		countdownActive = false,
@@ -41,7 +45,7 @@ end
 function Lobby:init()
 	LobbyDebug:info("Lobby:init() - Initializing lobby component")
 	self.state = getInitialState()
-	LobbyDebug:info("Initial lobby state created", { mapCount = #self.state.maps })
+	LobbyDebug:info("Initial lobby state created", { mapCount = #self.state.mapKeys })
 
 	-- Track if game is starting to prevent double-clicks
 	self.isStartingGame = false
@@ -69,6 +73,7 @@ function Lobby:init()
 					isAI = playerData.IsAI,
 					isReady = playerData.IsReady,
 					faction = playerData.SelectedFaction,
+					selectedColor = playerData.SelectedColor,
 				})
 			end
 
@@ -85,11 +90,29 @@ function Lobby:init()
 				newState[key] = value
 			end
 
-			-- Find my faction and ready status
+			-- Preserve mapKeys (not sent from server, client-only state)
+			newState.mapKeys = self.state.mapKeys
+
+			-- Sync spawn selections from server
+			if data.SpawnSelections then
+				newState.spawnSelections = data.SpawnSelections
+			end
+
+			-- Find my faction, ready status, and spawn
 			local myPlayerData = data.Players[localPlayer.UserId]
 			if myPlayerData then
 				newState.myFaction = myPlayerData.SelectedFaction
 				newState.isReady = myPlayerData.IsReady
+			end
+
+			-- Find my spawn
+			if data.SpawnSelections then
+				for spawnNum, selection in pairs(data.SpawnSelections) do
+					if selection.userId == localPlayer.UserId then
+						newState.mySpawn = spawnNum
+						break
+					end
+				end
 			end
 
 			self:setState(newState)
@@ -173,6 +196,16 @@ function Lobby:init()
 		LobbyEvent:FireServer("VoteSetting", settingId, newValue)
 	end
 
+	self.selectSpawn = function(spawnNumber)
+		LobbyDebug:info("Spawn selected:", spawnNumber)
+		LobbyEvent:FireServer("SelectSpawn", spawnNumber)
+	end
+
+	self.selectColor = function(color)
+		LobbyDebug:info("Color selected:", color)
+		LobbyEvent:FireServer("SelectColor", color)
+	end
+
 	self.selectFaction = function(faction, targetUserId)
 		-- If targetUserId is not provided, assume it's for the local player
 		local userId = targetUserId or localPlayer.UserId
@@ -246,24 +279,47 @@ function Lobby:render()
 		Layout = React.createElement("UIListLayout", {
 			FillDirection = Enum.FillDirection.Vertical,
 			HorizontalAlignment = Enum.HorizontalAlignment.Center,
-			Padding = UDim.new(0, 5),
+			Padding = UDim.new(0, 3),
 		}),
 	}
-	for _, mapName in ipairs(self.state.maps) do
-		table.insert(
-			mapListChildren,
-			React.createElement("TextButton", {
-				key = mapName,
-				Text = mapName,
-				Size = UDim2.new(1, 0, 0, 40),
-				BackgroundColor3 = self.state.selectedMap == mapName and lobbyConfig.MapSelectorBackgroundColor
-					or Color3.fromRGB(50, 50, 50),
-				TextColor3 = lobbyConfig.MapSelectorTextColor,
-				[React.Event.MouseButton1Click] = function()
-					self.selectMap(mapName)
-				end,
-			})
-		)
+	local mapKeys = self.state.mapKeys or MapData.getMapList()
+	for _, mapKey in ipairs(mapKeys) do
+		local mapConfig = MapData.getMap(mapKey)
+		local displayName = mapConfig and mapConfig.Name or mapKey
+		local isSelected = self.state.selectedMap == mapKey
+
+		mapListChildren[mapKey] = React.createElement("TextButton", {
+			key = mapKey,
+			Size = UDim2.new(0.95, 0, 0, 32),
+			BackgroundColor3 = isSelected and Color3.fromRGB(140, 100, 50) or Color3.fromRGB(90, 65, 35),
+			BackgroundTransparency = 0,
+			BorderSizePixel = 0,
+			Text = displayName,
+			FontFace = UIConfig.Font.Title,
+			TextColor3 = isSelected and Color3.fromRGB(255, 240, 200) or Color3.fromRGB(220, 200, 170),
+			TextSize = 14,
+			[React.Event.MouseButton1Click] = function()
+				self.selectMap(mapKey)
+			end,
+		}, {
+			UICorner = React.createElement("UICorner", {
+				CornerRadius = UDim.new(0, 3),
+			}),
+			UIStroke = React.createElement("UIStroke", {
+				Color = isSelected and Color3.fromRGB(200, 170, 90) or Color3.fromRGB(60, 45, 25),
+				Thickness = isSelected and 2 or 1.5,
+			}),
+			UIGradient = React.createElement("UIGradient", {
+				Color = ColorSequence.new({
+					ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+					ColorSequenceKeypoint.new(0.3, Color3.fromRGB(220, 210, 200)),
+					ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
+					ColorSequenceKeypoint.new(0.7, Color3.fromRGB(210, 200, 190)),
+					ColorSequenceKeypoint.new(1, Color3.fromRGB(240, 235, 225)),
+				}),
+				Rotation = 0,
+			}),
+		})
 	end
 
 	local mapSettingsChildren = self:renderSettingsGroup(LobbySettings.MapSettings)
@@ -358,6 +414,7 @@ function Lobby:render()
 				Size = UDim2.new(0.3, 0, 1, 0),
 				BackgroundColor3 = lobbyConfig.PanelBackgroundColor,
 				BackgroundTransparency = lobbyConfig.PanelBackgroundTransparency,
+				ClipsDescendants = true,
 			}, {
 				UIPadding = React.createElement("UIPadding", {
 					PaddingTop = paddingConfig.LeftPanelSections.Top,
@@ -365,47 +422,79 @@ function Lobby:render()
 					PaddingLeft = paddingConfig.LeftPanelSections.Left,
 					PaddingRight = paddingConfig.LeftPanelSections.Right,
 				}),
-				UIListLayout = React.createElement("UIListLayout", {
-					FillDirection = Enum.FillDirection.Vertical,
-					HorizontalAlignment = Enum.HorizontalAlignment.Center,
-					SortOrder = Enum.SortOrder.LayoutOrder,
-					Padding = UDim.new(0, 20),
+				UICorner = React.createElement("UICorner", {
+					CornerRadius = UDim.new(0, 6),
 				}),
+				UIStroke = React.createElement("UIStroke", {
+					Color = Color3.fromRGB(100, 75, 40),
+					Thickness = 3,
+				}),
+
+				-- Map preview takes the top portion
 				MapPreview = React.createElement(
 					MapPreview,
-					{ LayoutOrder = 1, mapName = self.state.selectedMap, Size = UDim2.new(1, 0, 0.4, 0) }
+					{
+						mapKey = self.state.selectedMap,
+						mapConfig = MapData.getMap(self.state.selectedMap),
+						spawnSelections = self.state.spawnSelections,
+						mySpawn = self.state.mySpawn,
+						onSpawnSelected = self.selectSpawn,
+						players = self.state.players,
+						localPlayerId = localPlayer.UserId,
+						Size = UDim2.new(1, 0, 0.45, 0),
+					}
 				),
+
+				-- Map selector section
 				MapSelectorFrame = React.createElement("Frame", {
-					LayoutOrder = 2,
 					Name = "MapSelectorFrame",
-					Size = UDim2.new(1, 0, 0.3, 0),
+					Size = UDim2.new(1, 0, 0.35, 0),
+					Position = UDim2.new(0, 0, 0.46, 0),
 					BackgroundTransparency = 1,
 				}, {
 					UIListLayout = React.createElement("UIListLayout", {
 						FillDirection = Enum.FillDirection.Vertical,
 						HorizontalAlignment = Enum.HorizontalAlignment.Center,
 						SortOrder = Enum.SortOrder.LayoutOrder,
-						Padding = UDim.new(0, 10),
+						Padding = UDim.new(0, 6),
 					}),
 					Title = React.createElement("TextLabel", {
 						LayoutOrder = 1,
-						Text = "Map Selector",
-						Size = UDim2.new(1, 0, 0, 30),
+						Text = "Select Map",
+						Size = UDim2.new(1, 0, 0, 22),
 						FontFace = UIConfig.Font.Title,
-						TextColor3 = lobbyConfig.MapPreviewTitleColor,
-						TextSize = lobbyConfig.MapPreviewTitleSize,
+						TextColor3 = Color3.fromRGB(200, 180, 140),
+						TextSize = 18,
 						BackgroundTransparency = 1,
 					}),
+					Divider = React.createElement("Frame", {
+						LayoutOrder = 2,
+						Size = UDim2.new(0.8, 0, 0, 1),
+						BackgroundColor3 = Color3.fromRGB(120, 100, 70),
+						BorderSizePixel = 0,
+					}),
 					MapList = React.createElement(
-						"Frame",
-						{ LayoutOrder = 2, Size = UDim2.new(1, 0, 1, -30), BackgroundTransparency = 1 },
+						"ScrollingFrame",
+						{
+							LayoutOrder = 3,
+							Size = UDim2.new(1, 0, 1, -30),
+							BackgroundTransparency = 1,
+							BorderSizePixel = 0,
+							ScrollBarThickness = 4,
+							ScrollBarImageColor3 = Color3.fromRGB(120, 100, 70),
+							CanvasSize = UDim2.new(0, 0, 0, #mapKeys * 35),
+							AutomaticCanvasSize = Enum.AutomaticSize.Y,
+						},
 						mapListChildren
 					),
 				}),
+
+				-- Map settings at the bottom
 				MapSettingsFrame = React.createElement("Frame", {
-					LayoutOrder = 3,
+					Name = "MapSettingsFrame",
 					AutomaticSize = Enum.AutomaticSize.Y,
 					Size = UDim2.new(1, 0, 0, 0),
+					Position = UDim2.new(0, 0, 0.82, 0),
 					BackgroundTransparency = 1,
 				}, mapSettingsChildren),
 			}),
@@ -443,6 +532,9 @@ function Lobby:render()
 							onAddAI = self.addAI,
 							onRemovePlayer = self.removePlayer,
 							onSelectFaction = self.selectFaction,
+							onSelectSpawn = self.selectSpawn,
+							onSelectColor = self.selectColor,
+							spawnSelections = self.state.spawnSelections,
 							localPlayerId = localPlayer.UserId,
 							Size = UDim2.new(1, 0, 0, 250),
 							Button = Button,
@@ -596,31 +688,55 @@ function Lobby:render()
 							TextSize = 24,
 							BackgroundTransparency = 1,
 						}) or nil,
-						-- Ready Button (hidden when countdown is active)
+						-- Ready Button
 						ReadyButton = not self.state.countdownActive and React.createElement("TextButton", {
 							LayoutOrder = 1,
+							Size = UDim2.new(0.4, 0, 0, 50),
+							BackgroundColor3 = if self.state.isReady
+								then Color3.fromRGB(50, 95, 35)
+								else Color3.fromRGB(120, 85, 40),
+							BackgroundTransparency = 0,
+							BorderSizePixel = 0,
 							Text = if self.state.isReady then "Not Ready" else "Ready",
-							AutomaticSize = Enum.AutomaticSize.X,
-							Size = UDim2.fromOffset(0, 50),
-							BackgroundTransparency = 1,
 							FontFace = UIConfig.Font.Title,
 							TextColor3 = if self.state.isReady
-								then Color3.fromRGB(100, 255, 100)
-								else lobbyConfig.StartButtonTextColor,
-							TextSize = lobbyConfig.StartButtonTextSize,
+								then Color3.fromRGB(180, 255, 160)
+								else Color3.fromRGB(255, 240, 200),
+							TextSize = 26,
 							[React.Event.MouseButton1Click] = function()
 								self.toggleReady()
 							end,
+						}, {
+							UICorner = React.createElement("UICorner", {
+								CornerRadius = UDim.new(0, 4),
+							}),
+							UIStroke = React.createElement("UIStroke", {
+								Color = if self.state.isReady
+									then Color3.fromRGB(80, 140, 60)
+									else Color3.fromRGB(180, 150, 70),
+								Thickness = 2.5,
+							}),
+							UIGradient = React.createElement("UIGradient", {
+								Color = ColorSequence.new({
+									ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+									ColorSequenceKeypoint.new(0.25, Color3.fromRGB(230, 220, 210)),
+									ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
+									ColorSequenceKeypoint.new(0.75, Color3.fromRGB(220, 210, 200)),
+									ColorSequenceKeypoint.new(1, Color3.fromRGB(245, 240, 230)),
+								}),
+								Rotation = 0,
+							}),
 						}) or nil,
 						BackButton = React.createElement("TextButton", {
 							LayoutOrder = 3,
+							Size = UDim2.new(0.25, 0, 0, 36),
+							BackgroundColor3 = Color3.fromRGB(85, 60, 30),
+							BackgroundTransparency = 0,
+							BorderSizePixel = 0,
 							Text = if self.state.countdownActive then "Cancel" else "Back",
-							AutomaticSize = Enum.AutomaticSize.X,
-							Size = UDim2.fromOffset(0, 40),
-							BackgroundTransparency = 1,
 							FontFace = UIConfig.Font.Default,
-							TextColor3 = lobbyConfig.BackButtonTextColor,
-							TextSize = lobbyConfig.BackButtonTextSize,
+							TextColor3 = Color3.fromRGB(220, 200, 170),
+							TextSize = 18,
 							[React.Event.MouseButton1Click] = function()
 								if self.state.countdownActive then
 									self.toggleReady()
@@ -630,6 +746,24 @@ function Lobby:render()
 									end
 								end
 							end,
+						}, {
+							UICorner = React.createElement("UICorner", {
+								CornerRadius = UDim.new(0, 3),
+							}),
+							UIStroke = React.createElement("UIStroke", {
+								Color = Color3.fromRGB(55, 40, 20),
+								Thickness = 2,
+							}),
+							UIGradient = React.createElement("UIGradient", {
+								Color = ColorSequence.new({
+									ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+									ColorSequenceKeypoint.new(0.3, Color3.fromRGB(225, 215, 205)),
+									ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
+									ColorSequenceKeypoint.new(0.7, Color3.fromRGB(215, 205, 195)),
+									ColorSequenceKeypoint.new(1, Color3.fromRGB(240, 235, 225)),
+								}),
+								Rotation = 0,
+							}),
 						}),
 					}),
 				}

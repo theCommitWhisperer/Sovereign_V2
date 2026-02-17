@@ -604,7 +604,7 @@ function HUD:setupBuildingSelection()
 					})
 
 					local buildingType = building:GetAttribute("BuildingType")
-					local owner = building:GetAttribute("Owner")
+					local owner = building:GetAttribute("OwnerId")
 
 					HUDDebug:info("Building attributes", {
 						buildingType = buildingType,

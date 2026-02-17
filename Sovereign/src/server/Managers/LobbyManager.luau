@@ -16,6 +16,7 @@ export type LobbyPlayer = {
 	Name: string,
 	IsReady: boolean,
 	SelectedFaction: string?,
+	SelectedColor: { number }?, -- {R, G, B} color chosen by player
 	IsAI: boolean,
 }
 
@@ -41,11 +42,17 @@ export type LobbySettings = {
 	showTutorial: string,
 }
 
+export type SpawnSelection = {
+	userId: number,
+	name: string,
+}
+
 export type LobbySession = {
 	SessionId: string,
 	Players: { [number]: LobbyPlayer },
 	Settings: LobbySettings,
 	SettingsVotes: { [string]: { [number]: string } }, -- settingId -> { userId -> value }
+	SpawnSelections: { [number]: SpawnSelection }, -- spawn -> { userId, name }
 	CountdownActive: boolean,
 	CountdownStartTime: number?,
 }
@@ -58,14 +65,30 @@ local countdownThread: thread? = nil
 -- Available factions
 local FACTIONS = { "Kingdom", "Empire", "Tribes", "IronLegion" }
 
+-- Auto-assign the first available spawn to a player
+local function autoAssignSpawn(lobby: LobbySession, userId: number, playerName: string)
+	for spawnNum = 1, 4 do
+		if not lobby.SpawnSelections[spawnNum] then
+			lobby.SpawnSelections[spawnNum] = {
+				userId = userId,
+				name = playerName,
+			}
+			LobbyDebug:info(playerName .. " auto-assigned to spawn " .. spawnNum)
+			return
+		end
+	end
+	LobbyDebug:warn("No available spawns for auto-assignment:", playerName)
+end
+
 -- Get or create the global lobby session
 local function getOrCreateLobby(): LobbySession
 	if not currentLobby then
 		currentLobby = {
 			SessionId = tostring(os.time()),
 			Players = {},
+			SpawnSelections = {},
 			Settings = {
-				selectedMap = "Default Map",
+				selectedMap = "LargeContinent",
 				startingTroops = "Standard",
 				startingGold = "Standard",
 				startingFood = "Standard",
@@ -115,6 +138,9 @@ function LobbyManager.addPlayer(player: Player)
 	lobby.Players[player.UserId] = lobbyPlayer
 	LobbyDebug:info("Player joined lobby:", player.Name)
 
+	-- Auto-assign a spawn zone so the player starts with one selected
+	autoAssignSpawn(lobby, player.UserId, player.Name)
+
 	-- Broadcast updated lobby state to all players
 	LobbyManager.broadcastLobbyState()
 end
@@ -129,6 +155,15 @@ function LobbyManager.removePlayer(player: Player)
 	end
 
 	lobby.Players[player.UserId] = nil
+
+	-- Clear their spawn selection
+	for q, selection in pairs(lobby.SpawnSelections) do
+		if selection.userId == player.UserId then
+			lobby.SpawnSelections[q] = nil
+			break
+		end
+	end
+
 	LobbyDebug:info("Player left lobby:", player.Name)
 
 	-- Cancel countdown if active
@@ -171,6 +206,9 @@ function LobbyManager.addAI(requestingPlayer: Player)
 	lobby.Players[aiId] = aiPlayer
 	LobbyDebug:info("AI player added:", aiName)
 
+	-- Auto-assign a spawn zone for the AI
+	autoAssignSpawn(lobby, aiId, aiName)
+
 	-- Broadcast updated lobby state
 	LobbyManager.broadcastLobbyState()
 end
@@ -193,6 +231,15 @@ function LobbyManager.removePlayerOrAI(requestingPlayer: Player, targetUserId: n
 	end
 
 	lobby.Players[targetUserId] = nil
+
+	-- Clear their spawn selection
+	for q, selection in pairs(lobby.SpawnSelections) do
+		if selection.userId == targetUserId then
+			lobby.SpawnSelections[q] = nil
+			break
+		end
+	end
+
 	LobbyDebug:info("Removed player:", targetPlayer.Name)
 
 	-- Cancel countdown if active
@@ -282,6 +329,79 @@ function LobbyManager.selectFaction(player: Player, faction: string, targetUserI
 	LobbyDebug:info("Faction selected for player", { playerName = lobby.Players[userId].Name, faction = faction })
 
 	-- Broadcast updated lobby state
+	LobbyManager.broadcastLobbyState()
+end
+
+-- Select a spawn location for a player
+function LobbyManager.selectSpawn(player: Player, spawnNumber: number)
+	local lobby = getOrCreateLobby()
+
+	if not lobby.Players[player.UserId] then
+		LobbyDebug:warn("Player not in lobby:", player.Name)
+		return
+	end
+
+	if spawnNumber < 1 or spawnNumber > 4 then
+		LobbyDebug:warn("Invalid spawn number:", spawnNumber)
+		return
+	end
+
+	local existing = lobby.SpawnSelections[spawnNumber]
+	if existing and existing.userId ~= player.UserId then
+		LobbyDebug:warn("Spawn already claimed by", existing.name)
+		return
+	end
+
+	for s, selection in pairs(lobby.SpawnSelections) do
+		if selection.userId == player.UserId then
+			lobby.SpawnSelections[s] = nil
+			break
+		end
+	end
+
+	lobby.SpawnSelections[spawnNumber] = {
+		userId = player.UserId,
+		name = player.Name,
+	}
+
+	LobbyDebug:info(player.Name .. " selected spawn " .. spawnNumber)
+	LobbyManager.broadcastLobbyState()
+end
+
+-- Select a color for a player
+function LobbyManager.selectColor(player: Player, color: { number })
+	local lobby = getOrCreateLobby()
+
+	if not lobby.Players[player.UserId] then
+		LobbyDebug:warn("Player not in lobby:", player.Name)
+		return
+	end
+
+	if type(color) ~= "table" or #color ~= 3 then
+		LobbyDebug:warn("Invalid color format from", player.Name)
+		return
+	end
+
+	for i = 1, 3 do
+		if type(color[i]) ~= "number" or color[i] < 0 or color[i] > 255 then
+			LobbyDebug:warn("Invalid color value from", player.Name)
+			return
+		end
+	end
+
+	-- Check if color is already taken by someone else
+	for userId, lobbyPlayer in pairs(lobby.Players) do
+		if userId ~= player.UserId and lobbyPlayer.SelectedColor then
+			local sc = lobbyPlayer.SelectedColor
+			if sc[1] == color[1] and sc[2] == color[2] and sc[3] == color[3] then
+				LobbyDebug:warn("Color already taken by", lobbyPlayer.Name)
+				return
+			end
+		end
+	end
+
+	lobby.Players[player.UserId].SelectedColor = color
+	LobbyDebug:info(player.Name .. " selected color", color)
 	LobbyManager.broadcastLobbyState()
 end
 
@@ -443,12 +563,21 @@ function LobbyManager.startGame()
 	-- Notify all human players to start the game
 	for _, lobbyPlayer in pairs(lobby.Players) do
 		if not lobbyPlayer.IsAI and lobbyPlayer.Player then
-			-- Prepare settings with faction for this player
+			-- Prepare settings with faction and spawn for this player
 			local playerSettings = table.clone(lobby.Settings)
 			playerSettings.faction = lobbyPlayer.SelectedFaction
+			playerSettings.playerColor = lobbyPlayer.SelectedColor
 			playerSettings.map = lobby.Settings.selectedMap
 			playerSettings.allPlayers = lobbyData.Players -- Send all players including AI
 			playerSettings.isMultiplayer = true -- Flag to indicate this is a multiplayer game
+
+			-- Find player's chosen spawn
+			for spawnNum, selection in pairs(lobby.SpawnSelections) do
+				if selection.userId == lobbyPlayer.UserId then
+					playerSettings.quadrant = spawnNum
+					break
+				end
+			end
 
 			-- Send to client - client will fire StartGame back to server
 			LobbyEvent:FireClient(lobbyPlayer.Player, "LobbyGameStart", playerSettings)
@@ -482,6 +611,7 @@ function LobbyManager.broadcastLobbyState()
 			Name = lobbyPlayer.Name,
 			IsReady = lobbyPlayer.IsReady,
 			SelectedFaction = lobbyPlayer.SelectedFaction,
+			SelectedColor = lobbyPlayer.SelectedColor,
 			IsAI = lobbyPlayer.IsAI,
 		}
 	end
@@ -490,6 +620,7 @@ function LobbyManager.broadcastLobbyState()
 		SessionId = lobby.SessionId,
 		Players = serializedPlayers,
 		Settings = lobby.Settings,
+		SpawnSelections = lobby.SpawnSelections,
 		CountdownActive = lobby.CountdownActive,
 		CountdownTimeRemaining = if lobby.CountdownActive and lobby.CountdownStartTime
 			then math.max(0, COUNTDOWN_DURATION - (tick() - lobby.CountdownStartTime))

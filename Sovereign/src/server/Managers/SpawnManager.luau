@@ -1,6 +1,6 @@
 --!strict
 -- SpawnManager: Handles player spawn point assignment for multiplayer estates
--- Divides the map into quadrants with neutral space between them (supports multiple maps)
+-- Divides the map into spawn zones with neutral space between them (supports multiple maps)
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
@@ -27,41 +27,36 @@ local function getMapConfig(): any
 	-- Default fallback configuration
 	return {
 		Size = 1000,
-		QuadrantSize = 400,
+		SpawnZoneSize = 400,
 		NeutralZoneWidth = 100,
 		SpawnHeight = 10,
 		MaxPlayers = 4,
 	}
 end
 
--- Quadrant assignments (stores which players are in which quadrant)
-local quadrantAssignments: { [number]: string } = {}
-local playerQuadrants: { [number]: number } = {} -- Maps UserId to quadrant number
+-- Spawn assignments (stores which players are in which spawn zone)
+local playerSpawns: { [number]: number } = {} -- Maps UserId to spawn number
 
--- Calculate spawn points for each quadrant
+-- Calculate spawn points for each zone
 -- Layout:
---   Quadrant 1 (NW)  |  NEUTRAL  |  Quadrant 2 (NE)
---   ------------------------------------------------
---        NEUTRAL     |  NEUTRAL  |     NEUTRAL
---   ------------------------------------------------
---   Quadrant 3 (SW)  |  NEUTRAL  |  Quadrant 4 (SE)
+--   Zone 1 (NW)  |  NEUTRAL  |  Zone 2 (NE)
+--   -----------------------------------------------
+--      NEUTRAL   |  NEUTRAL  |    NEUTRAL
+--   -----------------------------------------------
+--   Zone 3 (SW)  |  NEUTRAL  |  Zone 4 (SE)
 
-local function calculateQuadrantSpawnPoint(quadrantNumber: number): CFrame
+local function calculateSpawnPoint(spawnNumber: number): CFrame
 	local mapConfig = getMapConfig()
-	local halfEstate = mapConfig.QuadrantSize / 2
+	local halfEstate = (mapConfig.SpawnZoneSize or mapConfig.QuadrantSize) / 2
 	local offset = halfEstate + (mapConfig.NeutralZoneWidth / 2)
 
-	if quadrantNumber == 1 then
-		-- Northwest quadrant
+	if spawnNumber == 1 then
 		return CFrame.new(-offset, mapConfig.SpawnHeight, offset)
-	elseif quadrantNumber == 2 then
-		-- Northeast quadrant
+	elseif spawnNumber == 2 then
 		return CFrame.new(offset, mapConfig.SpawnHeight, offset)
-	elseif quadrantNumber == 3 then
-		-- Southwest quadrant
+	elseif spawnNumber == 3 then
 		return CFrame.new(-offset, mapConfig.SpawnHeight, -offset)
-	elseif quadrantNumber == 4 then
-		-- Southeast quadrant
+	elseif spawnNumber == 4 then
 		return CFrame.new(offset, mapConfig.SpawnHeight, -offset)
 	end
 
@@ -69,32 +64,28 @@ local function calculateQuadrantSpawnPoint(quadrantNumber: number): CFrame
 	return CFrame.new(0, mapConfig.SpawnHeight, 0)
 end
 
--- Get estate boundaries for a quadrant
-function SpawnManager.getEstateBounds(quadrantNumber: number): { min: Vector3, max: Vector3 }
+-- Get estate boundaries for a spawn zone
+function SpawnManager.getEstateBounds(spawnNumber: number): { min: Vector3, max: Vector3 }
 	local mapConfig = getMapConfig()
-	local halfEstate = mapConfig.QuadrantSize / 2
+	local halfEstate = (mapConfig.SpawnZoneSize or mapConfig.QuadrantSize) / 2
 	local offset = halfEstate + (mapConfig.NeutralZoneWidth / 2)
 
-	if quadrantNumber == 1 then
-		-- Northwest quadrant
+	if spawnNumber == 1 then
 		return {
 			min = Vector3.new(-offset - halfEstate, 0, offset - halfEstate),
 			max = Vector3.new(-offset + halfEstate, 256, offset + halfEstate),
 		}
-	elseif quadrantNumber == 2 then
-		-- Northeast quadrant
+	elseif spawnNumber == 2 then
 		return {
 			min = Vector3.new(offset - halfEstate, 0, offset - halfEstate),
 			max = Vector3.new(offset + halfEstate, 256, offset + halfEstate),
 		}
-	elseif quadrantNumber == 3 then
-		-- Southwest quadrant
+	elseif spawnNumber == 3 then
 		return {
 			min = Vector3.new(-offset - halfEstate, 0, -offset - halfEstate),
 			max = Vector3.new(-offset + halfEstate, 256, -offset + halfEstate),
 		}
-	elseif quadrantNumber == 4 then
-		-- Southeast quadrant
+	elseif spawnNumber == 4 then
 		return {
 			min = Vector3.new(offset - halfEstate, 0, -offset - halfEstate),
 			max = Vector3.new(offset + halfEstate, 256, -offset + halfEstate),
@@ -109,58 +100,78 @@ function SpawnManager.getEstateBounds(quadrantNumber: number): { min: Vector3, m
 end
 
 -- Check if a position is within estate bounds
-function SpawnManager.isPositionInEstate(position: Vector3, quadrantNumber: number): boolean
-	local bounds = SpawnManager.getEstateBounds(quadrantNumber)
+function SpawnManager.isPositionInEstate(position: Vector3, spawnNumber: number): boolean
+	local bounds = SpawnManager.getEstateBounds(spawnNumber)
 
 	return position.X >= bounds.min.X and position.X <= bounds.max.X
 		and position.Z >= bounds.min.Z and position.Z <= bounds.max.Z
 end
 
--- Assign a player to a quadrant (round-robin assignment)
-function SpawnManager.assignPlayerToQuadrant(userId: number): number
-	-- Check if player already has a quadrant
-	if playerQuadrants[userId] then
-		return playerQuadrants[userId]
+-- Assign a player to a specific spawn zone (from lobby selection)
+function SpawnManager.assignPlayerToExplicitSpawn(userId: number, spawnNumber: number): number
+	if spawnNumber < 1 or spawnNumber > 4 then
+		SpawnManagerDebug:warn(`Invalid spawn {spawnNumber} for player {userId}, falling back to auto-assign`)
+		return SpawnManager.assignPlayerToSpawn(userId)
 	end
 
-	-- Find the quadrant with the fewest players
-	local quadrantCounts = { 0, 0, 0, 0 }
-	for _, quadrant in pairs(playerQuadrants) do
-		quadrantCounts[quadrant] = quadrantCounts[quadrant] + 1
-	end
-
-	-- Find minimum count quadrant
-	local minQuadrant = 1
-	local minCount = quadrantCounts[1]
-	for i = 2, 4 do
-		if quadrantCounts[i] < minCount then
-			minQuadrant = i
-			minCount = quadrantCounts[i]
+	-- Check if spawn is already taken by someone else
+	for existingUserId, existingSpawn in pairs(playerSpawns) do
+		if existingSpawn == spawnNumber and existingUserId ~= userId then
+			SpawnManagerDebug:warn(`Spawn {spawnNumber} already taken by {existingUserId}, falling back to auto-assign`)
+			return SpawnManager.assignPlayerToSpawn(userId)
 		end
 	end
 
-	-- Assign player to this quadrant
-	playerQuadrants[userId] = minQuadrant
-	SpawnManagerDebug:info(`Assigned player {userId} to quadrant {minQuadrant}`)
+	playerSpawns[userId] = spawnNumber
+	SpawnManagerDebug:info(`Explicitly assigned player {userId} to spawn {spawnNumber}`)
+	return spawnNumber
+end
 
-	return minQuadrant
+-- Assign a player to a spawn zone (round-robin assignment, skips already-taken zones)
+function SpawnManager.assignPlayerToSpawn(userId: number): number
+	-- Check if player already has a spawn
+	if playerSpawns[userId] then
+		return playerSpawns[userId]
+	end
+
+	-- Find the spawn zone with the fewest players
+	local spawnCounts = { 0, 0, 0, 0 }
+	for _, spawn in pairs(playerSpawns) do
+		spawnCounts[spawn] = spawnCounts[spawn] + 1
+	end
+
+	-- Find minimum count spawn
+	local minSpawn = 1
+	local minCount = spawnCounts[1]
+	for i = 2, 4 do
+		if spawnCounts[i] < minCount then
+			minSpawn = i
+			minCount = spawnCounts[i]
+		end
+	end
+
+	-- Assign player to this spawn
+	playerSpawns[userId] = minSpawn
+	SpawnManagerDebug:info(`Assigned player {userId} to spawn {minSpawn}`)
+
+	return minSpawn
 end
 
 -- Get spawn point for a player
 function SpawnManager.getPlayerSpawnPoint(userId: number): CFrame
-	local quadrant = SpawnManager.assignPlayerToQuadrant(userId)
-	return calculateQuadrantSpawnPoint(quadrant)
+	local spawn = SpawnManager.assignPlayerToSpawn(userId)
+	return calculateSpawnPoint(spawn)
 end
 
--- Get player's quadrant number
-function SpawnManager.getPlayerQuadrant(userId: number): number?
-	return playerQuadrants[userId]
+-- Get player's spawn number
+function SpawnManager.getPlayerSpawn(userId: number): number?
+	return playerSpawns[userId]
 end
 
 -- Get estate build radius (half of estate size)
 function SpawnManager.getBuildRadius(): number
 	local mapConfig = getMapConfig()
-	return mapConfig.QuadrantSize / 2
+	return (mapConfig.SpawnZoneSize or mapConfig.QuadrantSize) / 2
 end
 
 -- Get max players for current map
@@ -169,30 +180,36 @@ function SpawnManager.getMaxPlayers(): number
 	return mapConfig.MaxPlayers or 4
 end
 
--- Remove player from quadrant (when they leave)
+-- Remove player from spawn zone (when they leave)
 function SpawnManager.removePlayer(userId: number)
-	if playerQuadrants[userId] then
-		SpawnManagerDebug:info(`Removed player {userId} from quadrant {playerQuadrants[userId]}`)
-		playerQuadrants[userId] = nil
+	if playerSpawns[userId] then
+		SpawnManagerDebug:info(`Removed player {userId} from spawn {playerSpawns[userId]}`)
+		playerSpawns[userId] = nil
 	end
 end
 
--- Get all players in a quadrant
-function SpawnManager.getPlayersInQuadrant(quadrantNumber: number): { number }
+-- Get all players in a spawn zone
+function SpawnManager.getPlayersInSpawn(spawnNumber: number): { number }
 	local players = {}
-	for userId, quadrant in pairs(playerQuadrants) do
-		if quadrant == quadrantNumber then
+	for userId, spawn in pairs(playerSpawns) do
+		if spawn == spawnNumber then
 			table.insert(players, userId)
 		end
 	end
 	return players
 end
 
--- Debug: Print current quadrant assignments
+-- Backwards compatibility aliases
+SpawnManager.assignPlayerToQuadrant = SpawnManager.assignPlayerToSpawn
+SpawnManager.assignPlayerToExplicitQuadrant = SpawnManager.assignPlayerToExplicitSpawn
+SpawnManager.getPlayerQuadrant = SpawnManager.getPlayerSpawn
+SpawnManager.getPlayersInQuadrant = SpawnManager.getPlayersInSpawn
+
+-- Debug: Print current spawn assignments
 function SpawnManager.printAssignments()
-	SpawnManagerDebug:info("=== Quadrant Assignments ===")
-	for userId, quadrant in pairs(playerQuadrants) do
-		SpawnManagerDebug:info(`  Player {userId}: Quadrant {quadrant}`)
+	SpawnManagerDebug:info("=== Spawn Assignments ===")
+	for userId, spawn in pairs(playerSpawns) do
+		SpawnManagerDebug:info(`  Player {userId}: Spawn {spawn}`)
 	end
 end
 

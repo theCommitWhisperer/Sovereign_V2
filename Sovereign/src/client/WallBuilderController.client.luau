@@ -548,7 +548,7 @@ mouse.Button1Down:Connect(function()
 			local model = target and target:FindFirstAncestorOfClass("Model")
 			if model and model:FindFirstChild("PlacedPiece") then
 				-- Check if it's owned by the player
-				if model:GetAttribute("Owner") == player.UserId then
+				if model:GetAttribute("OwnerId") == player.UserId then
 					removePieceEvent:FireServer(model)
 					-- print("[WallBuilderController] Removing wall piece:", model.Name)
 				end

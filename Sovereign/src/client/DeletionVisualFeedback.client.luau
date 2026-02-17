@@ -25,7 +25,7 @@ local function findBuildingModelFromPart(part: BasePart): Model?
 	while current do
 		if current:IsA("Model") then
 			local bType = current:GetAttribute("BuildingType")
-			local owner = current:GetAttribute("Owner")
+			local owner = current:GetAttribute("OwnerId")
 			if bType ~= nil and owner ~= nil then
 				return current
 			end
@@ -42,7 +42,7 @@ local function isProtectedBuilding(building: Model): boolean
 end
 
 local function canDeleteBuilding(building: Model): boolean
-	local owner = building:GetAttribute("Owner")
+	local owner = building:GetAttribute("OwnerId")
 	return owner == player.UserId
 end
 

@@ -60,7 +60,7 @@ local ABILITIES: { [string]: Ability } = {
 
 			local boostedCount = 0
 			for _, unit in unitsFolder:GetChildren() do
-				if unit:IsA("Model") and unit:GetAttribute("Owner") == player.UserId then
+				if unit:IsA("Model") and unit:GetAttribute("OwnerId") == player.UserId then
 					if unit.PrimaryPart then
 						local distance = (unit.PrimaryPart.Position - position).Magnitude
 						if distance <= 40 then
@@ -107,7 +107,7 @@ local ABILITIES: { [string]: Ability } = {
 
 			local chargedUnits = {}
 			for _, unit in unitsFolder:GetChildren() do
-				if unit:IsA("Model") and unit:GetAttribute("Owner") == player.UserId then
+				if unit:IsA("Model") and unit:GetAttribute("OwnerId") == player.UserId then
 					if unit.PrimaryPart then
 						local distance = (unit.PrimaryPart.Position - position).Magnitude
 						if distance <= 35 then
@@ -162,7 +162,7 @@ local ABILITIES: { [string]: Ability } = {
 
 			local affectedUnits = {}
 			for _, unit in unitsFolder:GetChildren() do
-				if unit:IsA("Model") and unit:GetAttribute("Owner") == player.UserId then
+				if unit:IsA("Model") and unit:GetAttribute("OwnerId") == player.UserId then
 					if unit.PrimaryPart then
 						local distance = (unit.PrimaryPart.Position - position).Magnitude
 						if distance <= 30 then
@@ -220,7 +220,7 @@ local ABILITIES: { [string]: Ability } = {
 
 			local protectedUnits = {}
 			for _, unit in unitsFolder:GetChildren() do
-				if unit:IsA("Model") and unit:GetAttribute("Owner") == player.UserId then
+				if unit:IsA("Model") and unit:GetAttribute("OwnerId") == player.UserId then
 					if unit.PrimaryPart then
 						local distance = (unit.PrimaryPart.Position - position).Magnitude
 						if distance <= 25 then
@@ -274,7 +274,7 @@ local ABILITIES: { [string]: Ability } = {
 
 			local healedCount = 0
 			for _, unit in unitsFolder:GetChildren() do
-				if unit:IsA("Model") and unit:GetAttribute("Owner") == player.UserId then
+				if unit:IsA("Model") and unit:GetAttribute("OwnerId") == player.UserId then
 					if unit.PrimaryPart then
 						local distance = (unit.PrimaryPart.Position - position).Magnitude
 						if distance <= 30 then

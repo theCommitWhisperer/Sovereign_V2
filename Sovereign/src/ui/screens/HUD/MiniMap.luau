@@ -47,7 +47,7 @@ function MiniMap:updateMinimapIndicators()
 				-- Check if unit is visible (fog of war)
 				local isVisible = CheckVisibility:InvokeServer("Unit", unit)
 				if isVisible then
-					local owner = unit:GetAttribute("Owner")
+					local owner = unit:GetAttribute("OwnerId")
 					local pos = unit.PrimaryPart.Position
 
 					-- Convert world position to minimap position (0-1 scale)
@@ -77,7 +77,7 @@ function MiniMap:updateMinimapIndicators()
 				-- Check if building is visible (fog of war)
 				local isVisible = CheckVisibility:InvokeServer("Building", building)
 				if isVisible then
-					local owner = building:GetAttribute("Owner")
+					local owner = building:GetAttribute("OwnerId")
 					local pos = building.PrimaryPart.Position
 
 					-- Convert world position to minimap position (0-1 scale)

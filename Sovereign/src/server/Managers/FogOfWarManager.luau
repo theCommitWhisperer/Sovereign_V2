@@ -77,7 +77,7 @@ local function isPositionVisible(player: Player, position: Vector3): boolean
 	if unitsFolder then
 		for _, unit in unitsFolder:GetChildren() do
 			if unit:IsA("Model") and unit.PrimaryPart then
-				local owner = unit:GetAttribute("Owner")
+				local owner = unit:GetAttribute("OwnerId")
 				if owner == player.UserId then
 					local unitType = unit:GetAttribute("UnitType") or "Unit"
 					local visionRange = VISION_RANGES[unitType] or VISION_RANGES.Unit
@@ -96,7 +96,7 @@ local function isPositionVisible(player: Player, position: Vector3): boolean
 	if buildingsFolder then
 		for _, building in buildingsFolder:GetChildren() do
 			if building:IsA("Model") and building.PrimaryPart then
-				local owner = building:GetAttribute("Owner")
+				local owner = building:GetAttribute("OwnerId")
 				if owner == player.UserId then
 					local buildingType = building:GetAttribute("BuildingType") or "Building"
 					local visionRange = VISION_RANGES[buildingType] or VISION_RANGES.Building
@@ -120,7 +120,7 @@ function FogOfWarManager.isUnitVisible(player: Player, unit: Model): boolean
 	end
 
 	-- Always see your own units
-	local owner = unit:GetAttribute("Owner")
+	local owner = unit:GetAttribute("OwnerId")
 	if owner == player.UserId then
 		return true
 	end
@@ -136,7 +136,7 @@ function FogOfWarManager.isBuildingVisible(player: Player, building: Model): boo
 	end
 
 	-- Always see your own buildings
-	local owner = building:GetAttribute("Owner")
+	local owner = building:GetAttribute("OwnerId")
 	if owner == player.UserId then
 		return true
 	end

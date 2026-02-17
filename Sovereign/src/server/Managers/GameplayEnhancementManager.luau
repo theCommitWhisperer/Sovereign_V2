@@ -129,7 +129,7 @@ local function findBuildingsInRadius(position: Vector3, radius: number, ownerId:
 
 	local nearbyBuildings = {}
 	for _, building in buildingsFolder:GetChildren() do
-		if building:GetAttribute("Owner") == ownerId then
+		if building:GetAttribute("OwnerId") == ownerId then
 			local buildingPos = building:GetPivot().Position
 			local distance = (buildingPos - position).Magnitude
 			if distance <= radius and distance > 0 then
@@ -295,7 +295,7 @@ local function monitorProductionChains()
 			if not building:GetAttribute("ProductionStoppedWarned") then
 				building:SetAttribute("ProductionStoppedWarned", true)
 
-				local owner = building:GetAttribute("Owner")
+				local owner = building:GetAttribute("OwnerId")
 				local player = game.Players:GetPlayerByUserId(owner)
 
 				if player then
@@ -310,7 +310,7 @@ local function monitorProductionChains()
 			if building:GetAttribute("ProductionStoppedWarned") then
 				building:SetAttribute("ProductionStoppedWarned", false)
 
-				local owner = building:GetAttribute("Owner")
+				local owner = building:GetAttribute("OwnerId")
 				local player = game.Players:GetPlayerByUserId(owner)
 
 				if player then

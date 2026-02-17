@@ -207,8 +207,7 @@ function BuildingManager.createBuilding(
 	end
 
 	-- Add ownership attributes
-	building:SetAttribute("Owner", ownerId)
-	building:SetAttribute("OwnerId", ownerId) -- For compatibility with WorkerManager
+	building:SetAttribute("OwnerId", ownerId)
 	building:SetAttribute("BuildingType", buildingName)
 	building:SetAttribute("IsConstructed", true)
 

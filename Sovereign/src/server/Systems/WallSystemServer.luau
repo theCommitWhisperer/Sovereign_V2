@@ -241,7 +241,7 @@ local function placeSinglePiece(pieceType: string, position: Vector3, rotation: 
 	tag.Parent = piece
 
 	-- Set ownership and attributes
-	piece:SetAttribute("Owner", ownerId)
+	piece:SetAttribute("OwnerId", ownerId)
 	piece:SetAttribute("BuildingType", "Stone_Wall")
 	piece:SetAttribute("WallPieceType", modelName)
 	-- Don't set ManualPieceType - allow grid system to auto-update based on neighbors
@@ -317,7 +317,7 @@ function WallSystemServer.initialize()
 		end
 
 		-- Check if it's a placed piece and belongs to player
-		if model:FindFirstChild("PlacedPiece") and model:GetAttribute("Owner") == player.UserId then
+		if model:FindFirstChild("PlacedPiece") and model:GetAttribute("OwnerId") == player.UserId then
 			local char = player.Character
 			local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
 

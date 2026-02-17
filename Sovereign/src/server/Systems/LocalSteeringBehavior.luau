@@ -25,7 +25,7 @@ local function calculateAvoidanceVector(unit: Model, targetVelocity: Vector3): V
 	end
 
 	local unitPos = unit.PrimaryPart.Position
-	local ownerId = unit:GetAttribute("Owner")
+	local ownerId = unit:GetAttribute("OwnerId")
 	local avoidanceVector = Vector3.new(0, 0, 0)
 	local nearbyCount = 0
 
@@ -49,7 +49,7 @@ local function calculateAvoidanceVector(unit: Model, targetVelocity: Vector3): V
 				local repulsionStrength = 1 - (distance / AVOIDANCE_RADIUS) -- Stronger when closer
 
 				-- Friendly units have weaker repulsion
-				local otherOwnerId = otherUnit:GetAttribute("Owner")
+				local otherOwnerId = otherUnit:GetAttribute("OwnerId")
 				local isFriendly = (ownerId == otherOwnerId)
 
 				if isFriendly then

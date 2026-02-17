@@ -233,7 +233,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 
 			if targetUnit then
 				-- Check if it's an enemy
-				local targetOwner = targetUnit:GetAttribute("Owner")
+				local targetOwner = targetUnit:GetAttribute("OwnerId")
 
 				if targetOwner ~= player.UserId then
 					-- It's an enemy - attack!

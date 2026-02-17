@@ -63,7 +63,7 @@ local function getPlayerKeepPosition(playerId: number): Vector3?
 
 	-- Find the player's Keep
 	for _, building in buildingsFolder:GetChildren() do
-		if building:GetAttribute("BuildingType") == "Keep" and building:GetAttribute("Owner") == playerId then
+		if building:GetAttribute("BuildingType") == "Keep" and building:GetAttribute("OwnerId") == playerId then
 			return building.Position
 		end
 	end

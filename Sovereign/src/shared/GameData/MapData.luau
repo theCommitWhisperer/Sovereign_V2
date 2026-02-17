@@ -28,6 +28,14 @@ export type MapConfig = {
 		HasForests: boolean?,
 		HasRivers: boolean?,
 	},
+	-- Preview colors for lobby minimap rendering
+	PreviewColors: {
+		Base: { number },       -- RGB for base terrain
+		Water: { number }?,     -- RGB for water features
+		Mountain: { number }?,  -- RGB for mountains
+		Forest: { number }?,    -- RGB for forests
+		Accent: { number }?,    -- RGB for accent features
+	},
 }
 
 local MapData = {}
@@ -56,6 +64,10 @@ MapData.Maps = {
 			HasForests = true,
 			HasRivers = false,
 		},
+		PreviewColors = {
+			Base = { 120, 180, 80 },     -- Green plains
+			Forest = { 40, 100, 30 },
+		},
 	} :: MapConfig,
 
 	-- Larger map for more strategic gameplay
@@ -79,6 +91,12 @@ MapData.Maps = {
 			HasMountains = true,
 			HasForests = true,
 			HasRivers = true,
+		},
+		PreviewColors = {
+			Base = { 100, 160, 70 },     -- Rich green
+			Water = { 50, 120, 200 },
+			Mountain = { 140, 130, 120 },
+			Forest = { 35, 90, 25 },
 		},
 	} :: MapConfig,
 
@@ -104,6 +122,12 @@ MapData.Maps = {
 			HasForests = true,
 			HasRivers = false,
 		},
+		PreviewColors = {
+			Base = { 90, 160, 90 },      -- Island green
+			Water = { 40, 100, 180 },
+			Forest = { 30, 80, 20 },
+			Accent = { 220, 200, 150 },  -- Sandy beaches
+		},
 	} :: MapConfig,
 
 	-- Resource-scarce map for challenging gameplay
@@ -127,6 +151,12 @@ MapData.Maps = {
 			HasMountains = true,
 			HasForests = false, -- No forests
 			HasRivers = false,
+		},
+		PreviewColors = {
+			Base = { 200, 180, 120 },    -- Sandy desert
+			Water = { 50, 120, 200 },
+			Mountain = { 160, 140, 100 },
+			Accent = { 180, 160, 100 },  -- Dunes
 		},
 	} :: MapConfig,
 
@@ -152,6 +182,11 @@ MapData.Maps = {
 			HasForests = true,
 			HasRivers = false,
 		},
+		PreviewColors = {
+			Base = { 110, 140, 80 },     -- Arena green
+			Forest = { 40, 100, 30 },
+			Accent = { 160, 150, 140 },  -- Stone walls
+		},
 	} :: MapConfig,
 
 	-- Highland fortress map with strategic positions
@@ -176,11 +211,17 @@ MapData.Maps = {
 			HasForests = false,
 			HasRivers = true,
 		},
+		PreviewColors = {
+			Base = { 130, 140, 120 },    -- Rocky highland
+			Water = { 50, 120, 200 },
+			Mountain = { 100, 95, 85 },
+			Accent = { 80, 75, 65 },     -- Dark rock
+		},
 	} :: MapConfig,
 }
 
 -- Default map for new games
-MapData.DefaultMap = "ClassicPlains"
+MapData.DefaultMap = "LargeContinent"
 
 -- Get map configuration by name
 function MapData.getMap(mapName: string): MapConfig?

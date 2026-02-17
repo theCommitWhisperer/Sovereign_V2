@@ -19,7 +19,12 @@
       "Bash(python:*)",
       "Bash(move:*)",
       "Bash(move /Y PathfindingIntegration_Smart.luau PathfindingIntegration.luau:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(for file in \"src/server/Managers/AbilityManager.luau\" \"src/server/Managers/AIManager.luau\" \"src/server/Managers/FogOfWarManager.luau\" \"src/server/Managers/GameplayEnhancementManager.luau\" \"src/server/Managers/MoraleManager.luau\" \"src/server/Managers/UpgradeManager.luau\" \"src/server/Systems/LocalSteeringBehavior.luau\" \"src/server/Systems/VikingRaidSystem.luau\" \"src/server/Systems/WallSystemServer.luau\")",
+      "Bash(do echo \"$file\")",
+      "Bash(done)",
+      "Bash(for:*)",
+      "Bash(do echo \"Processing $file...\")"
     ],
     "deny": [],
     "ask": []

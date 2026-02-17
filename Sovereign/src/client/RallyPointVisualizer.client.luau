@@ -91,7 +91,7 @@ GameEvent.OnClientEvent:Connect(function(action, data)
 		if data.buildingId and data.position then
 			-- Find building
 			local building = workspace.Buildings:FindFirstChild(data.buildingId)
-			if building and building:GetAttribute("Owner") == player.UserId then
+			if building and building:GetAttribute("OwnerId") == player.UserId then
 				-- Remove old rally point
 				removeRallyPoint(data.buildingId)
 

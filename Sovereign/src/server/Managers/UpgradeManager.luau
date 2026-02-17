@@ -277,7 +277,7 @@ function UpgradeManager.upgradeBuilding(player: Player, building: Instance): boo
 	end
 
 	-- Check if player owns the building
-	if building:GetAttribute("Owner") ~= player.UserId then
+	if building:GetAttribute("OwnerId") ~= player.UserId then
 		UpgradeDebug:warn(`{player.Name} tried to upgrade building they don't own`)
 		return false
 	end

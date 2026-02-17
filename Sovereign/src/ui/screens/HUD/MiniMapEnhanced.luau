@@ -121,7 +121,7 @@ function MiniMap:updateMinimapIndicators()
 			if unit:IsA("Model") and unit.PrimaryPart then
 				local isVisible = CheckVisibility:InvokeServer("Unit", unit)
 				if isVisible then
-					local owner = unit:GetAttribute("Owner")
+					local owner = unit:GetAttribute("OwnerId")
 					local pos = unit.PrimaryPart.Position
 
 					local minimapX = (pos.X + MAP_SIZE / 2) / MAP_SIZE
@@ -159,7 +159,7 @@ function MiniMap:updateMinimapIndicators()
 			if building:IsA("Model") and building.PrimaryPart then
 				local isVisible = CheckVisibility:InvokeServer("Building", building)
 				if isVisible then
-					local owner = building:GetAttribute("Owner")
+					local owner = building:GetAttribute("OwnerId")
 					local buildingType = building:GetAttribute("BuildingType")
 					local pos = building.PrimaryPart.Position
 

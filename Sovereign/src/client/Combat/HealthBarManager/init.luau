@@ -129,7 +129,7 @@ local function updateHealthBar(unit: Model, billboard: BillboardGui)
 
 	-- Check if unit is visible (fog of war)
 	local isVisible = CheckVisibility:InvokeServer("Unit", unit)
-	local owner = unit:GetAttribute("Owner")
+	local owner = unit:GetAttribute("OwnerId")
 
 	-- Always show health bars for own units, only show enemy bars if visible
 	local shouldShow = (owner == player.UserId) or isVisible

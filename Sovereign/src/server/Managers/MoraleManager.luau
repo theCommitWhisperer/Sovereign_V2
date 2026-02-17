@@ -259,8 +259,8 @@ local function checkAuraEffects(unitModel: Model): number
 	for otherModel, otherMorale in pairs(UnitMoraleData) do
 		if otherModel ~= unitModel and otherModel.Parent then
 			local otherType = otherModel:GetAttribute("UnitType")
-			local otherOwner = otherModel:GetAttribute("Owner")
-			local unitOwner = unitModel:GetAttribute("Owner")
+			local otherOwner = otherModel:GetAttribute("OwnerId")
+			local unitOwner = unitModel:GetAttribute("OwnerId")
 
 			if otherOwner == unitOwner then
 				local otherPos = otherModel.PrimaryPart and otherModel.PrimaryPart.Position
@@ -292,7 +292,7 @@ function MoraleManager.evaluateCombatSituation(unitModel: Model): number
 		return 0
 	end
 
-	local unitOwner = unitModel:GetAttribute("Owner")
+	local unitOwner = unitModel:GetAttribute("OwnerId")
 	local alliesNearby = 0
 	local enemiesNearby = 0
 
@@ -301,7 +301,7 @@ function MoraleManager.evaluateCombatSituation(unitModel: Model): number
 		if otherModel ~= unitModel and otherModel.Parent then
 			local otherPos = otherModel.PrimaryPart and otherModel.PrimaryPart.Position
 			if otherPos and (otherPos - unitPos).Magnitude < 30 then
-				if otherModel:GetAttribute("Owner") == unitOwner then
+				if otherModel:GetAttribute("OwnerId") == unitOwner then
 					alliesNearby = alliesNearby + 1
 				else
 					enemiesNearby = enemiesNearby + 1
@@ -377,7 +377,7 @@ function MoraleManager.battleCry(sourceUnit: Model, range: number)
 		return
 	end
 
-	local sourceOwner = sourceUnit:GetAttribute("Owner")
+	local sourceOwner = sourceUnit:GetAttribute("OwnerId")
 
 	MoraleDebug:info("Battle cry activated!", {
 		source = sourceUnit.Name,
@@ -387,7 +387,7 @@ function MoraleManager.battleCry(sourceUnit: Model, range: number)
 	-- Boost morale of all nearby allies
 	for unitModel, moraleData in pairs(UnitMoraleData) do
 		if unitModel ~= sourceUnit and unitModel.Parent then
-			if unitModel:GetAttribute("Owner") == sourceOwner then
+			if unitModel:GetAttribute("OwnerId") == sourceOwner then
 				local unitPos = unitModel.PrimaryPart and unitModel.PrimaryPart.Position
 				if unitPos and (unitPos - sourcePos).Magnitude <= range then
 					MoraleManager.modifyMorale(unitModel, 15, "Battle Cry")

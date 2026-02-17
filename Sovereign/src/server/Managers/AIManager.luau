@@ -855,7 +855,7 @@ function AIManager.sendScout(ownerId: number)
 
 	local enemyKeeps = {}
 	for _, building in BuildingsFolder:GetChildren() do
-		local buildingOwner = building:GetAttribute("Owner")
+		local buildingOwner = building:GetAttribute("OwnerId")
 		local buildingType = building:GetAttribute("BuildingType")
 
 		if buildingType == "Keep" and buildingOwner and buildingOwner ~= ownerId then
@@ -922,7 +922,7 @@ function AIManager.checkDefensiveStatus(ownerId: number)
 	-- Check for enemy units near Keep (within 100 studs)
 	local threatsNearby = 0
 	for _, unit in UnitsFolder:GetChildren() do
-		local unitOwner = unit:GetAttribute("Owner")
+		local unitOwner = unit:GetAttribute("OwnerId")
 		if unitOwner and unitOwner ~= ownerId then
 			local unitPos = unit:GetPivot().Position
 			local distance = (unitPos - keepPosition).Magnitude
@@ -968,7 +968,7 @@ function AIManager.findNearestEnemyTarget(ownerId: number, aiPosition: Vector3):
 	local enemyTargets = {}
 
 	for _, building in BuildingsFolder:GetChildren() do
-		local buildingOwner = building:GetAttribute("Owner")
+		local buildingOwner = building:GetAttribute("OwnerId")
 		local buildingType = building:GetAttribute("BuildingType")
 
 		-- Find enemy Keeps (not AI's own)
@@ -982,7 +982,7 @@ function AIManager.findNearestEnemyTarget(ownerId: number, aiPosition: Vector3):
 			local enemyUnitCount = 0
 			if UnitsFolder then
 				for _, unit in UnitsFolder:GetChildren() do
-					local unitOwner = unit:GetAttribute("Owner")
+					local unitOwner = unit:GetAttribute("OwnerId")
 					if unitOwner == buildingOwner then
 						local unitPos = unit:GetPivot().Position
 						if (unitPos - buildingPos).Magnitude < 150 then

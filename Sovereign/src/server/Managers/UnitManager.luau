@@ -206,8 +206,7 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 
 	-- Set unit attributes BEFORE parenting
 	unit:SetAttribute("UnitType", unitType)
-	unit:SetAttribute("Owner", ownerId)
-	unit:SetAttribute("OwnerId", ownerId) -- For compatibility with WorkerManager
+	unit:SetAttribute("OwnerId", ownerId)
 	unit:SetAttribute("UnitId", unit.Name)
 
 	-- Set initial position (use PivotTo for unanchored models)

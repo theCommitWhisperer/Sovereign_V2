@@ -101,6 +101,7 @@ local CaravanSystem = require(Systems.CaravanSystem)
 local DashboardSystem = require(Systems.DashboardSystem)
 local VictorySystem = require(Systems.VictorySystem)
 local WallSystemServer = require(Systems.WallSystemServer)
+local TerrainGenerator = require(Systems.TerrainGenerator)
 
 -- Initialize pathfinding first (required by MovementSystem)
 GameManagerDebug:info("Initializing A* grid-based pathfinding...")
@@ -219,7 +220,7 @@ local function setupKingHealthMonitoring(player: Player, character: Model)
 					humanoidRootPart.CFrame = playerData.SpawnPoint * CFrame.new(0, 3, 0)
 
 					-- Re-tag as King
-					newCharacter:SetAttribute("Owner", player.UserId)
+					newCharacter:SetAttribute("OwnerId", player.UserId)
 					newCharacter:SetAttribute("UnitType", "King")
 					newCharacter:SetAttribute("IsKing", true)
 
@@ -258,7 +259,7 @@ Players.PlayerAdded:Connect(function(player)
 		local playerData = PlayerManager.get(player)
 		if playerData and playerData.GameState == "InGame" then
 			-- Re-tag character as King after respawn
-			character:SetAttribute("Owner", player.UserId)
+			character:SetAttribute("OwnerId", player.UserId)
 			character:SetAttribute("UnitType", "King")
 			character:SetAttribute("IsKing", true)
 
@@ -534,6 +535,9 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		SpawnManager.setMapConfig(mapConfig)
 		GameManagerDebug:info(`Map loaded: {mapConfig.Name} ({mapConfig.Size}x{mapConfig.Size})`)
 
+		-- Generate the visual terrain for the map
+		TerrainGenerator.generate(mapConfig)
+
 		-- Parse peace time (format: "10 minutes")
 		local peaceTimeMinutes = 0 -- default
 		local minutes = peaceTimeStr:match("(%d+)")
@@ -549,31 +553,31 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 			GameManagerDebug:info(`Viking Raids enabled for {player.Name} (peace time: {peaceTimeMinutes} minutes)`)
 		end
 
-		-- Assign player to a quadrant using SpawnManager
-		local quadrant = SpawnManager.assignPlayerToQuadrant(player.UserId)
+		-- Assign player to a spawn zone using SpawnManager
+		local spawnZone = SpawnManager.assignPlayerToSpawn(player.UserId)
 
-		-- Use faction from lobby if provided, otherwise map quadrants to factions
+		-- Use faction from lobby if provided, otherwise map spawn zones to factions
 		local factionName = factionFromSettings
 		if not factionName then
-			local quadrantToFaction = {
+			local spawnToFaction = {
 				[1] = "Kingdom", -- Northwest
 				[2] = "Empire", -- Northeast
 				[3] = "Tribes", -- Southwest
 				[4] = "IronLegion", -- Southeast
 			}
-			factionName = quadrantToFaction[quadrant] or "Kingdom"
+			factionName = spawnToFaction[spawnZone] or "Kingdom"
 		end
 
 		local factionData = GameData.Factions[factionName]
 
-		-- Override spawn point with quadrant-specific spawn
-		local quadrantSpawn = SpawnManager.getPlayerSpawnPoint(player.UserId)
+		-- Override spawn point with zone-specific spawn
+		local zoneSpawn = SpawnManager.getPlayerSpawnPoint(player.UserId)
 
 		playerData.Faction = factionName
-		playerData.SpawnPoint = quadrantSpawn
+		playerData.SpawnPoint = zoneSpawn
 		playerData.GameState = "InGame"
 
-		GameManagerDebug:info(`Assigned {player.Name} to Quadrant {quadrant} ({factionName})`)
+		GameManagerDebug:info(`Assigned {player.Name} to spawn zone {spawnZone} ({factionName})`)
 
 		-- Set starting resources dynamically based on lobby settings
 		playerData.Resources.Wood = calculateStartingResources(settings.startingResources or "Standard", "Wood")
@@ -584,24 +588,24 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 			calculateStartingResources(settings.startingResources or "Standard", "Iron_Bars")
 		playerData.Resources.Weapons = calculateStartingResources(settings.startingResources or "Standard", "Weapons")
 
-		-- Spawn initial setup with quadrant spawn point
-		spawnInitialSetup(player, factionData, quadrantSpawn, settings)
+		-- Spawn initial setup with zone spawn point
+		spawnInitialSetup(player, factionData, zoneSpawn, settings)
 
 		-- Load character now (Players.CharacterAutoLoads is false)
 		player:LoadCharacter()
 		GameManagerDebug:info(`Loading character for {player.Name}`)
 
-		-- Wait for character and teleport to quadrant spawn
+		-- Wait for character and teleport to spawn zone
 		local character = player.Character or player.CharacterAdded:Wait()
 		local humanoidRootPart = character:WaitForChild("HumanoidRootPart") :: BasePart
-		humanoidRootPart.CFrame = quadrantSpawn * CFrame.new(0, 3, 0)
+		humanoidRootPart.CFrame = zoneSpawn * CFrame.new(0, 3, 0)
 
 		-- Tag the player's character as King (can't change name due to security restrictions)
-		character:SetAttribute("Owner", player.UserId)
+		character:SetAttribute("OwnerId", player.UserId)
 		character:SetAttribute("UnitType", "King")
 		character:SetAttribute("IsKing", true)
 
-		GameManagerDebug:info(`Character spawned and teleported {player.Name} to quadrant {quadrant} (tagged as King)`)
+		GameManagerDebug:info(`Character spawned and teleported {player.Name} to spawn zone {spawnZone} (tagged as King)`)
 
 		-- Setup King health monitoring
 		setupKingHealthMonitoring(player, character)
@@ -624,8 +628,8 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		if aiPlayers and #aiPlayers > 0 then
 			GameManagerDebug:info(`Spawning {#aiPlayers} AI players for multiplayer game`)
 			for _, aiData in ipairs(aiPlayers) do
-				-- Assign quadrant and get spawn point
-				local aiQuadrant = SpawnManager.assignPlayerToQuadrant(aiData.UserId)
+				-- Assign spawn zone and get spawn point
+				local aiSpawnZone = SpawnManager.assignPlayerToSpawn(aiData.UserId)
 				local aiSpawnPoint = SpawnManager.getPlayerSpawnPoint(aiData.UserId)
 				local aiFactionData = GameData.Factions[aiData.Faction]
 
@@ -640,7 +644,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				-- Register AI with AIManager for autonomous behavior
 				AIManager.registerAI(aiData.UserId, aiData.Name, aiData.Faction, aiSpawnPoint)
 
-				GameManagerDebug:info(`Spawned AI player {aiData.Name} as {aiData.Faction} in quadrant {aiQuadrant}`)
+				GameManagerDebug:info(`Spawned AI player {aiData.Name} as {aiData.Faction} in spawn zone {aiSpawnZone}`)
 			end
 
 			-- Clear AI players after spawning (so they don't spawn again for other players)
@@ -828,7 +832,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 								local isWorking = unit:GetAttribute("IsWorking")
 
 								-- CHECK: Don't assign Vikings as workers!
-								local owner = unit:GetAttribute("Owner")
+								local owner = unit:GetAttribute("OwnerId")
 								if unitType == "Peasant" and not isWorking and owner == player.UserId then
 									WorkerManager.assignWorkerToBuilding(unit, building, player.UserId)
 
@@ -864,7 +868,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 
 			local unitToMove = findUnit(data.unitId)
 
-			if unitToMove and unitToMove:GetAttribute("Owner") == player.UserId then
+			if unitToMove and unitToMove:GetAttribute("OwnerId") == player.UserId then
 				-- Clear combat target and delegate movement to MovementSystem
 				unitToMove:SetAttribute("CombatTarget", nil)
 				unitToMove:SetAttribute("TargetPosition", data.targetPosition)
@@ -883,7 +887,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 			local units = {}
 			for _, unitId in ipairs(data.unitIds) do
 				local unit = findUnit(unitId)
-				if unit and unit:GetAttribute("Owner") == player.UserId then
+				if unit and unit:GetAttribute("OwnerId") == player.UserId then
 					table.insert(units, unit)
 				end
 			end
@@ -946,7 +950,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 			for _, building in playerData.Buildings do
 				if building and building.Parent and building.Name == data.buildingId then
 					-- Check if building belongs to player
-					if building:GetAttribute("Owner") == player.UserId then
+					if building:GetAttribute("OwnerId") == player.UserId then
 						local success = TrainingManager.startTraining(building, data.unitType, player.UserId)
 						if success then
 							GameManagerDebug:info(`Started training {data.unitType}`)
@@ -981,7 +985,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 			for i, building in playerData.Buildings do
 				if building and building.Parent and building.Name == data.buildingId then
 					-- Check if building belongs to player
-					if building:GetAttribute("Owner") == player.UserId then
+					if building:GetAttribute("OwnerId") == player.UserId then
 						local buildingType = building:GetAttribute("BuildingType")
 
 						-- Protect critical buildings from deletion
@@ -1084,7 +1088,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 			for _, unit in playerData.Units do
 				if unit and unit.Parent and unit.Name == data.unitId then
 					-- Check if unit belongs to player
-					if unit:GetAttribute("Owner") == player.UserId then
+					if unit:GetAttribute("OwnerId") == player.UserId then
 						-- Find the target
 						local unitsFolder = workspace:FindFirstChild("Units")
 						if unitsFolder then
@@ -1109,7 +1113,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 			for _, unitId in ipairs(data.UnitIDs) do
 				local unitModel = findUnit(unitId)
 
-				if unitModel and unitModel:GetAttribute("Owner") == player.UserId then
+				if unitModel and unitModel:GetAttribute("OwnerId") == player.UserId then
 					-- Delegate to CombatManager
 					CombatManager.setStance(unitModel, data.Stance)
 				end
@@ -1226,6 +1230,12 @@ LobbyEvent.OnServerEvent:Connect(function(player, action, ...)
 	elseif action == "VoteSetting" then
 		local settingId, value = ...
 		LobbyManager.voteSetting(player, settingId, value)
+	elseif action == "SelectSpawn" then
+		local spawnNumber = ...
+		LobbyManager.selectSpawn(player, spawnNumber)
+	elseif action == "SelectColor" then
+		local color = ...
+		LobbyManager.selectColor(player, color)
 	elseif action == "SelectFaction" then
 		local faction, targetUserId = ...
 		LobbyManager.selectFaction(player, faction, targetUserId)

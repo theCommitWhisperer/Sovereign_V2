@@ -155,7 +155,7 @@ local function updateWallVisuals(x: number, z: number)
 	-- 6. Setup Properties
 	newModel.Parent = currentWall.Parent
 	newModel.Name = currentWall.Name
-	newModel:SetAttribute("Owner", currentWall:GetAttribute("Owner"))
+	newModel:SetAttribute("OwnerId", currentWall:GetAttribute("OwnerId"))
 	newModel:SetAttribute("BuildingType", currentWall:GetAttribute("BuildingType"))
 	newModel:SetAttribute("AssetName", assetName)
 	newModel:SetAttribute("Rotation", rotation)
