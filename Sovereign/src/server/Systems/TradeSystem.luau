@@ -28,7 +28,10 @@ end
 
 -- Initialize the trade system
 function TradeSystem.init()
-	-- Update prices periodically for all players
+	TradeSystemDebug:info("TradeSystem initialized")
+end
+
+function TradeSystem.startLoop()
 	task.spawn(function()
 		while true do
 			task.wait(PRICE_UPDATE_INTERVAL)
@@ -37,8 +40,6 @@ function TradeSystem.init()
 			end
 		end
 	end)
-
-	TradeSystemDebug:info(`TradeSystem initialized - updating prices every {PRICE_UPDATE_INTERVAL} seconds`)
 end
 
 return TradeSystem

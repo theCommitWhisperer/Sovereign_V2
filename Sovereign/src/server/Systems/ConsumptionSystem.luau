@@ -50,7 +50,10 @@ end
 
 -- Initialize the consumption system
 function ConsumptionSystem.init()
-	-- Process food consumption every 30 seconds for all players
+	ConsumptionSystemDebug:info("ConsumptionSystem initialized")
+end
+
+function ConsumptionSystem.startLoop()
 	task.spawn(function()
 		while true do
 			task.wait(CONSUMPTION_CYCLE)
@@ -59,8 +62,6 @@ function ConsumptionSystem.init()
 			end
 		end
 	end)
-
-	ConsumptionSystemDebug:info(`ConsumptionSystem initialized - consuming food every {CONSUMPTION_CYCLE} seconds`)
 end
 
 return ConsumptionSystem

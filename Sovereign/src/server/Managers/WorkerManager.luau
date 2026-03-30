@@ -16,8 +16,8 @@ local IdlePeasantManager = require(script.Parent.IdlePeasantManager)
 local WorkerManager = {}
 
 -- Debug channels
-local WorkerDebug = DebugManager.createChannel("Worker", true)
-local HaulerDebug = DebugManager.createChannel("Hauler", true)
+local WorkerDebug = DebugManager.createChannel("Worker", false)
+local HaulerDebug = DebugManager.createChannel("Hauler", false)
 
 -- Active tasks
 local WorkerTasks: { WorkerTask } = {}
@@ -699,7 +699,6 @@ local function assignHaulersToBuildings()
 		return
 	end
 
-	HaulerDebug:info(`Checking {#BuildingsFolder:GetChildren()} buildings for hauling needs...`)
 
 	-- Find all production buildings with resources to haul
 	local buildingsNeedingHauling: { { building: Instance, resourceType: string, ownerId: number } } = {}
@@ -746,11 +745,7 @@ local function assignHaulersToBuildings()
 		end
 	end
 
-	-- If no buildings need hauling, exit
-	if #buildingsNeedingHauling == 0 then
-		HaulerDebug:info("No buildings need hauling")
-		return
-	end
+	if #buildingsNeedingHauling == 0 then return end
 
 	HaulerDebug:info(`Found {#buildingsNeedingHauling} buildings needing hauling, searching for idle peasants...`)
 
@@ -840,18 +835,18 @@ function WorkerManager.update(dt: number)
 	-- Periodically assign haulers to buildings
 	local currentTime = tick()
 	if currentTime - lastHaulerAssignmentTime >= HAULER_ASSIGNMENT_INTERVAL then
-		HaulerDebug:info(`Running hauler assignment check (interval: {HAULER_ASSIGNMENT_INTERVAL}s)`)
 		assignHaulersToBuildings()
 		lastHaulerAssignmentTime = currentTime
 	end
 end
 
--- Start the update loop
-local RunService = game:GetService("RunService")
-RunService.Heartbeat:Connect(function(dt)
-	WorkerManager.update(dt)
-end)
-
-WorkerDebug:info("WorkerManager update loop started")
+-- Called by GameManager when a game actually starts
+function WorkerManager.startLoop()
+	local RunService = game:GetService("RunService")
+	RunService.Heartbeat:Connect(function(dt)
+		WorkerManager.update(dt)
+	end)
+	WorkerDebug:info("WorkerManager update loop started")
+end
 
 return WorkerManager

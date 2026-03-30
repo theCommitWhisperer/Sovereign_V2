@@ -200,10 +200,11 @@ local function updateRaids(deltaTime: number)
 		end
 	end
 end
--- Start update loop
-RunService.Heartbeat:Connect(function(deltaTime)
-	updateRaids(deltaTime)
-end)
+function VikingRaidSystem.startLoop()
+	RunService.Heartbeat:Connect(function(deltaTime)
+		updateRaids(deltaTime)
+	end)
+end
 
 VikingDebug:info("Initialized")
 

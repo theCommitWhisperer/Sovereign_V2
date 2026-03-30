@@ -62,6 +62,17 @@ local lastWallDir: Vector3? = nil
 local isPlacingWalls = false
 local isDeleteModeActive = false -- Track delete mode from HUD
 
+-- Zone bounds (set on GameStarted)
+local playerZoneCenter: Vector3? = nil
+local playerZoneRadius: number? = nil
+
+local function isInPlayerZone(pos: Vector3): boolean
+	if not playerZoneCenter or not playerZoneRadius then return true end
+	local dx = pos.X - playerZoneCenter.X
+	local dz = pos.Z - playerZoneCenter.Z
+	return (dx * dx + dz * dz) <= (playerZoneRadius * playerZoneRadius)
+end
+
 -- === UTILITIES ===
 
 local function snapToGrid(position: Vector3): Vector3
@@ -357,16 +368,27 @@ local function getActivePath(): ({ PathPoint }, boolean)
 			end
 		end
 
-		return { { position = finalPos, type = selectedPiece, rotation = rot } }, true
+		return { { position = finalPos, type = selectedPiece, rotation = rot } }, isInPlayerZone(finalPos)
 	end
 
 	-- Dragging
+	local dragPath: { PathPoint }
+	local dragValid: boolean
 	if selectedPiece == "Straight" or selectedPiece == "Short" then
-		return calculateSmartWallPath(startPosition, currentPos, startIncomingDir, isIntersection)
+		dragPath, dragValid = calculateSmartWallPath(startPosition, currentPos, startIncomingDir, isIntersection)
 	else
-		-- Simple linear placement for other types
-		return { { position = currentPos, type = selectedPiece, rotation = currentRotation } }, true
+		dragPath = { { position = currentPos, type = selectedPiece, rotation = currentRotation } }
+		dragValid = true
 	end
+	if dragValid then
+		for _, pt in ipairs(dragPath) do
+			if not isInPlayerZone(pt.position) then
+				dragValid = false
+				break
+			end
+		end
+	end
+	return dragPath, dragValid
 end
 
 -- === VISUALS (PREVIEW) ===
@@ -622,7 +644,12 @@ RunService.RenderStepped:Connect(updatePreview)
 -- === INTERFACE WITH GAME SYSTEM ===
 
 gameEvent.OnClientEvent:Connect(function(action, data)
-	if action == "StartPlacement" then
+	if action == "GameStarted" then
+		if data and data.zoneCenter then
+			playerZoneCenter = data.zoneCenter
+			playerZoneRadius = data.zoneRadius
+		end
+	elseif action == "StartPlacement" then
 		-- Check if it's a wall building request
 		if data and (data == "Stone_Wall" or string.find(tostring(data), "Wall")) then
 			-- print("[WallBuilderController] Starting wall placement:", data)

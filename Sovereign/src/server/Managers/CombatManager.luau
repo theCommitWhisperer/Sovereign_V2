@@ -852,14 +852,14 @@ end
 -- ═══════════════════════════════════════════════════════════════════════════
 
 function CombatManager.init()
-	-- Use a proper timer-based update loop
 	lastUpdateTime = tick()
+end
 
+function CombatManager.startLoop()
 	RunService.Heartbeat:Connect(function()
 		local currentTime = tick()
 		local deltaTime = currentTime - lastUpdateTime
 
-		-- Only update at fixed rate
 		if deltaTime >= COMBAT_TICK_RATE then
 			updateCombat(currentTime)
 			lastUpdateTime = currentTime

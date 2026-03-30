@@ -135,11 +135,12 @@ end
 
 function HappinessManager.init()
 	Players.PlayerAdded:Connect(HappinessManager.create)
+end
 
-	-- Periodically update happiness for all players
+function HappinessManager.startLoop()
 	task.spawn(function()
 		while true do
-			task.wait(10) -- Update every 10 seconds
+			task.wait(10)
 			for _, player in ipairs(Players:GetPlayers()) do
 				HappinessManager.update(player)
 			end

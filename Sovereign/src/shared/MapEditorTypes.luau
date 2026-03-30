@@ -3,6 +3,7 @@
 
 local MapEditorTypes = {}
 
+-- Legacy brush stroke (kept for backward compatibility with saved maps)
 export type BrushStroke = {
 	Position: { X: number, Z: number },
 	Radius: number,
@@ -11,12 +12,47 @@ export type BrushStroke = {
 	SizeY: number, -- Height of the fill
 }
 
+-- New sculpt stroke for terrain height editing
+export type SculptStroke = {
+	Position: { X: number, Y: number, Z: number }, -- 3D hit position on terrain
+	Radius: number, -- Brush radius in studs
+	Strength: number, -- 0.1 to 1.0: how much occupancy to change per stroke
+	Hardness: number, -- 0.0 to 1.0: 0=soft Gaussian falloff, 1=hard flat edge
+	Mode: string, -- "Raise" | "Lower" | "Flatten" | "Paint"
+	Shape: string, -- "Circle" | "Square"
+	Material: string, -- Material name (used in Paint mode, and as fill material for Raise)
+}
+
 export type PlacedFeature = {
 	Id: string, -- Unique ID
 	FeatureType: string, -- "Mountain", "Lake", "River", "Forest", "Hill", "Rock"
 	Position: { X: number, Y: number, Z: number },
 	Scale: number, -- 0.5 to 2.0 multiplier
 	Rotation: number, -- Y-axis rotation in degrees
+}
+
+-- A painted resource patch on the map (XZ plane only)
+export type ResourcePatch = {
+	Id: string, -- Unique ID
+	ResourceType: string, -- "Wood" | "Stone" | "Food" | "Iron_Ore"
+	ZoneOwner: number?, -- 0=Neutral, 1=P1, 2=P2, 3=P3, 4=P4
+	Position: { X: number, Z: number }, -- Center of the patch
+	Radius: number, -- Patch radius in studs
+	Density: number?, -- Spawn density hint (1-10)
+}
+
+-- A painted zone stroke (player territory or neutral zone)
+export type ZonePaintStroke = {
+	Zone: number, -- 0 = Neutral, 1-4 = Player zones
+	Position: { X: number, Z: number }, -- Center of stroke
+	Radius: number, -- Brush radius in studs
+	Shape: string, -- "Circle" | "Square"
+}
+
+-- A polygon zone region defined by a list of vertices (XZ plane)
+export type ZonePolygon = {
+	Zone: number,                             -- 0 = Neutral, 1-4 = Player zones
+	Vertices: { { X: number, Z: number } },   -- Ordered vertex list, at least 3
 }
 
 export type SpawnZoneConfig = {
@@ -43,9 +79,13 @@ export type CustomMapData = {
 	NeutralZoneWidth: number,
 
 	-- Editor data
-	BrushStrokes: { BrushStroke },
+	BrushStrokes: { BrushStroke }, -- Legacy paint strokes
+	SculptStrokes: { SculptStroke }, -- Sculpt strokes (raise/lower/flatten/paint)
 	Features: { PlacedFeature },
 	SpawnZones: { SpawnZoneConfig },
+	ResourcePatches: { ResourcePatch }?, -- Placed resource patches
+	ZonePaintStrokes: { ZonePaintStroke }?, -- Zone territory paint strokes (brush + rasterized polygons)
+	ZonePolygons: { ZonePolygon }?, -- Zone polygon regions (raw vertices for re-editing)
 
 	-- Game config
 	ResourceDensity: {
@@ -87,13 +127,37 @@ MapEditorTypes.FEATURE_TYPES = {
 	{ name = "Rock", icon = "K" },
 }
 
+-- Sculpt brush modes
+MapEditorTypes.BrushModes = { "Raise", "Lower", "Flatten", "Paint" }
+
+-- Sculpt brush shapes
+MapEditorTypes.BrushShapes = { "Circle", "Square" }
+
+-- Resource types for placement tool
+MapEditorTypes.RESOURCE_TYPES = {
+	{ name = "Wood",     resourceType = "Wood",     color = { 60, 140, 40 } },
+	{ name = "Stone",    resourceType = "Stone",    color = { 160, 155, 150 } },
+	{ name = "Food",     resourceType = "Food",     color = { 200, 180, 50 } },
+	{ name = "Iron Ore", resourceType = "Iron_Ore", color = { 110, 80, 70 } },
+}
+
+-- Zone paint zones
+MapEditorTypes.ZONE_TYPES = {
+	{ name = "Neutral",  zone = 0, color = { 140, 120, 80 } },
+	{ name = "Player 1", zone = 1, color = { 80, 120, 200 } },
+	{ name = "Player 2", zone = 2, color = { 200, 80, 80 } },
+	{ name = "Player 3", zone = 3, color = { 80, 180, 80 } },
+	{ name = "Player 4", zone = 4, color = { 200, 160, 40 } },
+}
+
 -- Editor tool enum
 MapEditorTypes.Tools = {
 	Select = "Select",
 	TerrainBrush = "TerrainBrush",
 	Eraser = "Eraser",
 	FeaturePlace = "FeaturePlace",
-	SpawnZones = "SpawnZones",
+	Resources = "Resources",
+	ZonePaint = "ZonePaint",
 	Settings = "Settings",
 }
 
@@ -113,7 +177,11 @@ function MapEditorTypes.createDefaultMap(authorId: number, authorName: string): 
 		BaseMaterial = "Grass",
 		NeutralZoneWidth = 100,
 		BrushStrokes = {},
+		SculptStrokes = {},
 		Features = {},
+		ResourcePatches = {},
+		ZonePaintStrokes = {},
+		ZonePolygons = {},
 		SpawnZones = {
 			{ SpawnNumber = 1, Center = { X = -275, Z = 275 }, HalfSize = 200 },
 			{ SpawnNumber = 2, Center = { X = 275, Z = 275 }, HalfSize = 200 },

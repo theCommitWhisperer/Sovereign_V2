@@ -31,7 +31,10 @@ end
 
 -- Initialize the victory system
 function VictorySystem.init()
-	-- Check conditions periodically for all players
+	VictorySystemDebug:info("VictorySystem initialized")
+end
+
+function VictorySystem.startLoop()
 	task.spawn(function()
 		while true do
 			task.wait(VICTORY_CHECK_INTERVAL)
@@ -40,8 +43,6 @@ function VictorySystem.init()
 			end
 		end
 	end)
-
-	VictorySystemDebug:info(`VictorySystem initialized - checking every {VICTORY_CHECK_INTERVAL} seconds`)
 end
 
 return VictorySystem

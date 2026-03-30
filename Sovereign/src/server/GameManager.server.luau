@@ -10,7 +10,7 @@ local StarterPlayer = game:GetService("StarterPlayer")
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
-local GameManagerDebug = DebugManager.createChannel("GameManager", true)
+local GameManagerDebug = DebugManager.createChannel("GameManager", false)
 
 GameManagerDebug:info("Loading server-side managers...")
 
@@ -104,13 +104,6 @@ local VictorySystem = require(Systems.VictorySystem)
 local WallSystemServer = require(Systems.WallSystemServer)
 local TerrainGenerator = require(Systems.TerrainGenerator)
 
--- Initialize pathfinding first (required by MovementSystem)
-GameManagerDebug:info("Initializing A* grid-based pathfinding...")
-local currentMap = MapManager.getCurrentMap()
-local mapSize = currentMap and currentMap.Size or 1024
-PathfindingIntegration.initialize(mapSize)
-GameManagerDebug:info("Pathfinding initialized for map size: " .. mapSize)
-
 -- Initialize systems
 PopulationSystem.init()
 ConsumptionSystem.init()
@@ -154,6 +147,12 @@ MapEditorEvent.Name = "MapEditorEvent"
 MapEditorEvent.Parent = RemoteEvents
 
 GameManagerDebug:info("RemoteEvents created")
+
+-- Studio terrain: custom map data loaded once per game session so all players share
+-- the same painted resource patches and keep spawn zones.
+local studioCustomMapData: any? = nil
+local studioResourcePatchesSpawned = false
+local workerLoopStarted = false
 
 -- Initialize systems that depend on RemoteEvents
 WallSystemServer.initialize()
@@ -276,8 +275,10 @@ Players.PlayerAdded:Connect(function(player)
 	end)
 end)
 
--- Player left - clean up
+-- Player left - clean up (single handler, ordered cleanup)
 Players.PlayerRemoving:Connect(function(player)
+	MapEditorManager.leaveEditor(player)
+	LobbyManager.removePlayer(player)
 	SpawnManager.removePlayer(player.UserId)
 	FogOfWarManager.cleanup(player)
 	PlayerManager.remove(player)
@@ -384,22 +385,33 @@ local function spawnInitialSetup(player: Player, factionData: any, spawnPointOve
 		end
 	end
 
-	-- 4. Spawn resource nodes in distinct areas around the spawn
-	-- Wooded area (northwest of spawn)
-	local woodAreaCenter = spawnPoint.Position + Vector3.new(-80, 0, 80)
-	ResourceNodeManager.spawnNodesNearPosition(woodAreaCenter, 60, "Wood", 25)
+	-- 4. Spawn resource nodes — skip in Studio terrain mode because nodes are spawned
+	-- once globally from painted ResourcePatches (or the fallback patch list) in the StartGame handler.
+	local isStudioMode = (function()
+		local flag = workspace:FindFirstChild("UseStudioTerrain")
+		if flag ~= nil and flag:IsA("BoolValue") and flag.Value == true then return true end
+		-- Also skip when a BuiltinMapData module was loaded (studioResourcePatchesSpawned tracks this)
+		if studioResourcePatchesSpawned then return true end
+		return false
+	end)()
 
-	-- Stone area (northeast of spawn)
-	local stoneAreaCenter = spawnPoint.Position + Vector3.new(80, 0, 80)
-	ResourceNodeManager.spawnNodesNearPosition(stoneAreaCenter, 50, "Stone", 20)
+	if not isStudioMode then
+		-- Wooded area (northwest of spawn)
+		local woodAreaCenter = spawnPoint.Position + Vector3.new(-80, 0, 80)
+		ResourceNodeManager.spawnNodesNearPosition(woodAreaCenter, 60, "Wood", 25)
 
-	-- Fertile land (southwest of spawn)
-	local fertileAreaCenter = spawnPoint.Position + Vector3.new(-80, 0, -80)
-	ResourceNodeManager.spawnNodesNearPosition(fertileAreaCenter, 50, "Food", 15)
+		-- Stone area (northeast of spawn)
+		local stoneAreaCenter = spawnPoint.Position + Vector3.new(80, 0, 80)
+		ResourceNodeManager.spawnNodesNearPosition(stoneAreaCenter, 50, "Stone", 20)
 
-	-- Iron area (southeast of spawn)
-	local ironAreaCenter = spawnPoint.Position + Vector3.new(80, 0, -80)
-	ResourceNodeManager.spawnNodesNearPosition(ironAreaCenter, 40, "Iron_Ore", 12)
+		-- Fertile land (southwest of spawn)
+		local fertileAreaCenter = spawnPoint.Position + Vector3.new(-80, 0, -80)
+		ResourceNodeManager.spawnNodesNearPosition(fertileAreaCenter, 50, "Food", 15)
+
+		-- Iron area (southeast of spawn)
+		local ironAreaCenter = spawnPoint.Position + Vector3.new(80, 0, -80)
+		ResourceNodeManager.spawnNodesNearPosition(ironAreaCenter, 40, "Iron_Ore", 12)
+	end
 
 	GameManagerDebug:info(
 		`Spawned {factionData.StartingPeasants} peasants and resource nodes for {player.Name} in {factionData.Name}`
@@ -456,18 +468,25 @@ local function spawnAIInitialSetup(ownerId: number, ownerName: string, factionDa
 	-- 2. No starting troops for AI - they will train units as needed
 	-- Note: AI starts with only their Keep and will build/train units through normal gameplay
 
-	-- 3. Spawn resource nodes in distinct areas around the spawn
-	local woodAreaCenter = spawnPoint.Position + Vector3.new(-80, 0, 80)
-	ResourceNodeManager.spawnNodesNearPosition(woodAreaCenter, 60, "Wood", 25)
+	-- 3. Spawn resource nodes — skip in Studio terrain mode (patches spawned globally once)
+	local isStudioModeAI = (function()
+		local flag = workspace:FindFirstChild("UseStudioTerrain")
+		return flag ~= nil and flag:IsA("BoolValue") and flag.Value == true
+	end)()
 
-	local stoneAreaCenter = spawnPoint.Position + Vector3.new(80, 0, 80)
-	ResourceNodeManager.spawnNodesNearPosition(stoneAreaCenter, 50, "Stone", 20)
+	if not isStudioModeAI then
+		local woodAreaCenter = spawnPoint.Position + Vector3.new(-80, 0, 80)
+		ResourceNodeManager.spawnNodesNearPosition(woodAreaCenter, 60, "Wood", 25)
 
-	local fertileAreaCenter = spawnPoint.Position + Vector3.new(-80, 0, -80)
-	ResourceNodeManager.spawnNodesNearPosition(fertileAreaCenter, 50, "Food", 15)
+		local stoneAreaCenter = spawnPoint.Position + Vector3.new(80, 0, 80)
+		ResourceNodeManager.spawnNodesNearPosition(stoneAreaCenter, 50, "Stone", 20)
 
-	local ironAreaCenter = spawnPoint.Position + Vector3.new(80, 0, -80)
-	ResourceNodeManager.spawnNodesNearPosition(ironAreaCenter, 40, "Iron_Ore", 12)
+		local fertileAreaCenter = spawnPoint.Position + Vector3.new(-80, 0, -80)
+		ResourceNodeManager.spawnNodesNearPosition(fertileAreaCenter, 50, "Food", 15)
+
+		local ironAreaCenter = spawnPoint.Position + Vector3.new(80, 0, -80)
+		ResourceNodeManager.spawnNodesNearPosition(ironAreaCenter, 40, "Iron_Ore", 12)
+	end
 
 	GameManagerDebug:info(
 		"Spawned Keep and resource nodes for AI " .. ownerName .. " in " .. factionData.Name
@@ -476,8 +495,6 @@ end
 
 -- Handle game events from client
 GameEvent.OnServerEvent:Connect(function(player, action, data)
-	GameManagerDebug:info(`Received event from {player.Name}: {action}`)
-
 	local playerData = PlayerManager.get(player)
 	if not playerData then
 		GameManagerDebug:warn(`No player data for {player.Name}`)
@@ -539,10 +556,101 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 
 		local mapConfig = MapManager.getCurrentMap()
 		SpawnManager.setMapConfig(mapConfig)
+		PathfindingIntegration.initialize(mapConfig.Size)
 		GameManagerDebug:info(`Map loaded: {mapConfig.Name} ({mapConfig.Size}x{mapConfig.Size})`)
 
-		-- Generate the visual terrain for the map
-		TerrainGenerator.generate(mapConfig)
+		-- Determine whether to use studio/editor terrain or generate procedurally.
+		-- Builtin maps with a BuiltinMapData module, __custom__ maps, and UseStudioTerrain
+		-- all skip terrain generation and use painted stroke data instead.
+		local studioTerrainFlag = workspace:FindFirstChild("UseStudioTerrain")
+		local useStudioTerrain = (studioTerrainFlag ~= nil and studioTerrainFlag:IsA("BoolValue") and studioTerrainFlag.Value == true)
+			or (selectedMap == "__custom__")
+
+		-- Check if there is a shipped BuiltinMapData module for this map key.
+		-- These are created by copy-pasting the data module from the editor Export.
+		local builtinDataFolder = ReplicatedStorage:FindFirstChild("Shared")
+			and ReplicatedStorage.Shared:FindFirstChild("GameData")
+			and ReplicatedStorage.Shared.GameData:FindFirstChild("BuiltinMapData")
+		local builtinDataModule = builtinDataFolder and builtinDataFolder:FindFirstChild(selectedMap)
+		if builtinDataModule then
+			useStudioTerrain = true
+			if not studioCustomMapData then
+				local ok, data = pcall(require, builtinDataModule)
+				if ok and data then
+					studioCustomMapData = data
+					GameManagerDebug:info("Loaded builtin map data for: " .. selectedMap)
+				else
+					GameManagerDebug:warn("Failed to load BuiltinMapData module for: " .. selectedMap)
+				end
+			end
+		end
+
+		if not useStudioTerrain then
+			TerrainGenerator.generate(mapConfig)
+		else
+			GameManagerDebug:info("Studio/custom terrain mode — skipping procedural terrain generation")
+
+			-- Load painted custom map data from DataStore if not already loaded from a builtin module.
+			-- customMapId/customMapAuthorId come from lobby SelectCustomMap or editor ActivateCustomMap.
+			if not studioCustomMapData and settings.customMapId and settings.customMapAuthorId then
+				studioCustomMapData = MapEditorManager.loadCustomMapData(
+					settings.customMapAuthorId, settings.customMapId
+				)
+				-- If the custom map has a Size field, patch mapConfig so systems use the right scale
+				if studioCustomMapData and studioCustomMapData.Size then
+					mapConfig = {}
+					for k, v in pairs(MapManager.getCurrentMap()) do mapConfig[k] = v end
+					mapConfig.Size = studioCustomMapData.Size
+					mapConfig.Name = studioCustomMapData.Name or mapConfig.Name
+					SpawnManager.setMapConfig(mapConfig)
+					PathfindingIntegration.initialize(mapConfig.Size)
+				end
+				-- Replay sculpt strokes and placed features onto the terrain
+				if studioCustomMapData then
+					local terrain = workspace:FindFirstChildOfClass("Terrain")
+					if terrain then
+						MapEditorManager.replaySculptStrokes(terrain, studioCustomMapData)
+						MapEditorManager.replayFeatures(terrain, studioCustomMapData)
+						GameManagerDebug:info("Replayed sculpt strokes and features for custom map")
+					end
+				end
+			end
+
+			-- Merge painted KeepSpawnZones into mapConfig so SpawnManager uses them.
+			if studioCustomMapData and studioCustomMapData.KeepSpawnZones and #studioCustomMapData.KeepSpawnZones > 0 then
+				mapConfig = {}
+				for k, v in pairs(MapManager.getCurrentMap()) do mapConfig[k] = v end
+				mapConfig.KeepSpawnZones = studioCustomMapData.KeepSpawnZones
+				SpawnManager.setMapConfig(mapConfig)
+				GameManagerDebug:info("Merged painted KeepSpawnZones into mapConfig")
+			end
+
+			-- Spawn resource nodes from painted patches once (shared across all players).
+			if studioCustomMapData and not studioResourcePatchesSpawned then
+				local patches = studioCustomMapData.ResourcePatches or {}
+				if #patches > 0 then
+					ResourceNodeManager.spawnNodesFromPatches(patches)
+					studioResourcePatchesSpawned = true
+					GameManagerDebug:info("Spawned resource nodes from " .. #patches .. " painted patches")
+				else
+					-- No painted patches: fall back to spawning resources near each keep spawn zone
+					local keepZones = mapConfig.KeepSpawnZones
+					if keepZones and #keepZones > 0 then
+						for _, zone in ipairs(keepZones) do
+							local cx, cz = zone.X, zone.Z
+							ResourceNodeManager.spawnNodesFromPatches({
+								{ ResourceType = "Wood",     Position = { X = cx - 80, Z = cz + 80 }, Radius = 60, Density = 5 },
+								{ ResourceType = "Stone",    Position = { X = cx + 80, Z = cz + 80 }, Radius = 50, Density = 5 },
+								{ ResourceType = "Food",     Position = { X = cx - 80, Z = cz - 80 }, Radius = 50, Density = 5 },
+								{ ResourceType = "Iron_Ore", Position = { X = cx + 80, Z = cz - 80 }, Radius = 40, Density = 5 },
+							})
+						end
+						studioResourcePatchesSpawned = true
+						GameManagerDebug:info("No painted patches — spawned fallback resources near " .. #keepZones .. " keep zones")
+					end
+				end
+			end
+		end
 
 		-- Parse peace time (format: "10 minutes")
 		local peaceTimeMinutes = 0 -- default
@@ -559,8 +667,10 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 			GameManagerDebug:info(`Viking Raids enabled for {player.Name} (peace time: {peaceTimeMinutes} minutes)`)
 		end
 
-		-- Assign player to a spawn zone using SpawnManager
-		local spawnZone = SpawnManager.assignPlayerToSpawn(player.UserId)
+		-- Assign player to their lobby-selected spawn zone, or auto-assign if none selected
+		local spawnZone = if settings.quadrant and type(settings.quadrant) == "number"
+			then SpawnManager.assignPlayerToExplicitSpawn(player.UserId, settings.quadrant)
+			else SpawnManager.assignPlayerToSpawn(player.UserId)
 
 		-- Use faction from lobby if provided, otherwise map spawn zones to factions
 		local factionName = factionFromSettings
@@ -616,12 +726,63 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		-- Setup King health monitoring
 		setupKingHealthMonitoring(player, character)
 
+		-- Build zone bounds for client (used to colour placement ghosts)
+		local zoneCenter: Vector3? = nil
+		local zoneRadius: number? = nil
+		local keepCenter = SpawnManager.getKeepSpawnCenter(spawnZone)
+		if keepCenter then
+			zoneCenter = keepCenter
+			zoneRadius = SpawnManager.getKeepSpawnRadius(spawnZone)
+		end
+
 		-- Notify client
 		GameEvent:FireClient(player, "GameStarted", {
 			faction = factionName,
 			resources = playerData.Resources,
 			showTutorial = showTutorial,
+			zoneCenter = zoneCenter,
+			zoneRadius = zoneRadius,
+			spawnZone = spawnZone,
 		})
+
+		-- Start game-loop systems on the first game start (not during lobby).
+		-- Staggered so systems that need player buildings/units aren't burning
+		-- cycles before anything exists in the world.
+		if not workerLoopStarted then
+			workerLoopStarted = true
+
+			-- Immediate: needed from the very first frame
+			MovementSystem.startLoop()
+			CombatManager.startLoop()
+			FogOfWarManager.startUpdates()
+			WorkerManager.startLoop()
+			VikingRaidSystem.startLoop()
+
+			-- Environment: cheap, start early so first ticks happen naturally
+			SeasonSystem.startLoop()
+			WeatherSystem.startLoop()
+			EventSystem.startLoop()
+			TradeSystem.startLoop()
+
+			-- Deferred 30s: players need time to place their Keep before
+			-- population, training, happiness and economy systems matter
+			task.delay(30, function()
+				TrainingManager.startLoop()
+				PopulationManager.startLoop()
+				PopulationSystem.startLoop()
+				HappinessManager.startLoop()
+				ConsumptionSystem.startLoop()
+				CaravanSystem.startLoop()
+			end)
+
+			-- Deferred 60s: maintenance and taxes need buildings to exist;
+			-- victory checks are meaningless in the opening minute
+			task.delay(60, function()
+				MaintenanceSystem.startLoop()
+				TaxManager.startLoop()
+				VictorySystem.startLoop()
+			end)
+		end
 
 		-- Send immediate economy dashboard update
 		task.wait(0.1) -- Brief delay to ensure all data is initialized
@@ -1247,14 +1408,19 @@ LobbyEvent.OnServerEvent:Connect(function(player, action, ...)
 		LobbyManager.selectFaction(player, faction, targetUserId)
 	elseif action == "ToggleReady" then
 		LobbyManager.toggleReady(player)
+	elseif action == "ListUserMaps" then
+		-- Return the player's saved editor maps so the lobby can show them
+		local maps = MapEditorManager.getUserMaps(player)
+		LobbyEvent:FireClient(player, "UserMapsList", maps)
+	elseif action == "SelectCustomMap" then
+		-- Player picked one of their saved maps; store as lobby custom map
+		local mapId = ...
+		LobbyManager.voteSetting(player, "selectedMap", "__custom__")
+		LobbyManager.voteSetting(player, "customMapId", mapId)
+		LobbyManager.voteSetting(player, "customMapAuthorId", player.UserId)
 	end
 end)
 
--- Handle player disconnecting from lobby
-Players.PlayerRemoving:Connect(function(player)
-	-- Remove from lobby if they're in it
-	LobbyManager.removePlayer(player)
-end)
 
 -- Handle map editor events
 MapEditorEvent.OnServerEvent:Connect(function(player, action, ...)
@@ -1268,6 +1434,9 @@ MapEditorEvent.OnServerEvent:Connect(function(player, action, ...)
 	elseif action == "PaintTerrain" then
 		local strokes = ...
 		MapEditorManager.paintTerrain(player, strokes)
+	elseif action == "SculptTerrain" then
+		local strokes = ...
+		MapEditorManager.sculptTerrain(player, strokes)
 	elseif action == "SetBaseTerrain" then
 		local data = ...
 		MapEditorManager.setBaseTerrain(player, data)
@@ -1295,12 +1464,54 @@ MapEditorEvent.OnServerEvent:Connect(function(player, action, ...)
 		MapEditorManager.listMaps(player)
 	elseif action == "ExportMap" then
 		MapEditorManager.exportMap(player)
+	elseif action == "UndoStroke" then
+		MapEditorManager.undoStroke(player)
+	elseif action == "RedoStroke" then
+		MapEditorManager.redoStroke(player)
+	elseif action == "RenameMap" then
+		local data = ...
+		MapEditorManager.renameMap(player, data)
+	elseif action == "DeleteMap" then
+		local mapId = ...
+		MapEditorManager.deleteMap(player, mapId)
+	elseif action == "PlaceResourcePatch" then
+		local patches = ...
+		MapEditorManager.placeResourcePatch(player, patches)
+	elseif action == "DeleteResourcePatch" then
+		local patchId = ...
+		MapEditorManager.deleteResourcePatch(player, patchId)
+	elseif action == "PaintZone" then
+		local strokes = ...
+		MapEditorManager.paintZone(player, strokes)
+	elseif action == "PaintZonePolygon" then
+		local data = ...
+		MapEditorManager.paintZonePolygon(player, data)
+	elseif action == "ShowZoneOverlay" then
+		MapEditorManager.showZoneOverlay(player)
+	elseif action == "HideZoneOverlay" then
+		MapEditorManager.hideZoneOverlay(player)
+	elseif action == "ShowResourceOverlay" then
+		MapEditorManager.showResourceOverlay(player)
+	elseif action == "HideResourceOverlay" then
+		MapEditorManager.hideResourceOverlay(player)
+	elseif action == "UpdateKeepSpawn" then
+		local data = ...
+		MapEditorManager.updateKeepSpawn(player, data)
+	elseif action == "ActivateCustomMap" then
+		-- Set this player's saved map as the lobby's custom map
+		local session = MapEditorManager.getActiveSession(player)
+		if session then
+			LobbyManager.voteSetting(player, "customMapId", session.MapId)
+			LobbyManager.voteSetting(player, "customMapAuthorId", player.UserId)
+			local ev = ReplicatedStorage:FindFirstChild("RemoteEvents")
+				and ReplicatedStorage.RemoteEvents:FindFirstChild("MapEditorEvent")
+			if ev then
+				ev:FireClient(player, "CustomMapActivated", { mapId = session.MapId })
+			end
+			GameManagerDebug:info(player.Name .. " activated custom map: " .. session.MapId)
+		end
 	end
 end)
 
 -- Clean up map editor session when player leaves
-Players.PlayerRemoving:Connect(function(player)
-	MapEditorManager.leaveEditor(player)
-end)
-
 GameManagerDebug:info("Server ready!")

@@ -371,10 +371,14 @@ end
 function PopulationManager.init()
 	Players.PlayerAdded:Connect(PopulationManager.create)
 
+	PopulationDebug:info("PopulationManager initialized with AI support")
+end
+
+function PopulationManager.startLoop()
 	-- Periodically update population for all players
 	task.spawn(function()
 		while true do
-			task.wait(5) -- Update every 5 seconds
+			task.wait(5)
 			for _, player in ipairs(Players:GetPlayers()) do
 				PopulationManager.update(player)
 			end
@@ -384,7 +388,7 @@ function PopulationManager.init()
 	-- Periodically update AI populations
 	task.spawn(function()
 		while true do
-			task.wait(5) -- Update every 5 seconds
+			task.wait(5)
 			for ownerId, popData in pairs(populationData) do
 				if popData.isAI then
 					PopulationManager.updateAI(ownerId)
@@ -396,9 +400,8 @@ function PopulationManager.init()
 	-- Automatic population growth for both players and AI
 	task.spawn(function()
 		while true do
-			task.wait(60) -- Check every 60 seconds for natural growth
+			task.wait(60)
 
-			-- Grow player populations
 			for _, player in ipairs(Players:GetPlayers()) do
 				if PopulationManager.canGrowPopulation(player) then
 					local growthRate = PopulationManager.getGrowthRate(player)
@@ -408,13 +411,11 @@ function PopulationManager.init()
 				end
 			end
 
-			-- Grow AI populations (same rules as players)
 			for ownerId, popData in pairs(populationData) do
 				if popData.isAI then
 					if PopulationManager.canGrowPopulationAI(ownerId) then
 						local AIManager = require(script.Parent.AIManager)
 						local aiState = AIManager.getState(ownerId)
-						-- AI grows if has food (skip happiness requirement for AI simplicity)
 						if aiState and (aiState.resources.Food or 0) > 50 then
 							PopulationManager.tryGrowPopulationAI(ownerId)
 						end
@@ -423,8 +424,6 @@ function PopulationManager.init()
 			end
 		end
 	end)
-
-	PopulationDebug:info("PopulationManager initialized with AI support")
 end
 
 return PopulationManager

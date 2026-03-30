@@ -28,7 +28,10 @@ end
 
 -- Initialize the season system
 function SeasonSystem.init()
-	-- Update seasons periodically for all players
+	SeasonSystemDebug:info("SeasonSystem initialized")
+end
+
+function SeasonSystem.startLoop()
 	task.spawn(function()
 		while true do
 			task.wait(SEASON_UPDATE_INTERVAL)
@@ -37,8 +40,6 @@ function SeasonSystem.init()
 			end
 		end
 	end)
-
-	SeasonSystemDebug:info(`SeasonSystem initialized - updating every {SEASON_UPDATE_INTERVAL} seconds`)
 end
 
 return SeasonSystem

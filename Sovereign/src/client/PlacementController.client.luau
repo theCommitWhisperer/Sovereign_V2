@@ -44,6 +44,17 @@ local lastPlacedWallRotation = 0
 local wallChainDirection = Vector3.new(1, 0, 0)
 local lastGridTargetPos = nil
 
+-- Zone bounds (set on GameStarted, used to validate placement position)
+local playerZoneCenter: Vector3? = nil
+local playerZoneRadius: number? = nil
+
+local function isInPlayerZone(pos: Vector3): boolean
+	if not playerZoneCenter or not playerZoneRadius then return true end
+	local dx = pos.X - playerZoneCenter.X
+	local dz = pos.Z - playerZoneCenter.Z
+	return (dx * dx + dz * dz) <= (playerZoneRadius * playerZoneRadius)
+end
+
 -- Debug Visuals
 local debugFolder = workspace:FindFirstChild("PlacementDebug") or Instance.new("Folder")
 debugFolder.Name = "PlacementDebug"
@@ -562,6 +573,9 @@ local function updateGhostPosition()
 
 		local collisionCF, newSize = getSafeBounds(ghostBuilding)
 		canPlace = #Workspace:GetPartBoundsInBox(collisionCF, newSize * 0.9, collisionParams) == 0
+		if canPlace then
+			canPlace = isInPlayerZone(ghostBuilding:GetPivot().Position)
+		end
 	end
 
 	local color = canPlace and Color3.new(0, 1, 0) or Color3.new(1, 0, 0)
@@ -699,7 +713,12 @@ UserInputService.InputBegan:Connect(function(input, gp)
 end)
 
 gameEvent.OnClientEvent:Connect(function(act, data)
-	if act == "StartPlacement" then
+	if act == "GameStarted" then
+		if data and data.zoneCenter then
+			playerZoneCenter = data.zoneCenter
+			playerZoneRadius = data.zoneRadius
+		end
+	elseif act == "StartPlacement" then
 		-- Check if this is a wall building - if so, let WallBuilderController handle it
 		local isWallBuilding = data == "Stone_Wall" or string.find(tostring(data), "Wall")
 

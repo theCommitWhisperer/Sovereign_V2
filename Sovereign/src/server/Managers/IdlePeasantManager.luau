@@ -11,7 +11,7 @@ local SpawnPointSystem = require(script.Parent.Parent.Systems.SpawnPointSystem)
 local IdlePeasantManager = {}
 
 -- Debug channel
-local IdleDebug = DebugManager.createChannel("IdlePeasant", true) -- Enabled for debugging
+local IdleDebug = DebugManager.createChannel("IdlePeasant", false)
 
 -- Idle peasant behavior tracking
 export type IdleBehavior = {

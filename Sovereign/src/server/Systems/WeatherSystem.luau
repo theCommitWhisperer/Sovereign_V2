@@ -28,7 +28,10 @@ end
 
 -- Initialize the weather system
 function WeatherSystem.init()
-	-- Update weather periodically for all players
+	WeatherSystemDebug:info("WeatherSystem initialized")
+end
+
+function WeatherSystem.startLoop()
 	task.spawn(function()
 		while true do
 			task.wait(WEATHER_UPDATE_INTERVAL)
@@ -37,8 +40,6 @@ function WeatherSystem.init()
 			end
 		end
 	end)
-
-	WeatherSystemDebug:info(`WeatherSystem initialized - updating every {WEATHER_UPDATE_INTERVAL} seconds`)
 end
 
 return WeatherSystem

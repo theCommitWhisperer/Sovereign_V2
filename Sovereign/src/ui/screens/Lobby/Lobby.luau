@@ -25,6 +25,8 @@ local function getInitialState()
 		players = {},
 		mapKeys = MapData.getMapList(),
 		selectedMap = MapData.DefaultMap,
+		userMaps = {},          -- { {MapId, Name, UpdatedAt} } — player's editor-saved maps
+		userMapsLoaded = false, -- whether we've fetched from server yet
 		spawnSelections = {},  -- { [spawnNumber] = { userId, name } }
 		mySpawn = nil,
 		myFaction = nil,
@@ -90,8 +92,10 @@ function Lobby:init()
 				newState[key] = value
 			end
 
-			-- Preserve mapKeys (not sent from server, client-only state)
+			-- Preserve client-only state not broadcast by server
 			newState.mapKeys = self.state.mapKeys
+			newState.userMaps = self.state.userMaps
+			newState.userMapsLoaded = self.state.userMapsLoaded
 
 			-- Sync spawn selections from server
 			if data.SpawnSelections then
@@ -147,6 +151,9 @@ function Lobby:init()
 				task.cancel(self.countdownThread)
 				self.countdownThread = nil
 			end
+		elseif action == "UserMapsList" then
+			-- Server returned the player's editor-saved maps
+			self:setState({ userMaps = data or {}, userMapsLoaded = true })
 		elseif action == "FactionTaken" then
 			-- Show error that faction is taken
 			warn("Faction already taken:", data)
@@ -176,6 +183,9 @@ function Lobby:init()
 	LobbyDebug:info("Sending JoinLobby request to server")
 	LobbyEvent:FireServer("JoinLobby")
 
+	-- Fetch this player's editor-saved maps for the "My Maps" section
+	LobbyEvent:FireServer("ListUserMaps")
+
 	self.addAI = function()
 		LobbyDebug:info("Add AI button clicked")
 		LobbyEvent:FireServer("AddAI")
@@ -189,6 +199,11 @@ function Lobby:init()
 	self.selectMap = function(mapName)
 		LobbyDebug:info("Map selected:", mapName)
 		LobbyEvent:FireServer("VoteSetting", "selectedMap", mapName)
+	end
+
+	self.selectCustomMap = function(mapId)
+		LobbyDebug:info("Custom map selected:", mapId)
+		LobbyEvent:FireServer("SelectCustomMap", mapId)
 	end
 
 	self.onSettingChanged = function(settingId, newValue)
@@ -318,6 +333,44 @@ function Lobby:render()
 					ColorSequenceKeypoint.new(1, Color3.fromRGB(240, 235, 225)),
 				}),
 				Rotation = 0,
+			}),
+		})
+	end
+
+	-- "My Maps" section: player's editor-saved maps
+	local userMaps = self.state.userMaps or {}
+	if #userMaps > 0 or not self.state.userMapsLoaded then
+		-- Divider label
+		mapListChildren["__myMapsHeader__"] = React.createElement("TextLabel", {
+			Size = UDim2.new(0.95, 0, 0, 20),
+			BackgroundTransparency = 1,
+			Text = if self.state.userMapsLoaded then "── My Maps ──" else "── My Maps (loading…) ──",
+			FontFace = UIConfig.Font.Title,
+			TextColor3 = Color3.fromRGB(200, 180, 120),
+			TextSize = 12,
+		})
+	end
+	for _, entry in ipairs(userMaps) do
+		local mapId: string = entry.MapId or ""
+		local displayName: string = entry.Name or mapId
+		local isSelected = self.state.selectedMap == "__custom__" and self.state.customMapId == mapId
+		mapListChildren["__custom__" .. mapId] = React.createElement("TextButton", {
+			Size = UDim2.new(0.95, 0, 0, 32),
+			BackgroundColor3 = isSelected and Color3.fromRGB(60, 120, 80) or Color3.fromRGB(40, 80, 55),
+			BackgroundTransparency = 0,
+			BorderSizePixel = 0,
+			Text = "★ " .. displayName,
+			FontFace = UIConfig.Font.Title,
+			TextColor3 = isSelected and Color3.fromRGB(200, 255, 200) or Color3.fromRGB(170, 220, 170),
+			TextSize = 14,
+			[React.Event.MouseButton1Click] = function()
+				self.selectCustomMap(mapId)
+			end,
+		}, {
+			UICorner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 3) }),
+			UIStroke = React.createElement("UIStroke", {
+				Color = isSelected and Color3.fromRGB(100, 200, 120) or Color3.fromRGB(30, 60, 40),
+				Thickness = isSelected and 2 or 1.5,
 			}),
 		})
 	end

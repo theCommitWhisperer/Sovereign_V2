@@ -101,10 +101,16 @@ function ResourceNodeManager.spawnNodesNearPosition(centerPos: Vector3, radius: 
 		local offset = Vector3.new(math.cos(angle) * distance, 0, math.sin(angle) * distance)
 		local position = centerPos + offset
 
-		-- Raycast down to find ground
+		-- Raycast down to find ground (include Terrain voxels and any Baseplate)
 		local raycastParams = RaycastParams.new()
 		raycastParams.FilterType = Enum.RaycastFilterType.Include
-		raycastParams.FilterDescendantsInstances = { Workspace:FindFirstChild("Baseplate") or Workspace }
+		local terrainInst = Workspace:FindFirstChildOfClass("Terrain")
+		local baseplateInst = Workspace:FindFirstChild("Baseplate")
+		local includeList: { Instance } = {}
+		if terrainInst then table.insert(includeList, terrainInst) end
+		if baseplateInst then table.insert(includeList, baseplateInst) end
+		if #includeList == 0 then table.insert(includeList, Workspace) end
+		raycastParams.FilterDescendantsInstances = includeList
 
 		local result = Workspace:Raycast(position + Vector3.new(0, 100, 0), Vector3.new(0, -200, 0), raycastParams)
 
@@ -178,6 +184,70 @@ function ResourceNodeManager.gatherFromNode(node: ResourceNode, amount: number):
 	end
 
 	return gathered
+end
+
+-- Spawn resource nodes from painted ResourcePatches (used for Studio terrain maps).
+-- Each patch defines a center, radius, resource type, and density.
+-- Nodes are distributed randomly within the patch circle using the same raycast logic.
+function ResourceNodeManager.spawnNodesFromPatches(patches: { any })
+	if not patches or #patches == 0 then return end
+
+	local raycastParams = RaycastParams.new()
+	raycastParams.FilterType = Enum.RaycastFilterType.Include
+	local terrainInst = Workspace:FindFirstChildOfClass("Terrain")
+	local baseplateInst = Workspace:FindFirstChild("Baseplate")
+	local includeList: { Instance } = {}
+	if terrainInst then table.insert(includeList, terrainInst) end
+	if baseplateInst then table.insert(includeList, baseplateInst) end
+	if #includeList == 0 then table.insert(includeList, Workspace) end
+	raycastParams.FilterDescendantsInstances = includeList
+
+	for _, patch in ipairs(patches) do
+		local cx = patch.Position.X
+		local cz = patch.Position.Z
+		local radius = math.clamp(patch.Radius or 30, 5, 300)
+		local nodeType = patch.ResourceType or "Wood"
+		-- Density 1-10, default 5. Scale node count to patch area like the editor does.
+		local density = math.clamp(patch.Density or 5, 1, 10)
+		local area = math.pi * radius * radius
+		local count = math.clamp(math.floor(area / 300 * (density / 5)), 1, 60)
+
+		ResourceNodeManagerDebug:info(
+			string.format("Spawning %d %s nodes from patch at (%.0f, %.0f) r=%.0f",
+				count, nodeType, cx, cz, radius)
+		)
+
+		local placed = 0
+		local attempts = 0
+		while placed < count and attempts < count * 6 do
+			attempts += 1
+			local angle = math.random() * math.pi * 2
+			local dist = math.sqrt(math.random()) * radius -- uniform disc distribution
+			local px = cx + math.cos(angle) * dist
+			local pz = cz + math.sin(angle) * dist
+
+			local position = Vector3.new(px, 0, pz)
+			local result = Workspace:Raycast(Vector3.new(px, 500, pz), Vector3.new(0, -600, 0), raycastParams)
+			if result then
+				position = result.Position
+			end
+
+			local nodeModel = createNodeModel(nodeType, position)
+			nodeModel.Parent = NodesFolder
+
+			table.insert(ActiveNodes, {
+				Type = nodeType,
+				Instance = nodeModel,
+				Position = position,
+				ResourcesRemaining = 100,
+				MaxResources = 100,
+			} :: ResourceNode)
+
+			placed += 1
+		end
+	end
+
+	ResourceNodeManagerDebug:info("Spawned nodes from " .. #patches .. " resource patches")
 end
 
 -- Get all active nodes

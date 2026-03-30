@@ -47,21 +47,58 @@ local playerSpawns: { [number]: number } = {} -- Maps UserId to spawn number
 
 local function calculateSpawnPoint(spawnNumber: number): CFrame
 	local mapConfig = getMapConfig()
+
+	-- If the map has hand-placed KeepSpawnZones, use those positions directly.
+	if mapConfig.KeepSpawnZones then
+		for _, zone in ipairs(mapConfig.KeepSpawnZones) do
+			if zone.Zone == spawnNumber then
+				return CFrame.new(zone.X, zone.Y, zone.Z)
+			end
+		end
+	end
+
+	-- Fallback: calculate from quadrant dimensions (procedural / player-made maps).
 	local halfEstate = (mapConfig.SpawnZoneSize or mapConfig.QuadrantSize) / 2
 	local offset = halfEstate + (mapConfig.NeutralZoneWidth / 2)
 
 	if spawnNumber == 1 then
-		return CFrame.new(-offset, mapConfig.SpawnHeight, offset)
-	elseif spawnNumber == 2 then
-		return CFrame.new(offset, mapConfig.SpawnHeight, offset)
-	elseif spawnNumber == 3 then
 		return CFrame.new(-offset, mapConfig.SpawnHeight, -offset)
-	elseif spawnNumber == 4 then
+	elseif spawnNumber == 2 then
 		return CFrame.new(offset, mapConfig.SpawnHeight, -offset)
+	elseif spawnNumber == 3 then
+		return CFrame.new(-offset, mapConfig.SpawnHeight, offset)
+	elseif spawnNumber == 4 then
+		return CFrame.new(offset, mapConfig.SpawnHeight, offset)
 	end
 
-	-- Default to center (should never happen)
 	return CFrame.new(0, mapConfig.SpawnHeight, 0)
+end
+
+-- Get the keep spawn radius for a zone (used to define where the Keep can be placed).
+function SpawnManager.getKeepSpawnRadius(spawnNumber: number): number
+	local mapConfig = getMapConfig()
+	if mapConfig.KeepSpawnZones then
+		for _, zone in ipairs(mapConfig.KeepSpawnZones) do
+			if zone.Zone == spawnNumber then
+				return zone.Radius
+			end
+		end
+	end
+	-- Fallback: use a sensible default
+	return (mapConfig.SpawnZoneSize or mapConfig.QuadrantSize) / 2
+end
+
+-- Get the keep spawn center for a zone (XZ only, for building placement validation).
+function SpawnManager.getKeepSpawnCenter(spawnNumber: number): Vector3?
+	local mapConfig = getMapConfig()
+	if mapConfig.KeepSpawnZones then
+		for _, zone in ipairs(mapConfig.KeepSpawnZones) do
+			if zone.Zone == spawnNumber then
+				return Vector3.new(zone.X, zone.Y, zone.Z)
+			end
+		end
+	end
+	return nil
 end
 
 -- Get estate boundaries for a spawn zone
@@ -101,8 +138,21 @@ end
 
 -- Check if a position is within estate bounds
 function SpawnManager.isPositionInEstate(position: Vector3, spawnNumber: number): boolean
-	local bounds = SpawnManager.getEstateBounds(spawnNumber)
+	-- For maps with KeepSpawnZones, use radius-based check from zone center
+	local mapConfig = getMapConfig()
+	if mapConfig.KeepSpawnZones then
+		for _, zone in ipairs(mapConfig.KeepSpawnZones) do
+			if zone.Zone == spawnNumber then
+				local dx = position.X - zone.X
+				local dz = position.Z - zone.Z
+				local radius = zone.Radius or 150
+				return (dx * dx + dz * dz) <= (radius * radius)
+			end
+		end
+	end
 
+	-- Fallback: procedural quadrant bounding box
+	local bounds = SpawnManager.getEstateBounds(spawnNumber)
 	return position.X >= bounds.min.X and position.X <= bounds.max.X
 		and position.Z >= bounds.min.Z and position.Z <= bounds.max.Z
 end

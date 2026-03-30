@@ -5,7 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local AIDebug = DebugManager.createChannel("AIManager", true)
+local AIDebug = DebugManager.createChannel("AIManager", false)
 
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local UnitManager = require(script.Parent.UnitManager)

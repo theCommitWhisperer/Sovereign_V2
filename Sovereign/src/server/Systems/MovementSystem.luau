@@ -4,7 +4,7 @@
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local MovementDebug = DebugManager.createChannel("Movement", true)
+local MovementDebug = DebugManager.createChannel("Movement", false)
 
 -- Import new A* pathfinding system
 local PathfindingIntegration = require(script.Parent.PathfindingIntegration)
@@ -313,10 +313,11 @@ function MovementSystem.setConfig(key, value)
 	end
 end
 
--- Start update loop
-RunService.Heartbeat:Connect(function()
-	MovementSystem.update()
-end)
+function MovementSystem.startLoop()
+	RunService.Heartbeat:Connect(function()
+		MovementSystem.update()
+	end)
+end
 
 -- Performance monitoring loop
 if CONFIG.ENABLE_PERFORMANCE_MONITORING then

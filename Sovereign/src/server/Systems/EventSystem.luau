@@ -32,7 +32,10 @@ end
 
 -- Initialize the event system
 function EventSystem.init()
-	-- Check for events periodically for all players
+	EventSystemDebug:info("EventSystem initialized")
+end
+
+function EventSystem.startLoop()
 	task.spawn(function()
 		while true do
 			task.wait(EVENT_CHECK_INTERVAL)
@@ -41,8 +44,6 @@ function EventSystem.init()
 			end
 		end
 	end)
-
-	EventSystemDebug:info(`EventSystem initialized - checking for events every {EVENT_CHECK_INTERVAL} seconds`)
 end
 
 return EventSystem

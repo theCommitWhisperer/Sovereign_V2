@@ -28,7 +28,10 @@ end
 
 -- Initialize the caravan system
 function CaravanSystem.init()
-	-- Update caravans periodically for all players
+	CaravanSystemDebug:info("CaravanSystem initialized")
+end
+
+function CaravanSystem.startLoop()
 	task.spawn(function()
 		while true do
 			task.wait(CARAVAN_UPDATE_INTERVAL)
@@ -37,8 +40,6 @@ function CaravanSystem.init()
 			end
 		end
 	end)
-
-	CaravanSystemDebug:info(`CaravanSystem initialized - updating every {CARAVAN_UPDATE_INTERVAL} seconds`)
 end
 
 return CaravanSystem

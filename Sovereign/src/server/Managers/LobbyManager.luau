@@ -40,6 +40,8 @@ export type LobbySettings = {
 	honor: string,
 	rank: string,
 	showTutorial: string,
+	customMapId: string?,
+	customMapAuthorId: number?,
 }
 
 export type SpawnSelection = {
@@ -107,6 +109,8 @@ local function getOrCreateLobby(): LobbySession
 				honor = "Standard",
 				rank = "Knight",
 				showTutorial = true,
+				customMapId = nil,
+				customMapAuthorId = nil,
 			},
 			SettingsVotes = {},
 			CountdownActive = false,

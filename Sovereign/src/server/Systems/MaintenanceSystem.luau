@@ -61,7 +61,10 @@ end
 
 -- Initialize the maintenance system
 function MaintenanceSystem.init()
-	-- Process maintenance every 60 seconds for all players
+	MaintenanceSystemDebug:info("MaintenanceSystem initialized")
+end
+
+function MaintenanceSystem.startLoop()
 	task.spawn(function()
 		while true do
 			task.wait(MAINTENANCE_CYCLE)
@@ -70,8 +73,6 @@ function MaintenanceSystem.init()
 			end
 		end
 	end)
-
-	MaintenanceSystemDebug:info(`MaintenanceSystem initialized - collecting maintenance every {MAINTENANCE_CYCLE} seconds`)
 end
 
 return MaintenanceSystem

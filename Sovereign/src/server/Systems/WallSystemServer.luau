@@ -5,6 +5,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local Players = game:GetService("Players")
+local SpawnManager = require(script.Parent.Parent.Managers.SpawnManager)
 
 -- Import WallSystem for grid-based connection management
 local WallSystem = require(script.Parent.WallSystem)
@@ -195,6 +196,12 @@ local function validatePath(player: Player, pathData: { PathPoint }): (boolean, 
 		-- 2. Check Distance from Player
 		if (point.position - root.Position).Magnitude > CONFIG.MaxBuildDistance then
 			return false, "Too Far From Player"
+		end
+
+		-- 3. Check zone bounds
+		local spawnNum = SpawnManager.getPlayerSpawn(player.UserId)
+		if spawnNum and not SpawnManager.isPositionInEstate(point.position, spawnNum) then
+			return false, "Outside Your Zone"
 		end
 
 		-- 3. Check Distance Between Segments

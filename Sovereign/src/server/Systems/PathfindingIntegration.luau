@@ -9,7 +9,7 @@ local Pathfinding = require(ReplicatedStorage.Shared.Pathfinding)
 local PathfindingIntegration = {}
 PathfindingIntegration.__index = PathfindingIntegration
 
-local PathfindingDebug = DebugManager.createChannel("PathfindingIntegration", true)
+local PathfindingDebug = DebugManager.createChannel("PathfindingIntegration", false)
 
 -- Configuration
 local CONFIG = {

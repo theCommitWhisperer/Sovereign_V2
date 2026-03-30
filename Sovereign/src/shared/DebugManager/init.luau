@@ -67,7 +67,7 @@ function DebugManager.createChannel(name: string, enabled: boolean?): Channel
 
 	local channel: Channel = {
 		name = name,
-		enabled = if enabled ~= nil then enabled else true,
+		enabled = if enabled ~= nil then enabled else false,
 		info = function(self: Channel, message: string, data: any?)
 			-- Log if global DebugManager is enabled OR if this specific channel is enabled
 			if DebugManager.Enabled or self.enabled then
@@ -75,16 +75,12 @@ function DebugManager.createChannel(name: string, enabled: boolean?): Channel
 			end
 		end,
 		warn = function(self: Channel, message: string, data: any?)
-			-- Log if global DebugManager is enabled OR if this specific channel is enabled
-			if DebugManager.Enabled or self.enabled then
-				logWithLevel("warn", self.name, message, data)
-			end
+			-- Warnings always print regardless of channel state
+			logWithLevel("warn", self.name, message, data)
 		end,
 		error = function(self: Channel, message: string, data: any?)
-			-- Log if global DebugManager is enabled OR if this specific channel is enabled
-			if DebugManager.Enabled or self.enabled then
-				logWithLevel("error", self.name, message, data)
-			end
+			-- Errors always print regardless of channel state
+			logWithLevel("error", self.name, message, data)
 		end,
 	} :: Channel
 
@@ -99,10 +95,10 @@ function DebugManager.setChannelEnabled(name: string, enabled: boolean)
 	end
 end
 
--- Get a channel (creates if doesn't exist)
+-- Get a channel (creates if doesn't exist, disabled by default)
 function DebugManager.getChannel(name: string): Channel
 	if not channels[name] then
-		return DebugManager.createChannel(name, true)
+		return DebugManager.createChannel(name, false)
 	end
 	return channels[name]
 end

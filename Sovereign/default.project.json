@@ -24,20 +24,19 @@
     "StarterGui": {},
 
     "Workspace": {
-      "$properties": { "FilteringEnabled": true },
-    "Lighting": {
-      "$className": "Lighting"
-    },
-    },
-    "Lighting": {
-      "$properties": {
-        "Ambient": [ 0, 0, 0 ],
-        "Brightness": 2,
-        "GlobalShadows": true,
-        "Outlines": false,
-        "Technology": "Voxel"
+      "$properties": { "FilteringEnabled": true, "StreamingEnabled": false },
+      "Lighting": {
+        "$className": "Lighting",
+        "$properties": {
+          "Ambient": [ 0, 0, 0 ],
+          "Brightness": 2,
+          "GlobalShadows": true,
+          "Outlines": false,
+          "Technology": "Voxel"
+        }
       }
     },
+
     "SoundService": {
       "$properties": { "RespectFilteringEnabled": true }
     }

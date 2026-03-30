@@ -230,10 +230,11 @@ local function updateTraining(deltaTime: number)
 	end
 end
 
--- Start update loop
-RunService.Heartbeat:Connect(function(deltaTime)
-	updateTraining(deltaTime)
-end)
+function TrainingManager.startLoop()
+	RunService.Heartbeat:Connect(function(deltaTime)
+		updateTraining(deltaTime)
+	end)
+end
 
 TrainingDebug:info("Initialized")
 

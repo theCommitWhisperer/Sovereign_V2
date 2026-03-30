@@ -52,11 +52,12 @@ end
 
 function TaxManager.init()
     Players.PlayerAdded:Connect(TaxManager.create)
+end
 
-    -- Periodically collect taxes for all players
+function TaxManager.startLoop()
     task.spawn(function()
         while true do
-            task.wait(60) -- Collect taxes every 60 seconds
+            task.wait(60)
             for _, player in ipairs(Players:GetPlayers()) do
                 TaxManager.collectTaxes(player)
             end

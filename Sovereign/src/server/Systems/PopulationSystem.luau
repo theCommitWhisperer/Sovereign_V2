@@ -70,7 +70,10 @@ end
 
 -- Initialize the population growth system
 function PopulationSystem.init()
-	-- Check population growth every 10 seconds for all players
+	PopulationSystemDebug:info("PopulationSystem initialized")
+end
+
+function PopulationSystem.startLoop()
 	task.spawn(function()
 		while true do
 			task.wait(10)
@@ -79,8 +82,6 @@ function PopulationSystem.init()
 			end
 		end
 	end)
-
-	PopulationSystemDebug:info("PopulationSystem initialized - checking growth every 10 seconds")
 end
 
 return PopulationSystem
