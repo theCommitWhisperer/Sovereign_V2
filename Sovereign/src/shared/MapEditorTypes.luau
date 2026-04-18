@@ -41,9 +41,10 @@ export type ResourcePatch = {
 	Density: number?, -- Spawn density hint (1-10)
 }
 
--- A painted zone stroke (player territory or neutral zone)
+-- A painted zone stroke (player territory, neutral, or map-feature zone)
 export type ZonePaintStroke = {
-	Zone: number, -- 0 = Neutral, 1-4 = Player zones
+	-- 0=Neutral, 1-4=Player zones, 5=Impassable, 6=No Build
+	Zone: number,
 	Position: { X: number, Z: number }, -- Center of stroke
 	Radius: number, -- Brush radius in studs
 	Shape: string, -- "Circle" | "Square"
@@ -51,7 +52,8 @@ export type ZonePaintStroke = {
 
 -- A polygon zone region defined by a list of vertices (XZ plane)
 export type ZonePolygon = {
-	Zone: number,                             -- 0 = Neutral, 1-4 = Player zones
+	-- 0=Neutral, 1-4=Player zones, 5=Impassable, 6=No Build
+	Zone: number,
 	Vertices: { { X: number, Z: number } },   -- Ordered vertex list, at least 3
 }
 
@@ -141,14 +143,27 @@ MapEditorTypes.RESOURCE_TYPES = {
 	{ name = "Iron Ore", resourceType = "Iron_Ore", color = { 110, 80, 70 } },
 }
 
--- Zone paint zones
+-- Zone paint zones.
+-- Zone IDs 0-4 are territory zones (Neutral + 4 players).
+-- Zone IDs 5-6 are map-feature zones that affect gameplay rules but are
+-- NOT included in the equal-balance budget check:
+--   5 = Impassable  — mountains / deep water / cliffs (no units, no building)
+--   6 = No Build    — traversable terrain where construction is blocked
+--                     (narrow passes, shorelines, bridge approaches)
 MapEditorTypes.ZONE_TYPES = {
-	{ name = "Neutral",  zone = 0, color = { 140, 120, 80 } },
-	{ name = "Player 1", zone = 1, color = { 80, 120, 200 } },
-	{ name = "Player 2", zone = 2, color = { 200, 80, 80 } },
-	{ name = "Player 3", zone = 3, color = { 80, 180, 80 } },
-	{ name = "Player 4", zone = 4, color = { 200, 160, 40 } },
+	{ name = "Neutral",    zone = 0, color = { 140, 120, 80 } },
+	{ name = "Player 1",  zone = 1, color = { 80, 120, 200 } },
+	{ name = "Player 2",  zone = 2, color = { 200, 80, 80 } },
+	{ name = "Player 3",  zone = 3, color = { 80, 180, 80 } },
+	{ name = "Player 4",  zone = 4, color = { 200, 160, 40 } },
+	{ name = "Impassable", zone = 5, color = { 60, 55, 65 } },   -- dark slate
+	{ name = "No Build",   zone = 6, color = { 190, 110, 40 } }, -- warm amber
 }
+
+-- Convenience set: zone IDs that are territory (participate in balance budget).
+MapEditorTypes.TERRITORY_ZONE_IDS = { 0, 1, 2, 3, 4 }
+-- Zone IDs that are map-feature overlays (do not participate in balance).
+MapEditorTypes.FEATURE_ZONE_IDS = { 5, 6 }
 
 -- Editor tool enum
 MapEditorTypes.Tools = {

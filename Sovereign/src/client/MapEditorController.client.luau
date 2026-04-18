@@ -168,6 +168,8 @@ local ZONE_PAINT_COLORS: { [number]: Color3 } = {
 	[2] = Color3.fromRGB(200, 80, 80),   -- Player 2
 	[3] = Color3.fromRGB(80, 180, 80),   -- Player 3
 	[4] = Color3.fromRGB(200, 160, 40),  -- Player 4
+	[5] = Color3.fromRGB(60, 55, 65),    -- Impassable (dark slate)
+	[6] = Color3.fromRGB(190, 110, 40),  -- No Build (amber)
 }
 
 -- Zone overlay: server paints zone colors directly into terrain voxels when visible,
@@ -192,18 +194,19 @@ local function getZoneAt(x: number, z: number): number
 end
 
 -- Zone budget tracking (updated via ZoneStats server events)
-local zoneAreas: { [number]: number } = { [0]=0, [1]=0, [2]=0, [3]=0, [4]=0 }
+-- Zones 0-4: territory (Neutral + 4 players).  Zones 5-6: map features (Impassable, No Build).
+local zoneAreas: { [number]: number } = { [0]=0, [1]=0, [2]=0, [3]=0, [4]=0, [5]=0, [6]=0 }
 -- Optimistic pending area: accumulates estimated % from strokes not yet confirmed by server.
 -- Reset to zero when ZoneStats arrives so the server figure takes over.
-local zonePendingArea: { [number]: number } = { [0]=0, [1]=0, [2]=0, [3]=0, [4]=0 }
+local zonePendingArea: { [number]: number } = { [0]=0, [1]=0, [2]=0, [3]=0, [4]=0, [5]=0, [6]=0 }
 
 -- Push server-confirmed zone areas to the UI attribute.
 -- zonePendingArea is only used for the blocking check, not display,
 -- because client estimates can't correctly account for overpainting.
--- Format: "z0,z1,z2,z3,z4" (tenths of a percent as integers)
+-- Format: "z0,z1,z2,z3,z4,z5,z6" (tenths of a percent as integers)
 local function pushZoneAreasToUI()
 	local parts = {}
-	for zone = 0, 4 do
+	for zone = 0, 6 do
 		parts[zone + 1] = tostring(math.floor((zoneAreas[zone] or 0) * 10 + 0.5))
 	end
 	localPlayer:SetAttribute("EditorZoneAreas", table.concat(parts, ","))
@@ -237,6 +240,31 @@ end
 local function isOverBudget(attrPrefix: string, rowKey: string, usedPct: number): boolean
 	local mode: string = localPlayer:GetAttribute(attrPrefix .. "BudgetMode") or "Freeform"
 	if mode == "Freeform" then return false end
+
+	-- Equal mode: enforce cross-zone balance for player zones (P1-P4).
+	-- A zone is over budget when it would exceed the current smallest zone
+	-- by more than EQUAL_ZONE_TOLERANCE. Neutral zone (0) is uncapped.
+	if mode == "Equal" and attrPrefix == "EditorZone" then
+		local zoneNum = tonumber(rowKey)
+		if zoneNum and zoneNum >= 1 and zoneNum <= 4 then
+			local minOtherArea = math.huge
+			for z = 1, 4 do
+				if z ~= zoneNum then
+					-- Include pending area so feedback is immediate
+					local area = (zoneAreas[z] or 0) + (zonePendingArea[z] or 0)
+					if area < minOtherArea then
+						minOtherArea = area
+					end
+				end
+			end
+			if minOtherArea == math.huge then minOtherArea = 0 end
+			local equalTolerance = (localPlayer:GetAttribute("EditorZoneEqualTolerance") :: number?) or 5
+			return usedPct >= minOtherArea + equalTolerance
+		end
+		return false -- Neutral zone is never blocked in Equal mode
+	end
+
+	-- Custom mode: use per-zone locks and targets (original behaviour)
 	local locked = parseBudgetLocked(localPlayer:GetAttribute(attrPrefix .. "BudgetLocked"))
 	if not locked[rowKey] then return false end
 	local targets = parseBudgetTargets(localPlayer:GetAttribute(attrPrefix .. "BudgetTargets"))
@@ -292,7 +320,11 @@ local function getMapEditorEvent(): RemoteEvent?
 	return MapEditorEvent
 end
 
--- Calculate camera CFrame from orbit parameters
+-- Calculate camera CFrame from orbit parameters and apply it.
+-- Also updates camera.Focus to the ground-level focus point so Roblox's
+-- streaming system knows which terrain chunks to keep loaded. Without this,
+-- the overhead map-editor camera has no CameraSubject and streaming unloads
+-- terrain as you zoom in/out.
 local function calculateCameraCFrame(): CFrame
 	-- Spherical coordinates: yaw rotates around Y, pitch tilts up/down
 	local offsetX = math.cos(cameraPitch) * math.sin(cameraYaw) * cameraDistance
@@ -300,7 +332,35 @@ local function calculateCameraCFrame(): CFrame
 	local offsetZ = math.cos(cameraPitch) * math.cos(cameraYaw) * cameraDistance
 
 	local cameraPos = cameraFocus + Vector3.new(offsetX, offsetY, offsetZ)
-	return CFrame.lookAt(cameraPos, cameraFocus)
+	local cf = CFrame.lookAt(cameraPos, cameraFocus)
+
+	-- Keep Focus at ground level so streaming loads what the camera is looking at
+	camera.Focus = CFrame.new(cameraFocus)
+
+	return cf
+end
+
+-- Periodically request terrain streaming around the current focus point.
+-- workspace:RequestStreamAroundAsync is the proper API for forcing Roblox's
+-- streaming engine to load terrain/parts near a position, regardless of where
+-- the camera body is physically located.
+local lastStreamRequest = 0
+local lastStreamedPos = Vector3.new(math.huge, 0, math.huge)
+local STREAM_REQUEST_INTERVAL = 1.0  -- seconds between requests
+local STREAM_MOVE_THRESHOLD   = 50   -- studs moved before requesting again
+local function maybeRequestStreaming()
+	if not workspace.StreamingEnabled then return end
+	local now = tick()
+	if now - lastStreamRequest < STREAM_REQUEST_INTERVAL then return end
+	local moved = (Vector3.new(cameraFocus.X, 0, cameraFocus.Z) - lastStreamedPos).Magnitude
+	if moved < STREAM_MOVE_THRESHOLD then return end
+	lastStreamRequest = now
+	lastStreamedPos = Vector3.new(cameraFocus.X, 0, cameraFocus.Z)
+	task.spawn(function()
+		pcall(function()
+			workspace:RequestStreamAroundAsync(cameraFocus, 0)
+		end)
+	end)
 end
 
 -- Get the camera's forward/right vectors projected onto XZ plane (for WASD movement)
@@ -819,6 +879,43 @@ local function activateEditor()
 	cameraPitch = -math.rad(60)
 	camera.CFrame = calculateCameraCFrame()
 
+	-- Streaming anchor: a hidden part that sits at ground level under the camera
+	-- focus point. When StreamingEnabled is on, Roblox uses the character or
+	-- CameraSubject as the streaming origin. With no subject in the map editor,
+	-- terrain unloads as you zoom out. Parenting this part to the camera keeps
+	-- it within the streaming radius so terrain stays loaded at all zoom levels.
+	local streamAnchor = workspace:FindFirstChild("__MapEditorStreamAnchor__")
+	if not streamAnchor then
+		streamAnchor = Instance.new("Part")
+		streamAnchor.Name = "__MapEditorStreamAnchor__"
+		streamAnchor.Size = Vector3.new(1, 1, 1)
+		streamAnchor.Anchored = true
+		streamAnchor.CanCollide = false
+		streamAnchor.Transparency = 1
+		streamAnchor.CastShadow = false
+		streamAnchor.Parent = workspace
+	end
+	streamAnchor.Position = Vector3.new(cameraFocus.X, 0, cameraFocus.Z)
+
+	-- Move anchor with camera focus so it always sits under what you're looking at
+	local streamConnection = game:GetService("RunService").Heartbeat:Connect(function()
+		if isEditorActive and streamAnchor and streamAnchor.Parent then
+			streamAnchor.Position = Vector3.new(cameraFocus.X, 0, cameraFocus.Z)
+		end
+	end)
+	-- Store connection so we can clean it up on editor exit
+	localPlayer:SetAttribute("__EditorStreamConnActive__", true)
+	task.spawn(function()
+		-- Wait until editor is no longer active then disconnect
+		while localPlayer:GetAttribute("__EditorStreamConnActive__") do
+			task.wait(0.5)
+		end
+		streamConnection:Disconnect()
+		if streamAnchor and streamAnchor.Parent then
+			streamAnchor:Destroy()
+		end
+	end)
+
 	-- Set default brush attributes
 	localPlayer:SetAttribute("EditorActiveTool", "Select")
 	localPlayer:SetAttribute("EditorBrushRadius", 20)
@@ -839,9 +936,9 @@ local function activateEditor()
 	localPlayer:SetAttribute("EditorKeepSpawnZone", 1)
 	localPlayer:SetAttribute("EditorKeepSpawnRadius", 150)
 
-	-- Reset zone areas
-	zoneAreas = { [0]=0, [1]=0, [2]=0, [3]=0, [4]=0 }
-	zonePendingArea = { [0]=0, [1]=0, [2]=0, [3]=0, [4]=0 }
+	-- Reset zone areas (0-4 territory + 5 Impassable + 6 No Build)
+	zoneAreas = { [0]=0, [1]=0, [2]=0, [3]=0, [4]=0, [5]=0, [6]=0 }
+	zonePendingArea = { [0]=0, [1]=0, [2]=0, [3]=0, [4]=0, [5]=0, [6]=0 }
 
 	-- Reset zone overlay state (server handles terrain painting)
 	previousTool = "Select"
@@ -851,6 +948,8 @@ end
 local function deactivateEditor()
 	if not isEditorActive then return end
 	isEditorActive = false
+	-- Signal the streaming anchor cleanup task to stop
+	localPlayer:SetAttribute("__EditorStreamConnActive__", false)
 	MapEditorControllerDebug:info("Editor camera deactivated")
 
 	-- Flush any remaining strokes
@@ -922,8 +1021,9 @@ do
 			end
 		elseif action == "ZoneStats" and data then
 			-- Server is now authoritative — replace both confirmed and pending
+			-- Covers all zones: 0-4 territory + 5 Impassable + 6 No Build
 			local areas = data.areas or {}
-			for zone = 0, 4 do
+			for zone = 0, 6 do
 				zoneAreas[zone] = areas[zone] or 0
 				zonePendingArea[zone] = 0  -- server figure already includes these strokes
 			end
@@ -1404,6 +1504,7 @@ RunService.RenderStepped:Connect(function(dt)
 
 	-- Update camera from orbit parameters
 	camera.CFrame = calculateCameraCFrame()
+	maybeRequestStreaming()
 
 	-- Update ghost previews and continuous painting
 	local hitPos = raycastToTerrain()
@@ -1537,3 +1638,4 @@ RunService.RenderStepped:Connect(function(dt)
 end)
 
 MapEditorControllerDebug:info("MapEditorController loaded")
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  

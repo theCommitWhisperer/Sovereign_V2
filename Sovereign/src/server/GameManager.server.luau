@@ -8,6 +8,7 @@ local StarterPlayer = game:GetService("StarterPlayer")
 
 -- Require game data (safe - read-only configs)
 local GameData = require(ReplicatedStorage.Shared.GameData)
+local GameSettings = require(ReplicatedStorage.Shared.GameSettings)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
 local GameManagerDebug = DebugManager.createChannel("GameManager", false)
@@ -396,25 +397,33 @@ local function spawnInitialSetup(player: Player, factionData: any, spawnPointOve
 	end)()
 
 	if not isStudioMode then
+		local densityMultipliers = { Scarce = 0.5, Standard = 1.0, Abundant = 1.75 }
+		local dm = densityMultipliers[lobbySettings.resourceDensity] or 1.0
+
 		-- Wooded area (northwest of spawn)
 		local woodAreaCenter = spawnPoint.Position + Vector3.new(-80, 0, 80)
-		ResourceNodeManager.spawnNodesNearPosition(woodAreaCenter, 60, "Wood", 25)
+		ResourceNodeManager.spawnNodesNearPosition(woodAreaCenter, 60, "Wood", math.floor(25 * dm))
 
 		-- Stone area (northeast of spawn)
 		local stoneAreaCenter = spawnPoint.Position + Vector3.new(80, 0, 80)
-		ResourceNodeManager.spawnNodesNearPosition(stoneAreaCenter, 50, "Stone", 20)
+		ResourceNodeManager.spawnNodesNearPosition(stoneAreaCenter, 50, "Stone", math.floor(20 * dm))
 
 		-- Fertile land (southwest of spawn)
 		local fertileAreaCenter = spawnPoint.Position + Vector3.new(-80, 0, -80)
-		ResourceNodeManager.spawnNodesNearPosition(fertileAreaCenter, 50, "Food", 15)
+		ResourceNodeManager.spawnNodesNearPosition(fertileAreaCenter, 50, "Food", math.floor(15 * dm))
 
 		-- Iron area (southeast of spawn)
 		local ironAreaCenter = spawnPoint.Position + Vector3.new(80, 0, -80)
-		ResourceNodeManager.spawnNodesNearPosition(ironAreaCenter, 40, "Iron_Ore", 12)
+		ResourceNodeManager.spawnNodesNearPosition(ironAreaCenter, 40, "Iron_Ore", math.floor(12 * dm))
 	end
 
+	-- 5. Peasants are spawned when the player places their Keep (see PlaceBuilding → "Keep" handler).
+	-- Do NOT spawn them here — the Keep hasn't been placed yet, so any peasants
+	-- spawned at the spawn point will be trapped inside the Keep's pathfinding
+	-- obstacle once the player places it on top of them.
+
 	GameManagerDebug:info(
-		`Spawned {factionData.StartingPeasants} peasants and resource nodes for {player.Name} in {factionData.Name}`
+		`Initial setup complete for {player.Name} in {factionData.Name} (peasants will spawn with Keep)`
 	)
 end
 
@@ -427,11 +436,14 @@ local function spawnAIInitialSetup(ownerId: number, ownerName: string, factionDa
 	if keep then
 		GameManagerDebug:info("Spawned Keep for AI " .. ownerName)
 
-		-- Spawn starting peasants using SpawnPointSystem (same as player implementation)
+		-- Spawn starting peasants using SpawnPointSystem (same as player implementation).
+		-- Spawn radius must clear the pathfinding obstacle (model bbox + padding).
 		local peasantCount = 3
+		local _, aiKeepSize = keep:GetBoundingBox()
+		local aiSafeSpawnRadius = math.max(aiKeepSize.X, aiKeepSize.Z) / 2 + 10
 		local spawnPositions = SpawnPointSystem.getSpawnPositions(keep, {
 			pattern = "circle",
-			radius = 12,
+			radius = aiSafeSpawnRadius,
 			count = peasantCount,
 			offset = Vector3.new(0, 0, 0),
 		})
@@ -454,7 +466,7 @@ local function spawnAIInitialSetup(ownerId: number, ownerName: string, factionDa
 			local keepPos = keep.PrimaryPart.Position
 			for i = 1, peasantCount do
 				local angle = (math.pi * 2 * (i - 1)) / peasantCount
-				local offset = Vector3.new(math.cos(angle) * 12, 0, math.sin(angle) * 12)
+				local offset = Vector3.new(math.cos(angle) * aiSafeSpawnRadius, 0, math.sin(angle) * aiSafeSpawnRadius)
 				local position = keepPos + offset
 				UnitManager.createUnit("Peasant", ownerId, position, factionData.Name)
 			end
@@ -543,14 +555,14 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		local settings = typeof(data) == "table" and data or {}
 		local vikingRaidsEnabled = settings.vikingRaids or false
 		local peaceTimeStr = settings.peaceTime or "10 minutes"
-		local selectedMap = settings.map or "ClassicPlains"
+		local selectedMap = settings.map or "TheIslands"
 		local showTutorial = if settings.showTutorial ~= nil then settings.showTutorial else true
 		local factionFromSettings = settings.faction -- From multiplayer lobby
 
 		-- Set the active map and configure SpawnManager
 		if not MapManager.setMap(selectedMap) then
 			GameManagerDebug:warn(`Invalid map selected: {selectedMap}, using default`)
-			selectedMap = "ClassicPlains"
+			selectedMap = "TheIslands"
 			MapManager.setMap(selectedMap)
 		end
 
@@ -659,7 +671,12 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 			peaceTimeMinutes = tonumber(minutes) or 10
 		end
 
-		GameManagerDebug:info(`Viking Raids: {vikingRaidsEnabled}, Peace Time: {peaceTimeMinutes} minutes`)
+		-- Apply lobby settings to global systems
+		GameSettings.setGameSpeed(settings.gameSpeed or "Normal")
+		CaravanManager.setTradeEnabled(settings.abilityToTrade ~= false)
+		CombatManager.setMoraleEnabled(settings.unitMorale ~= false)
+
+		GameManagerDebug:info(`Viking Raids: {vikingRaidsEnabled}, Peace Time: {peaceTimeMinutes} minutes, Game Speed: {settings.gameSpeed or "Normal"}`)
 
 		if vikingRaidsEnabled then
 			-- Enable Viking Raids for this player
@@ -693,6 +710,11 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		playerData.SpawnPoint = zoneSpawn
 		playerData.GameState = "InGame"
 
+		-- Tell VictoryConditionManager when the game started and how long peace time is
+		VictoryConditionManager.setGameStarted(player, peaceTimeMinutes * 60)
+		-- Apply victory mode from lobby settings
+		VictoryConditionManager.setVictoryMode(settings.victoryCondition or "Score")
+
 		GameManagerDebug:info(`Assigned {player.Name} to spawn zone {spawnZone} ({factionName})`)
 
 		-- Set starting resources dynamically based on lobby settings
@@ -702,7 +724,9 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		playerData.Resources.Food = calculateStartingResources(settings.startingFood or "Standard", "Food")
 		playerData.Resources.Iron_Bars =
 			calculateStartingResources(settings.startingResources or "Standard", "Iron_Bars")
-		playerData.Resources.Weapons = calculateStartingResources(settings.startingResources or "Standard", "Weapons")
+		-- Weapons use their own lobby setting (None/Bronze/Iron/Steel)
+		local weaponAmounts = { None = 0, Bronze = 8, Iron = 20, Steel = 40 }
+		playerData.Resources.Weapons = weaponAmounts[settings.startingWeapons] or 8
 
 		-- Spawn initial setup with zone spawn point
 		spawnInitialSetup(player, factionData, zoneSpawn, settings)
@@ -743,6 +767,8 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 			zoneCenter = zoneCenter,
 			zoneRadius = zoneRadius,
 			spawnZone = spawnZone,
+			peaceTimeSeconds = peaceTimeMinutes * 60,
+			victoryCondition = settings.victoryCondition or "Score",
 		})
 
 		-- Start game-loop systems on the first game start (not during lobby).
@@ -932,11 +958,16 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 						-- Get player's faction
 						local playerFaction = playerData.Faction or "Kingdom"
 
-						-- Use SpawnPointSystem to get spawn positions from the Keep's SpawnPoint part
-						local peasantCount = 3 -- Starting peasants
+						-- Use SpawnPointSystem to get spawn positions from the Keep's SpawnPoint part.
+						-- Spawn radius must clear the pathfinding obstacle (model bbox + padding).
+						-- All peasants spawn here (not in spawnInitialSetup) to avoid being
+						-- trapped under the Keep obstacle.
+						local peasantCount = 5
+						local _, keepSize = building:GetBoundingBox()
+						local safeSpawnRadius = math.max(keepSize.X, keepSize.Z) / 2 + 10
 						local spawnPositions = SpawnPointSystem.getSpawnPositions(building, {
 							pattern = "circle",
-							radius = 12,
+							radius = safeSpawnRadius,
 							count = peasantCount,
 							offset = Vector3.new(0, 0, 0),
 						})
@@ -961,7 +992,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 							local keepPos = building.PrimaryPart.Position
 							for i = 1, peasantCount do
 								local angle = (math.pi * 2 * (i - 1)) / peasantCount
-								local offset = Vector3.new(math.cos(angle) * 12, 0, math.sin(angle) * 12)
+								local offset = Vector3.new(math.cos(angle) * safeSpawnRadius, 0, math.sin(angle) * safeSpawnRadius)
 								local position = keepPos + offset
 								local peasant = UnitManager.createUnit("Peasant", player.UserId, position, playerFaction)
 								if peasant then
@@ -1515,3 +1546,4 @@ end)
 
 -- Clean up map editor session when player leaves
 GameManagerDebug:info("Server ready!")
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             

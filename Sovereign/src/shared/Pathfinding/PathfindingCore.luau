@@ -140,6 +140,11 @@ function PathfindingCore.worldToGrid(
 ): (number, number)
 	local gridX = math.floor((worldX - grid.originX) / grid.cellSize) + 1
 	local gridY = math.floor((worldZ - grid.originZ) / grid.cellSize) + 1
+	-- Clamp to grid bounds so units spawning just outside the grid
+	-- get mapped to the nearest edge cell (which is always walkable)
+	-- rather than triggering the out-of-bounds "unwalkable" path.
+	gridX = math.clamp(gridX, 1, grid.width)
+	gridY = math.clamp(gridY, 1, grid.height)
 	return gridX, gridY
 end
 

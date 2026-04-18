@@ -693,14 +693,18 @@ function EditorPropertyPanel:render()
 
 	elseif activeTool == "ZonePaint" then
 		local ZONE_LIST = {
-			{ id = 0, label = "Neutral", color = Color3.fromRGB(140, 120, 80) },
-			{ id = 1, label = "P1",      color = Color3.fromRGB(80, 120, 200) },
-			{ id = 2, label = "P2",      color = Color3.fromRGB(200, 80, 80)  },
-			{ id = 3, label = "P3",      color = Color3.fromRGB(80, 180, 80)  },
-			{ id = 4, label = "P4",      color = Color3.fromRGB(200, 160, 40) },
+			{ id = 0, label = "Neutral",  color = Color3.fromRGB(140, 120, 80) },
+			{ id = 1, label = "P1",       color = Color3.fromRGB(80, 120, 200) },
+			{ id = 2, label = "P2",       color = Color3.fromRGB(200, 80, 80)  },
+			{ id = 3, label = "P3",       color = Color3.fromRGB(80, 180, 80)  },
+			{ id = 4, label = "P4",       color = Color3.fromRGB(200, 160, 40) },
+			-- Map-feature zones (not counted in balance budget)
+			{ id = 5, label = "Impass",   color = Color3.fromRGB(60, 55, 65)   },
+			{ id = 6, label = "No Build", color = Color3.fromRGB(190, 110, 40) },
 		}
 
-		local zoneAreas        = self.props.zoneAreas or { [0]=0,[1]=0,[2]=0,[3]=0,[4]=0 }
+		local zoneAreas = self.props.zoneAreas
+			or { [0]=0,[1]=0,[2]=0,[3]=0,[4]=0,[5]=0,[6]=0 }
 		local zoneBudgetMode   = self.props.zoneBudgetMode or "Equal"
 		local zoneBudgetTargets = self.props.zoneBudgetTargets or {}
 		local zoneBudgetLocked  = self.props.zoneBudgetLocked or {}
@@ -806,7 +810,8 @@ function EditorPropertyPanel:render()
 			})
 			content.ZoneGrid = React.createElement("Frame", {
 				LayoutOrder = 2,
-				Size = UDim2.new(1, 0, 0, 66),
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
 				BackgroundTransparency = 1,
 			}, zoneButtons)
 		end
@@ -896,6 +901,7 @@ function EditorPropertyPanel:render()
 		-- ── Brush mode: zone selector + budget + sliders ───────────────
 		if zoneMode == "Brush" then
 			content.ZoneBrushPanel = React.createElement(BrushPanel, {
+				layoutOrder = 2,
 				sectionLabel = "Zone / Territory",
 				options = ZONE_LIST,
 				selectedId = self.state.selectedZone,
@@ -922,9 +928,11 @@ function EditorPropertyPanel:render()
 					targets = zoneBudgetTargets,
 					locked  = zoneBudgetLocked,
 					used    = zoneAreas,
-					onModeChanged   = self.props.onZoneBudgetModeChanged,
-					onTargetChanged = self.props.onZoneBudgetTargetChanged,
-					onLockedChanged = self.props.onZoneBudgetLockedChanged,
+					tolerance = self.props.zoneBudgetTolerance or 5,
+					onModeChanged        = self.props.onZoneBudgetModeChanged,
+					onTargetChanged      = self.props.onZoneBudgetTargetChanged,
+					onLockedChanged      = self.props.onZoneBudgetLockedChanged,
+					onToleranceChanged   = self.props.onZoneBudgetToleranceChanged,
 				}),
 			})
 
@@ -937,6 +945,7 @@ function EditorPropertyPanel:render()
 				{ id = 4, label = "P4", color = Color3.fromRGB(200, 160, 40) },
 			}
 			content.SpawnBrushPanel = React.createElement(BrushPanel, {
+				layoutOrder = 2,
 				sectionLabel = "Keep Spawn Zone",
 				options = SPAWN_ZONES,
 				selectedId = self.state.selectedSpawnZone,
@@ -1159,9 +1168,21 @@ function EditorPropertyPanel:render()
 			PaddingRight = UDim.new(0, 10),
 			PaddingBottom = UDim.new(0, 10),
 		}),
-		Content = React.createElement("Frame", {
+		-- ScrollingFrame so that tall tool content (e.g. ZonePaint with 7 zones
+		-- + BudgetPanel + sliders) doesn't get clipped by the panel's fixed height.
+		Content = React.createElement("ScrollingFrame", {
 			Size = UDim2.fromScale(1, 1),
 			BackgroundTransparency = 1,
+			ScrollBarThickness = 4,
+			ScrollBarImageColor3 = Color3.fromRGB(120, 95, 65),
+			ScrollBarImageTransparency = 0.4,
+			BorderSizePixel = 0,
+			-- Width = 100% of the parent (so relative-width children measure correctly).
+			-- Height auto-grows via AutomaticCanvasSize.
+			CanvasSize = UDim2.new(1, 0, 0, 0),
+			AutomaticCanvasSize = Enum.AutomaticSize.Y,
+			ScrollingDirection = Enum.ScrollingDirection.Y,
+			ElasticBehavior = Enum.ElasticBehavior.Never,
 		}, content),
 	})
 end

@@ -1,4 +1,4 @@
--- Sovereign_V2/src/shared/GameData.spec/ResourcesData.spec.luau
+-- ResourcesData.spec.luau
 
 return function()
 	local ResourcesData = require(script.Parent.Parent.GameData.ResourcesData)
@@ -16,10 +16,18 @@ return function()
 
 		it("should have correct data types for its entries", function()
 			local woodData = ResourcesData.Wood
-			expect(typeof(woodData.type)).to.equal("string")
-			expect(typeof(woodData.subtype)).to.equal("string")
-			expect(typeof(woodData.category)).to.equal("string")
-			expect(typeof(woodData.description)).to.equal("string")
+			-- Actual fields in ResourcesData: display_name, icon, is_tradeable, max_carry_amount
+			expect(typeof(woodData.display_name)).to.equal("string")
+			expect(typeof(woodData.is_tradeable)).to.equal("boolean")
+			expect(typeof(woodData.max_carry_amount)).to.equal("number")
+		end)
+
+		it("should have positive max_carry_amount for tradeable resources", function()
+			for name, data in ResourcesData do
+				if data.is_tradeable then
+					expect(data.max_carry_amount > 0).to.equal(true)
+				end
+			end
 		end)
 	end)
 end

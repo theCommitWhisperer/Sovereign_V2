@@ -45,7 +45,11 @@ local function loadModelFromAsset(assetId: number): Model?
 end
 
 local function getDummyModel(): Model
-	-- ... (up to UnitManagerDebug:warn)
+	-- Check ServerStorage for an existing Dummy rig (inserted via Studio toolbox)
+	local existing = ServerStorage:FindFirstChild("Dummy")
+	if existing and existing:IsA("Model") then
+		return existing
+	end
 
 	UnitManagerDebug:warn("No Dummy found in ServerStorage, creating simple model")
 	local model = Instance.new("Model")

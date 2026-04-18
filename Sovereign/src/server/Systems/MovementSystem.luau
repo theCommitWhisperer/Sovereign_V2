@@ -18,10 +18,11 @@ local CONFIG = {
 	DEFAULT_SPEED = 16, -- Studs per second
 	MAX_UNITS_PER_FRAME = 50, -- Throttle to prevent lag spikes
 	ENABLE_PERFORMANCE_MONITORING = true,
-	STUCK_DETECTION_TIME = 5, -- Seconds before considering a unit stuck
+	STUCK_DETECTION_TIME = 10, -- Seconds before considering a unit stuck (was 5 — too aggressive for RTS)
 	STUCK_DISTANCE_THRESHOLD = 2, -- Studs - if unit moves less than this in STUCK_DETECTION_TIME
-	MAX_PATHFIND_RETRIES = 3, -- Maximum pathfinding retries before giving up
+	MAX_PATHFIND_RETRIES = 5, -- Maximum pathfinding retries before falling back to direct walk
 	PATHFIND_RETRY_DELAY = 2, -- Seconds to wait before retrying failed pathfinding
+	PATHFIND_COOLDOWN = 5, -- Seconds to wait after exhausting retries before trying again (was 30)
 }
 
 -- Track last target position for each unit to detect changes
@@ -127,10 +128,14 @@ function MovementSystem.update()
 		end
 
 		if unit:GetAttribute("IsMoving") then
-			-- Skip units that recently failed pathfinding (30 second cooldown)
+			-- Skip units that recently failed pathfinding (short cooldown then retry)
 			local failedTime = unit:GetAttribute("PathfindingFailed")
-			if failedTime and (tick() - failedTime) < 30 then
+			if failedTime and (tick() - failedTime) < CONFIG.PATHFIND_COOLDOWN then
 				continue
+			elseif failedTime then
+				-- Cooldown expired — clear the flag so the unit can try again
+				unit:SetAttribute("PathfindingFailed", nil)
+				pathfindingFailures[unit] = nil
 			end
 
 			unitsProcessedThisFrame = unitsProcessedThisFrame + 1
@@ -227,14 +232,22 @@ function MovementSystem.update()
 									pathfindingFailures[unit].lastAttempt = tick()
 								end
 
-								-- Only stop movement if we've exceeded max retries
+								-- After max retries, fall back to direct walk toward target
 								if pathfindingFailures[unit].count >= CONFIG.MAX_PATHFIND_RETRIES then
-									MovementDebug:warn(`Failed to find path for {unit.Name} after {CONFIG.MAX_PATHFIND_RETRIES} attempts, stopping movement`)
-									unit:SetAttribute("IsMoving", false)
-									unit:SetAttribute("TargetPosition", nil)
-									-- Set a cooldown to prevent other systems from immediately re-commanding movement
+									MovementDebug:warn(`A* failed for {unit.Name} after {CONFIG.MAX_PATHFIND_RETRIES} attempts, using direct walk`)
+									-- Use Humanoid:MoveTo as a direct-walk fallback
+									local humanoid = unit:FindFirstChildOfClass("Humanoid")
+									if humanoid then
+										humanoid:MoveTo(targetPos)
+									end
+									-- Store a single-waypoint "path" so the follow logic still works
+									unitPaths[unit] = {
+										path = { targetPos },
+										index = 1,
+									}
+									lastTargetPositions[unit] = targetPos
+									-- Set cooldown so we don't spam A* on the next frame
 									unit:SetAttribute("PathfindingFailed", tick())
-									cleanupUnit(unit)
 								end
 							end
 						end
@@ -327,7 +340,7 @@ if CONFIG.ENABLE_PERFORMANCE_MONITORING then
 
 			local now = tick()
 			if now - lastPerformanceLog >= 1 then
-				if unitsProcessedThisSecond > 100 then
+				if unitsProcessedThisSecond > 500 then
 					MovementDebug:warn("High unit processing load: " .. unitsProcessedThisSecond .. " units/second")
 				end
 
@@ -342,3 +355,4 @@ end
 MovementDebug:info("MovementSystem initialized successfully with production A* pathfinding!")
 
 return MovementSystem
+                                                                                                                                                                                                                                                                                                                                                        

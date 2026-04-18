@@ -16,6 +16,7 @@ MainClientDebug:info("PlayerGui found.")
 
 local rootGui = Instance.new("ScreenGui")
 rootGui.Name = "SovereignApp"
+rootGui.IgnoreGuiInset = true
 rootGui.Parent = playerGui
 
 MainClientDebug:info("SovereignApp ScreenGui created.")

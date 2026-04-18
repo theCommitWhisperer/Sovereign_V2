@@ -156,7 +156,7 @@ BuildingsData["Wall Ladder"] = {
 } :: BuildingData
 
 BuildingsData["Round Tower"] = {
-	model_asset_name = "Large_Tower_Stone_Wall",
+	model_asset_name = "Stone_Wall_Large_Tower",
 	icon_asset_id = "rbxassetid://104692244573741",
 	type = "Building",
 	subtype = "Defensive Tower",
@@ -191,7 +191,7 @@ BuildingsData["Wooden Palisade"] = {
 } :: BuildingData
 
 BuildingsData["Arrow Tower"] = {
-	model_asset_name = "Large_Tower_Stone_Wall",
+	model_asset_name = "Stone_Wall_Large_Tower",
 	icon_asset_id = "rbxassetid://123268723874601",
 	type = "Building",
 	subtype = "Defensive Tower",
@@ -399,7 +399,7 @@ BuildingsData["Stables"] = {
 
 BuildingsData["Archery Range"] = {
 	icon_asset_id = "rbxassetid://86272485851338",
-	model_asset_name = "Watch_Tower",
+	model_asset_name = "Stone_Wall_Large_Tower",
 	type = "Building",
 	subtype = "Military Training",
 	description = "Trains skilled archers for ranged combat.",
@@ -466,7 +466,7 @@ BuildingsData["Stone Quarry"] = {
 } :: BuildingData
 
 BuildingsData["Iron Mine"] = {
-	model_asset_name = nil,
+	model_asset_name = "Gold Mine level1", -- TODO: replace with dedicated Iron Mine model (inside IronMine folder)
 	icon_asset_id = "rbxassetid://139798646970990",
 	type = "Building",
 	subtype = "Resource Gathering",
@@ -773,7 +773,7 @@ BuildingsData["Water Mill"] = {
 
 BuildingsData["Bakery"] = {
 	icon_asset_id = "rbxassetid://94032723454113",
-	model_asset_name = "Bakery",
+	model_asset_name = "Kitchen",
 	type = "Building",
 	subtype = "Food Processing",
 	description = "Bakes bread from flour to feed your people.",
@@ -1077,3 +1077,4 @@ for buildingName, buildingData in BuildingsData do
 end
 
 return BuildingsData
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     

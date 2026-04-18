@@ -28,6 +28,10 @@ local BuildingProduction: { [Instance]: BuildingProductionState } = {}
 local lastHaulerAssignmentTime = 0
 local HAULER_ASSIGNMENT_INTERVAL = 5 -- Check every 5 seconds
 
+-- Per-owner production modifier (set by HappinessManager / RevoltManager)
+-- 1.0 = full production, 0.5 = half, 0 = halted
+local productionModifiers: { [number]: number } = {}
+
 -- Worker states - simple and clean
 export type WorkerTask = {
 	worker: Model,
@@ -394,14 +398,21 @@ local function updateWorkerTasks(dt: number)
 				if timeSinceLastProduction >= buildingInfo.production_time then
 					-- Check if worker can carry more
 					if task.resourcesCarrying < carryCapacity then
-						-- Produce resource (farms don't need inputs)
-						local produceAmount = buildingInfo.production_output or 1
-						task.resourcesCarrying = task.resourcesCarrying + produceAmount
-						task.worker:SetAttribute("ResourcesCarrying", task.resourcesCarrying)
+						-- Apply per-owner production modifier (set by HappinessManager / RevoltManager)
+						local modifier = productionModifiers[task.ownerId] or 1.0
+						local produceAmount = math.floor((buildingInfo.production_output or 1) * modifier)
 
 						productionState.lastProductionTime = tick()
 
-						WorkerDebug:info(`Worker produced {produceAmount} {task.resourceType}`, {
+						-- Skip this tick when production is fully halted (modifier = 0)
+						if produceAmount <= 0 then
+							continue
+						end
+
+						task.resourcesCarrying = task.resourcesCarrying + produceAmount
+						task.worker:SetAttribute("ResourcesCarrying", task.resourcesCarrying)
+
+						WorkerDebug:info(`Worker produced {produceAmount} {task.resourceType} (modifier: {modifier})`, {
 							carrying = task.resourcesCarrying,
 							capacity = carryCapacity,
 						})
@@ -749,13 +760,6 @@ local function assignHaulersToBuildings()
 
 	HaulerDebug:info(`Found {#buildingsNeedingHauling} buildings needing hauling, searching for idle peasants...`)
 
-	-- Find idle peasants (not assigned to any worker or hauler task)
-	local UnitsFolder = Workspace:FindFirstChild("Units")
-	if not UnitsFolder then
-		HaulerDebug:warn("Units folder not found in Workspace!")
-		return
-	end
-
 	for _, buildingNeedingHauling in ipairs(buildingsNeedingHauling) do
 		local building = buildingNeedingHauling.building
 		local resourceType = buildingNeedingHauling.resourceType
@@ -763,62 +767,44 @@ local function assignHaulersToBuildings()
 
 		HaulerDebug:info(`Looking for idle peasant for {building.Name} (ownerId: {ownerId})`)
 
-		-- Find an idle peasant owned by the same player
-		local idlePeasantsFound = 0
-		local totalPeasantsChecked = 0
-		for _, unit in ipairs(UnitsFolder:GetChildren()) do
-			if unit:IsA("Model") and unit.Name:match("Peasant") then
-				totalPeasantsChecked = totalPeasantsChecked + 1
-				local unitOwnerId = unit:GetAttribute("OwnerId")
+		-- Use IdlePeasantManager to find peasants by owner (avoids OwnerId attribute issues)
+		local idlePeasants = IdlePeasantManager.getIdlePeasantsForOwner(ownerId)
+		HaulerDebug:info(`IdlePeasantManager found {#idlePeasants} idle peasants for ownerId {ownerId}`)
 
-				-- Debug: Log the first few peasant ownerIds to see what's wrong
-				if totalPeasantsChecked <= 3 then
-					HaulerDebug:info(`Peasant {unit.Name} has ownerId: {unitOwnerId or "nil"}`)
+		if #idlePeasants == 0 then
+			HaulerDebug:warn(`No idle peasants tracked for ownerId {ownerId} for {building.Name}`)
+		end
+
+		for _, unit in ipairs(idlePeasants) do
+			if not unit or not unit.Parent then continue end
+
+			local isAssigned = false
+
+			-- Check if assigned as worker
+			for _, workerTask in ipairs(WorkerTasks) do
+				if workerTask.worker == unit then
+					isAssigned = true
+					break
 				end
+			end
 
-				-- Check if owned by same player and not assigned to any task
-				if unitOwnerId == ownerId then
-					idlePeasantsFound = idlePeasantsFound + 1
-					local isAssigned = false
-
-					-- Check if assigned as worker
-					for _, workerTask in ipairs(WorkerTasks) do
-						if workerTask.worker == unit then
-							isAssigned = true
-							break
-						end
-					end
-
-					-- Check if assigned as hauler
-					if not isAssigned then
-						for _, haulerTask in ipairs(HaulerTasks) do
-							if haulerTask.hauler == unit then
-								isAssigned = true
-								break
-							end
-						end
-					end
-
-					-- If idle, assign as hauler
-					if not isAssigned then
-						HaulerDebug:info(`Found idle peasant {unit.Name} for hauling`)
-						-- Use building's ownerId, or fall back to peasant's ownerId
-						local taskOwnerId = ownerId or unitOwnerId
-						if taskOwnerId then
-							WorkerManager.createHaulerTask(unit, building, resourceType, taskOwnerId)
-							HaulerDebug:info(`Assigned hauler to {building.Name} for {resourceType} (ownerId: {taskOwnerId})`)
-						else
-							HaulerDebug:warn(`Cannot assign hauler - no ownerId for building {building.Name} or peasant {unit.Name}`)
-						end
-						break -- Move to next building needing hauling
+			-- Check if assigned as hauler
+			if not isAssigned then
+				for _, haulerTask in ipairs(HaulerTasks) do
+					if haulerTask.hauler == unit then
+						isAssigned = true
+						break
 					end
 				end
 			end
-		end
 
-		-- Log if we found peasants but couldn't assign them
-		if idlePeasantsFound == 0 then
-			HaulerDebug:warn(`No peasants found with ownerId {ownerId} for {building.Name}`)
+			-- If not already assigned to a task, use as hauler
+			if not isAssigned then
+				HaulerDebug:info(`Found idle peasant {unit.Name} for hauling`)
+				WorkerManager.createHaulerTask(unit, building, resourceType, ownerId)
+				HaulerDebug:info(`Assigned hauler to {building.Name} for {resourceType} (ownerId: {ownerId})`)
+				break -- Move to next building needing hauling
+			end
 		end
 	end
 end
@@ -849,4 +835,13 @@ function WorkerManager.startLoop()
 	WorkerDebug:info("WorkerManager update loop started")
 end
 
+-- Called by HappinessManager and RevoltManager to scale worker output.
+-- modifier: 1.0 = full production, 0.5 = half, 0 = fully halted.
+function WorkerManager.setProductionModifier(player: Player, modifier: number)
+	local ownerId = player.UserId
+	productionModifiers[ownerId] = math.clamp(modifier, 0, 1)
+	WorkerDebug:info(`Production modifier for owner {ownerId} set to {productionModifiers[ownerId]}`)
+end
+
 return WorkerManager
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             

@@ -123,10 +123,12 @@ function ConsumptionManager.consumeFood(player: Player): boolean
 		if RemoteEvents then
 			local GameEvent = RemoteEvents:FindFirstChild("GameEvent")
 			if GameEvent then
-				GameEvent:FireClient(player, "FoodConsumed", {
-					amount = totalConsumption,
-					remaining = playerData.Resources.Food,
-				})
+				pcall(function()
+					GameEvent:FireClient(player, "FoodConsumed", {
+						amount = totalConsumption,
+						remaining = playerData.Resources.Food,
+					})
+				end)
 			end
 		end
 
@@ -151,11 +153,13 @@ function ConsumptionManager.consumeFood(player: Player): boolean
 		if RemoteEvents then
 			local GameEvent = RemoteEvents:FindFirstChild("GameEvent")
 			if GameEvent then
-				GameEvent:FireClient(player, "Starvation", {
-					needed = totalConsumption,
-					available = currentFood,
-					duration = consData.starvationDuration,
-				})
+				pcall(function()
+					GameEvent:FireClient(player, "Starvation", {
+						needed = totalConsumption,
+						available = currentFood,
+						duration = consData.starvationDuration,
+					})
+				end)
 			end
 		end
 

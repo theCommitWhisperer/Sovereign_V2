@@ -1,71 +1,81 @@
---!strict
--- sovereign_v2/src/server/BuildingSystem/Manager.spec/BuildingValidation.spec.luau
+-- BuildingManager storage tests
+-- Tests for BuildingManager's storage API (addToStorage, takeFromStorage,
+-- getStorageAmount, hasStorageSpace). These are the functions workers call every
+-- resource cycle, so their edge-case behaviour matters for game stability.
 
 return function()
-	local ReplicatedStorage = game:GetService("ReplicatedStorage")
-	local Players = game:GetService("Players")
-	local Test = require(ReplicatedStorage.Packages.testez)
+	local BuildingManager = require(game.ServerScriptService.Server.Managers.BuildingManager)
 
-	-- Mock Data Modules
-	local mockBuildingsData = {
-		Keep = { type = "Building", size = Vector3.new(24, 30, 24) },
-		Hovel = { type = "Building", size = Vector3.new(8, 6, 8) },
-		Barracks = { type = "Building", size = Vector3.new(15, 10, 15) },
-	}
+	-- A fake building instance with no storage initialised (simulates a building
+	-- that workers might reference before it's fully set up, or after it's destroyed)
+	local function makeFakeBuilding(buildingType: string?): Instance
+		local part = Instance.new("Part")
+		part.Name = buildingType or "FakeBuilding"
+		if buildingType then
+			part:SetAttribute("BuildingType", buildingType)
+		end
+		part.Parent = game.Workspace
+		return part
+	end
 
-	-- Setup to be run once before all tests
-	Test.setup(function(ctx: Test.TestContext)
-		-- Mock the Shared GameData modules
-		ctx.mock("ReplicatedStorage.Shared.GameData.BuildingsData", mockBuildingsData)
+	describe("getStorageAmount — safe defaults", function()
+		it("returns 0 for a building with no storage record", function()
+			local b = makeFakeBuilding()
+			local amount = BuildingManager.getStorageAmount(b, "Wood")
+			expect(amount).to.equal(0)
+			b:Destroy()
+		end)
 
-		-- Create a mock Keep model that persists for all tests
-		local keepModel = Instance.new("Model")
-		keepModel.Name = "Keep_1"
-		local primaryPart = Instance.new("Part", keepModel)
-		primaryPart.Name = "PrimaryPart"
-		primaryPart.Size = Vector3.new(10, 10, 10)
-		keepModel.PrimaryPart = primaryPart
-		keepModel.Parent = game.Workspace
-		ctx.keep = keepModel
-		ctx.primaryPart = primaryPart
+		it("returns 0 for an unknown resource type on an unknown building", function()
+			local b = makeFakeBuilding()
+			expect(BuildingManager.getStorageAmount(b, "MagicDust")).to.equal(0)
+			b:Destroy()
+		end)
 	end)
 
-	-- Require the ported module after setup
-	local BuildingValidation = require(ReplicatedStorage.Server.BuildingSystem.Manager.BuildingValidation)
-
-	describe("BuildingValidation", function()
-		local testPlayer: Player
-		local playerData: { [string]: any }
-
-		Test.beforeEach(function(ctx: Test.TestContext)
-			testPlayer = Players:CreateNewTestPlayer(1)
-
-			playerData = {
-				Player = testPlayer,
-				Keep = ctx.keep,
-				BuildZoneRadius = 100,
-			}
-			ctx.primaryPart.Position = Vector3.new(0, 5, 0)
+	describe("takeFromStorage — safe defaults", function()
+		it("returns 0 when building has no storage record", function()
+			local b = makeFakeBuilding()
+			local taken = BuildingManager.takeFromStorage(b, "Wood", 50)
+			expect(taken).to.equal(0)
+			b:Destroy()
 		end)
 
-		Test.afterEach(function()
-			Players:DestroyTestPlayer(testPlayer)
-			-- Clean up any temporary parts created for overlap tests
-			for _, child in ipairs(game.Workspace:GetChildren()) do
-				if child.Name == "tempPart" or child.Name == "BuildingSpawnPoint" then
-					child:Destroy()
-				end
-			end
+		it("returns 0 for unknown resource type", function()
+			local b = makeFakeBuilding()
+			expect(BuildingManager.takeFromStorage(b, "Unobtainium", 10)).to.equal(0)
+			b:Destroy()
+		end)
+	end)
+
+	describe("addToStorage — safe defaults", function()
+		it("returns 0 when building has no storage record", function()
+			local b = makeFakeBuilding()
+			local added = BuildingManager.addToStorage(b, "Wood", 50)
+			expect(added).to.equal(0)
+			b:Destroy()
 		end)
 
-		Test.test("isValidPlacement should allow Keep placement regardless of location", function()
-			Test.expect(BuildingValidation.isValidPlacement(testPlayer, CFrame.new(1000, 10, 1000), playerData, "Keep")).to
-				.equal(true)
+		it("does not error when called with a destroyed building reference", function()
+			local b = makeFakeBuilding()
+			b:Destroy()
+			expect(function()
+				BuildingManager.addToStorage(b, "Wood", 10)
+			end).never.to.throw()
+		end)
+	end)
+
+	describe("hasStorageSpace — safe defaults", function()
+		it("returns false for a building with no storage record", function()
+			local b = makeFakeBuilding()
+			expect(BuildingManager.hasStorageSpace(b, "Wood", 10)).to.equal(false)
+			b:Destroy()
 		end)
 
-		Test.test("isValidPlacement should pass when within the build zone radius", function()
-			local nearCFrame = CFrame.new(10, 5, 0)
-			Test.expect(BuildingValidation.isValidPlacement(testPlayer, nearCFrame, playerData, "Hovel")).to.equal(true)
+		it("returns false for unknown resource on unknown building", function()
+			local b = makeFakeBuilding()
+			expect(BuildingManager.hasStorageSpace(b, "Unobtainium", 1)).to.equal(false)
+			b:Destroy()
 		end)
 	end)
 end

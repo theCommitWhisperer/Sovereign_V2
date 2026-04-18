@@ -24,6 +24,16 @@ local DamageDebug = DebugManager.createChannel("Damage", false)
 
 local CombatManager = {}
 
+local moraleEnabled = true -- controlled by lobby "Unit Morale" setting
+
+function CombatManager.setMoraleEnabled(enabled: boolean)
+	moraleEnabled = enabled
+end
+
+function CombatManager.isMoraleEnabled(): boolean
+	return moraleEnabled
+end
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- CONSTANTS & CONFIG
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -359,7 +369,7 @@ end
 
 -- Celtic Fury: High morale Irish units deal bonus damage and move faster
 local function updateCelticFury(unit: CombatUnit)
-	if not isIrish(unit) then
+	if not moraleEnabled or not isIrish(unit) then
 		return
 	end
 

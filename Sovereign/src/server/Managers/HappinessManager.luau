@@ -50,7 +50,9 @@ function HappinessManager.update(player: Player)
 		if RemoteEvents then
 			local GameEvent = RemoteEvents:FindFirstChild("GameEvent")
 			if GameEvent then
-				GameEvent:FireClient(player, "UpdateHappiness", { happiness = happinessScore })
+				pcall(function()
+					GameEvent:FireClient(player, "UpdateHappiness", { happiness = happinessScore })
+				end)
 			end
 		end
 
@@ -97,38 +99,48 @@ function HappinessManager.triggerRevoltStage(player: Player, stage: number)
 		HappinessDebug:info(`{player.Name} has recovered from low happiness.`)
 		WorkerManager.setProductionModifier(player, 1.0) -- Restore production
 		if GameEvent then
-			GameEvent:FireClient(player, "RevoltEnded", {})
+			pcall(function()
+				GameEvent:FireClient(player, "RevoltEnded", {})
+			end)
 		end
 	elseif stage == 1 then
 		HappinessDebug:warn(`{player.Name} has low happiness! Production efficiency reduced.`)
 		WorkerManager.setProductionModifier(player, 0.5) -- 50% production
 		if GameEvent then
-			GameEvent:FireClient(
-				player,
-				"RevoltStageChanged",
-				{ stage = 1, message = "Production efficiency has dropped due to low happiness!" }
-			)
+			pcall(function()
+				GameEvent:FireClient(
+					player,
+					"RevoltStageChanged",
+					{ stage = 1, message = "Production efficiency has dropped due to low happiness!" }
+				)
+			end)
 		end
 	elseif stage == 2 then
 		HappinessDebug:warn(`{player.Name} has very low happiness! Production has halted.`)
 		WorkerManager.setProductionModifier(player, 0) -- 0% production
 		if GameEvent then
-			GameEvent:FireClient(
-				player,
-				"RevoltStageChanged",
-				{ stage = 2, message = "Production has halted due to very low happiness!" }
-			)
+			pcall(function()
+				GameEvent:FireClient(
+					player,
+					"RevoltStageChanged",
+					{ stage = 2, message = "Production has halted due to very low happiness!" }
+				)
+			end)
 		end
 	elseif stage == 3 then
 		HappinessDebug:error(`{player.Name} is in open revolt! Some units have become hostile.`)
 		WorkerManager.setProductionModifier(player, 0) -- Production remains at 0%
-		UnitManager.startRevolt(player, 0.25) -- 25% of units revolt
+		pcall(function()
+			UnitManager.startRevolt(player, 0.25) -- 25% of units revolt
+		end)
 		if GameEvent then
-			GameEvent:FireClient(
-				player,
-				"RevoltStageChanged",
-				{ stage = 3, message = "A revolt has begun! Some of your people have taken up arms against you!" }
-			)
+			pcall(function()
+				GameEvent:FireClient(
+					player,
+					"RevoltStageChanged",
+					{ stage = 3, message = "A revolt has begun! Some of your people have taken up arms against you!" }
+				)
+			end)
 		end
 	end
 end

@@ -68,12 +68,13 @@ function MapEditor:init()
 		showLoadModal = false,
 		loadedMaps = {},
 		screenshotMode = false,
-		-- Zone paint areas
-		zoneAreas = { [0] = 0, [1] = 0, [2] = 0, [3] = 0, [4] = 0 },
+		-- Zone paint areas (0-4 territory + 5 Impassable + 6 No Build)
+		zoneAreas = { [0] = 0, [1] = 0, [2] = 0, [3] = 0, [4] = 0, [5] = 0, [6] = 0 },
 		-- Zone budget (per-row lockable)
 		zoneBudgetMode = "Equal",   -- "Freeform"|"Equal"|"Custom"
 		zoneBudgetTargets = zoneDefaultTargets("Equal"),
 		zoneBudgetLocked  = zoneDefaultLocked("Equal"),
+		zoneBudgetTolerance = 5,    -- Equal mode max variance % between player zones
 		-- Polygon mode
 		zoneMode = "Brush",
 		polygonClosed = false,
@@ -222,8 +223,14 @@ function MapEditor:init()
 		pushZoneBudget(self.state.zoneBudgetMode, self.state.zoneBudgetTargets, newLocked)
 	end
 
+	self.onZoneBudgetToleranceChanged = function(tol: number)
+		self:setState({ zoneBudgetTolerance = tol })
+		game:GetService("Players").LocalPlayer:SetAttribute("EditorZoneEqualTolerance", tol)
+	end
+
 	-- Push initial zone budget attributes
 	pushZoneBudget(self.state.zoneBudgetMode, self.state.zoneBudgetTargets, self.state.zoneBudgetLocked)
+	game:GetService("Players").LocalPlayer:SetAttribute("EditorZoneEqualTolerance", self.state.zoneBudgetTolerance)
 
 	-- ── Resource budget callbacks ───────────────────────────────────────────
 	local RESOURCE_TYPES = { "Wood", "Stone", "Food", "Iron_Ore" }
@@ -326,14 +333,16 @@ function MapEditor:init()
 	end)
 
 	-- Live zone area updates (written by controller after ZoneStats)
+	-- Format is 7 comma-separated tenths-of-a-percent values: z0,z1,z2,z3,z4,z5,z6
+	-- Zones 0-4 = territory; 5 = Impassable; 6 = No Build
 	local function parseZoneAreas(raw: string?): { [number]: number }
-		local result = { [0]=0, [1]=0, [2]=0, [3]=0, [4]=0 }
+		local result = { [0]=0, [1]=0, [2]=0, [3]=0, [4]=0, [5]=0, [6]=0 }
 		if not raw or raw == "" then return result end
 		local i = 0
 		for part in string.gmatch(raw, "[^,]+") do
 			result[i] = (tonumber(part) or 0) / 10
 			i += 1
-			if i > 4 then break end
+			if i > 6 then break end
 		end
 		return result
 	end
@@ -560,9 +569,11 @@ function MapEditor:render()
 			zoneBudgetMode = self.state.zoneBudgetMode,
 			zoneBudgetTargets = self.state.zoneBudgetTargets,
 			zoneBudgetLocked  = self.state.zoneBudgetLocked,
-			onZoneBudgetModeChanged   = self.onZoneBudgetModeChanged,
-			onZoneBudgetTargetChanged = self.onZoneBudgetTargetChanged,
-			onZoneBudgetLockedChanged = self.onZoneBudgetLockedChanged,
+			zoneBudgetTolerance = self.state.zoneBudgetTolerance,
+			onZoneBudgetModeChanged      = self.onZoneBudgetModeChanged,
+			onZoneBudgetTargetChanged    = self.onZoneBudgetTargetChanged,
+			onZoneBudgetLockedChanged    = self.onZoneBudgetLockedChanged,
+			onZoneBudgetToleranceChanged = self.onZoneBudgetToleranceChanged,
 			-- Polygon mode
 			zoneMode = self.state.zoneMode,
 			polygonClosed = self.state.polygonClosed,
@@ -638,3 +649,4 @@ function MapEditor:render()
 end
 
 return MapEditor
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    

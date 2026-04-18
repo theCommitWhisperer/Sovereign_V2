@@ -183,15 +183,11 @@ local function BrushPanel(props: any)
 	})
 
 	-- ── Option selector buttons
-	local btnSize = if #options <= 5
-		then UDim2.new(0, 40, 0, 30)
-		else UDim2.new(0, 96, 0, 34)
-	local gridH = if #options <= 5 then 66 else 76
-	local stripW = if #options <= 5 then 3 else 4
-
+	-- Always use compact 40×30 buttons regardless of option count.
+	-- AutomaticSize = Y lets the grid frame grow to however many rows are needed.
 	local btnChildren: { [string]: any } = {
 		UIGridLayout = React.createElement("UIGridLayout", {
-			CellSize = btnSize,
+			CellSize = UDim2.new(0, 40, 0, 30),
 			CellPadding = UDim2.new(0, 4, 0, 4),
 			FillDirection = Enum.FillDirection.Horizontal,
 			SortOrder = Enum.SortOrder.LayoutOrder,
@@ -206,22 +202,25 @@ local function BrushPanel(props: any)
 			Text = opt.label,
 			FontFace = UIConfig.Font.Default,
 			TextColor3 = if isSel then Color3.fromRGB(255, 245, 230) else Color3.fromRGB(190, 175, 155),
-			TextSize = 14,
+			TextSize = 13,
 			[React.Event.MouseButton1Click] = function()
 				if props.onSelected then props.onSelected(opt.id) end
 			end,
 		}, {
 			UICorner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 4) }),
 			ColorStrip = React.createElement("Frame", {
-				Size = UDim2.new(0, stripW, 1, 0),
+				Size = UDim2.new(0, 3, 1, 0),
 				BackgroundColor3 = opt.color,
 				BorderSizePixel = 0,
 			}, { UICorner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 2) }) }),
 		})
 	end
+	-- AutomaticSize = Y: the frame expands vertically to fit however many rows the
+	-- UIGridLayout produces. No hardcoded height required.
 	children.OptionGrid = React.createElement("Frame", {
 		LayoutOrder = nextLO(),
-		Size = UDim2.new(1, 0, 0, gridH),
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundTransparency = 1,
 	}, btnChildren)
 
@@ -305,8 +304,12 @@ local function BrushPanel(props: any)
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	})
 
+	-- AutomaticSize = Y so the panel grows to fit all options + BudgetPanel + sliders.
+	-- Forward LayoutOrder so callers can place BrushPanel inside a UIListLayout.
 	return React.createElement("Frame", {
-		Size = UDim2.new(1, 0, 1, 0),
+		LayoutOrder = props.layoutOrder,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundTransparency = 1,
 	}, children)
 end

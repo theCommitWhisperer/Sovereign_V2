@@ -183,8 +183,8 @@ function Lobby:init()
 	LobbyDebug:info("Sending JoinLobby request to server")
 	LobbyEvent:FireServer("JoinLobby")
 
-	-- Fetch this player's editor-saved maps for the "My Maps" section
-	LobbyEvent:FireServer("ListUserMaps")
+	-- Pre-select the default map so the server is in sync from the start
+	LobbyEvent:FireServer("VoteSetting", "selectedMap", MapData.DefaultMap)
 
 	self.addAI = function()
 		LobbyDebug:info("Add AI button clicked")
@@ -337,43 +337,8 @@ function Lobby:render()
 		})
 	end
 
-	-- "My Maps" section: player's editor-saved maps
-	local userMaps = self.state.userMaps or {}
-	if #userMaps > 0 or not self.state.userMapsLoaded then
-		-- Divider label
-		mapListChildren["__myMapsHeader__"] = React.createElement("TextLabel", {
-			Size = UDim2.new(0.95, 0, 0, 20),
-			BackgroundTransparency = 1,
-			Text = if self.state.userMapsLoaded then "── My Maps ──" else "── My Maps (loading…) ──",
-			FontFace = UIConfig.Font.Title,
-			TextColor3 = Color3.fromRGB(200, 180, 120),
-			TextSize = 12,
-		})
-	end
-	for _, entry in ipairs(userMaps) do
-		local mapId: string = entry.MapId or ""
-		local displayName: string = entry.Name or mapId
-		local isSelected = self.state.selectedMap == "__custom__" and self.state.customMapId == mapId
-		mapListChildren["__custom__" .. mapId] = React.createElement("TextButton", {
-			Size = UDim2.new(0.95, 0, 0, 32),
-			BackgroundColor3 = isSelected and Color3.fromRGB(60, 120, 80) or Color3.fromRGB(40, 80, 55),
-			BackgroundTransparency = 0,
-			BorderSizePixel = 0,
-			Text = "★ " .. displayName,
-			FontFace = UIConfig.Font.Title,
-			TextColor3 = isSelected and Color3.fromRGB(200, 255, 200) or Color3.fromRGB(170, 220, 170),
-			TextSize = 14,
-			[React.Event.MouseButton1Click] = function()
-				self.selectCustomMap(mapId)
-			end,
-		}, {
-			UICorner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 3) }),
-			UIStroke = React.createElement("UIStroke", {
-				Color = isSelected and Color3.fromRGB(100, 200, 120) or Color3.fromRGB(30, 60, 40),
-				Thickness = isSelected and 2 or 1.5,
-			}),
-		})
-	end
+	-- "My Maps" section intentionally hidden.
+	-- Only hand-crafted maps with PreviewImage assets appear in the list above.
 
 	local mapSettingsChildren = self:renderSettingsGroup(LobbySettings.MapSettings)
 	table.insert(
@@ -501,7 +466,7 @@ function Lobby:render()
 				-- Map selector section
 				MapSelectorFrame = React.createElement("Frame", {
 					Name = "MapSelectorFrame",
-					Size = UDim2.new(1, 0, 0.35, 0),
+					Size = UDim2.new(1, 0, 0.16, 0),
 					Position = UDim2.new(0, 0, 0.46, 0),
 					BackgroundTransparency = 1,
 				}, {
@@ -547,7 +512,7 @@ function Lobby:render()
 					Name = "MapSettingsFrame",
 					AutomaticSize = Enum.AutomaticSize.Y,
 					Size = UDim2.new(1, 0, 0, 0),
-					Position = UDim2.new(0, 0, 0.82, 0),
+					Position = UDim2.new(0, 0, 0.63, 0),
 					BackgroundTransparency = 1,
 				}, mapSettingsChildren),
 			}),

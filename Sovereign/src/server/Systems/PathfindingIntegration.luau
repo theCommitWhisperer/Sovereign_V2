@@ -15,7 +15,7 @@ local PathfindingDebug = DebugManager.createChannel("PathfindingIntegration", fa
 local CONFIG = {
 	CELL_SIZE = 4,
 	BUILDING_PADDING = 2,
-	WORKER_POINT_RADIUS = 8, -- Walkable radius around worker points (in studs) - increased for reliable pathfinding
+	WORKER_POINT_RADIUS = 16, -- Walkable radius around worker points (in studs). Must exceed peasant spawn radius (12) so newly spawned peasants are always on walkable cells.
 	MAX_PATH_CALCULATIONS_PER_FRAME = 10,
 	PATH_CACHE_SIZE = 100,
 	PATH_CACHE_TIMEOUT = 5,
@@ -35,6 +35,9 @@ local WORKER_POINT_NAMES = {
 	"StorageAreaGold",
 	"StorageAreaWeapons",
 	"StorageAreaGeneral",
+	-- SpawnPoint drives peasant spawn positions (radius 12) so its surrounding
+	-- cells must be walkable or newly spawned peasants land on the Keep obstacle.
+	"SpawnPoint",
 }
 
 -- Active state
@@ -414,12 +417,19 @@ function PathfindingIntegration.getPath(unit: Model, targetPos: Vector3): { Vect
 
 	-- Check if start position is walkable, adjust if needed
 	if not isWalkable(activePathfinding.grid, startGridX, startGridY) then
-		PathfindingDebug:warn(`Unit {unit.Name} is on unwalkable cell, finding nearest walkable position`)
+		PathfindingDebug:warn(`Unit {unit.Name} is on unwalkable cell ({startGridX},{startGridY}), finding nearest walkable position`)
 
 		local nearestX, nearestY = findNearestWalkableCell(startGridX, startGridY)
 		if nearestX and nearestY then
 			startGridX, startGridY = nearestX, nearestY
-			PathfindingDebug:info(`Adjusted start position to nearest walkable cell`)
+			-- Teleport the unit to the walkable cell so it doesn't get stuck
+			-- repeating the same failed lookup every frame.
+			local safeWorldX, safeWorldZ = Pathfinding.gridToWorld(activePathfinding.grid, nearestX, nearestY)
+			if unit.PrimaryPart then
+				local safeY = unit.PrimaryPart.Position.Y
+				unit:PivotTo(CFrame.new(safeWorldX, safeY, safeWorldZ))
+				PathfindingDebug:info(`Teleported {unit.Name} to walkable cell ({nearestX},{nearestY})`)
+			end
 		else
 			PathfindingDebug:warn(`Failed to find walkable start position for {unit.Name}`)
 			unit:SetAttribute("PathfindingFailed", currentTime)
@@ -493,7 +503,10 @@ function findNearestWalkableCell(gridX: number, gridY: number): (number?, number
 		return nil, nil
 	end
 
-	local maxRadius = 10
+	-- Search radius must exceed the largest building obstacle.
+	-- The Keep is ~24x28 cells; a unit at its center needs to search ~14 cells
+	-- outward to escape. 50 cells = 200 studs covers any building with margin.
+	local maxRadius = 50
 
 	for radius = 1, maxRadius do
 		for dx = -radius, radius do
@@ -532,3 +545,4 @@ end
 PathfindingDebug:info("Production PathfindingIntegration module loaded")
 
 return PathfindingIntegration
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         

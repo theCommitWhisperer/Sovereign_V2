@@ -142,15 +142,17 @@ function SeasonManager.advanceSeason(player: Player)
 		local GameEvent = RemoteEvents:FindFirstChild("GameEvent")
 		if GameEvent then
 			local effects = SEASON_EFFECTS[nextSeason]
-			GameEvent:FireClient(player, "SeasonChanged", {
-				season = nextSeason,
-				description = effects.description,
-				effects = {
-					foodConsumption = effects.foodConsumptionMultiplier,
-					farmProduction = effects.farmProductionMultiplier,
-					happiness = effects.happinessModifier,
-				},
-			})
+			pcall(function()
+				GameEvent:FireClient(player, "SeasonChanged", {
+					season = nextSeason,
+					description = effects.description,
+					effects = {
+						foodConsumption = effects.foodConsumptionMultiplier,
+						farmProduction = effects.farmProductionMultiplier,
+						happiness = effects.happinessModifier,
+					},
+				})
+			end)
 		end
 	end
 end

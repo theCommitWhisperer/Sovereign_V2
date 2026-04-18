@@ -15,6 +15,15 @@ local CaravanManager = {}
 
 -- Track caravan data per player
 local caravanData = {}
+local tradeEnabled = true -- controlled by lobby "Ability to Trade" setting
+
+function CaravanManager.setTradeEnabled(enabled: boolean)
+	tradeEnabled = enabled
+end
+
+function CaravanManager.isTradeEnabled(): boolean
+	return tradeEnabled
+end
 
 export type TradeRoute = {
 	destination: string,
@@ -95,6 +104,10 @@ end
 
 -- Send a caravan on a trade route
 function CaravanManager.sendCaravan(player: Player, routeIndex: number): boolean
+	if not tradeEnabled then
+		return false
+	end
+
 	local playerData = PlayerManager.get(player)
 	local data = caravanData[player.UserId]
 

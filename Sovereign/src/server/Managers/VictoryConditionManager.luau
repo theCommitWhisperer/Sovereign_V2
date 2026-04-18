@@ -16,12 +16,21 @@ local VictoryConditionManager = {}
 -- Track victory/loss state per player
 local victoryData = {}
 
+-- Active victory mode (set from lobby settings)
+-- "Conquest"  → military: destroy all enemy keeps (falls back to economic in solo play)
+-- "Wonder"    → build the Wonder structure and hold it
+-- "Score"     → reach economic targets (default economic conditions)
+-- "Regicide"  → kill the enemy lord
+local activeVictoryMode = "Score" -- default
+
 export type VictoryData = {
 	hasWon: boolean,
 	hasLost: boolean,
 	victoryType: string?,
 	lossReason: string?,
 	achievedConditions: { string },
+	gameStartTime: number?,
+	peaceTimeSeconds: number,
 }
 
 export type VictoryCondition = {
@@ -134,7 +143,9 @@ local LOSS_CONDITIONS: { LossCondition } = {
 				return false
 			end
 
-			return not playerData.Keep or not playerData.Keep.Parent
+			-- Only fires when the player HAD a Keep (not nil) but it has been removed.
+			-- Keep=nil means the Keep was never placed yet, which is not a loss.
+			return playerData.Keep ~= nil and not playerData.Keep.Parent
 		end,
 	},
 	{
@@ -156,8 +167,62 @@ function VictoryConditionManager.create(player: Player)
 		victoryType = nil,
 		lossReason = nil,
 		achievedConditions = {},
+		gameStartTime = nil,
+		peaceTimeSeconds = 0,
 	}
 	VictoryDebug:info(`Created victory data for {player.Name}`)
+end
+
+-- Set the victory mode from the lobby setting
+-- This determines which victory conditions are active
+function VictoryConditionManager.setVictoryMode(mode: string)
+	activeVictoryMode = mode or "Score"
+	VictoryDebug:info(`Victory mode set to: {activeVictoryMode}`)
+end
+
+-- Get the subset of victory conditions active for the current mode
+local function getActiveVictoryConditions(): { VictoryCondition }
+	-- Score mode uses all economic victory conditions
+	if activeVictoryMode == "Score" then
+		return VICTORY_CONDITIONS
+	end
+
+	-- Conquest mode: win by destroying all enemy keeps
+	-- In single-player/sandbox there are no enemies yet, so fall back to economic
+	if activeVictoryMode == "Conquest" then
+		-- Filter to military-relevant conditions; fall back to all if none apply
+		local military = {}
+		for _, c in VICTORY_CONDITIONS do
+			if c.name == "Industrial Titan" then
+				table.insert(military, c)
+			end
+		end
+		return #military > 0 and military or VICTORY_CONDITIONS
+	end
+
+	-- Regicide mode: defeat the enemy lord (lord/hero unit kill)
+	-- Not yet implemented - fall back to Score
+	if activeVictoryMode == "Regicide" then
+		return VICTORY_CONDITIONS
+	end
+
+	-- Wonder mode: build and hold a Wonder building
+	-- Not yet implemented - fall back to Score
+	if activeVictoryMode == "Wonder" then
+		return VICTORY_CONDITIONS
+	end
+
+	return VICTORY_CONDITIONS
+end
+
+-- Called when the game actually starts so defeat checks respect the lobby's peace time setting
+function VictoryConditionManager.setGameStarted(player: Player, peaceTimeSeconds: number)
+	local data = victoryData[player.UserId]
+	if data then
+		data.gameStartTime = tick()
+		data.peaceTimeSeconds = peaceTimeSeconds
+		VictoryDebug:info(`{player.Name} game started — peace time: {peaceTimeSeconds}s`)
+	end
 end
 
 -- Get victory data for a player
@@ -179,8 +244,8 @@ function VictoryConditionManager.checkVictory(player: Player)
 		return
 	end
 
-	-- Check victory conditions
-	for _, condition in VICTORY_CONDITIONS do
+	-- Check victory conditions (filtered by active mode)
+	for _, condition in getActiveVictoryConditions() do
 		if condition.check(player) and not table.find(data.achievedConditions, condition.name) then
 			table.insert(data.achievedConditions, condition.name)
 
@@ -196,10 +261,12 @@ function VictoryConditionManager.checkVictory(player: Player)
 				if RemoteEvents then
 					local GameEvent = RemoteEvents:FindFirstChild("GameEvent")
 					if GameEvent then
-						GameEvent:FireClient(player, "Victory", {
-							victoryType = condition.name,
-							description = condition.description,
-						})
+						pcall(function()
+							GameEvent:FireClient(player, "Victory", {
+								victoryType = condition.name,
+								description = condition.description,
+							})
+						end)
 					end
 				end
 			end
@@ -221,6 +288,13 @@ function VictoryConditionManager.checkDefeat(player: Player)
 		return
 	end
 
+	-- Respect the lobby's peace time setting — no defeat checks until it expires
+	if data.gameStartTime and data.peaceTimeSeconds > 0 then
+		if tick() - data.gameStartTime < data.peaceTimeSeconds then
+			return
+		end
+	end
+
 	-- Check loss conditions
 	for _, condition in LOSS_CONDITIONS do
 		if condition.check(player) then
@@ -234,10 +308,12 @@ function VictoryConditionManager.checkDefeat(player: Player)
 			if RemoteEvents then
 				local GameEvent = RemoteEvents:FindFirstChild("GameEvent")
 				if GameEvent then
-					GameEvent:FireClient(player, "Defeat", {
-						lossReason = condition.name,
-						description = condition.description,
-					})
+					pcall(function()
+						GameEvent:FireClient(player, "Defeat", {
+							lossReason = condition.name,
+							description = condition.description,
+						})
+					end)
 				end
 			end
 
@@ -264,3 +340,4 @@ function VictoryConditionManager.init()
 end
 
 return VictoryConditionManager
+                                                                                                                                                                                                                                                                                               

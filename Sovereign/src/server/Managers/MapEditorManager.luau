@@ -80,7 +80,10 @@ end
 local placeFoodDiscParts: ((folder: Instance, patches: { any }) -> ())?
 
 -- Zone overlay constants (declared here so computeZoneAreas fast path can use them)
-local OVERLAY_CELL   = 16  -- studs per grid cell
+-- Single unified grid: every cell has exactly one Part whose colour reflects its zone.
+-- 32-stud cells keep part count low (≤2304 for max 1500-stud map) while still giving
+-- readable zone boundaries at RTS camera distances.
+local OVERLAY_CELL   = 32  -- studs per grid cell
 local OVERLAY_PART_H = 3   -- slab height (studs)
 local OVERLAY_LIFT   = 1   -- studs above terrain surface
 
@@ -88,8 +91,9 @@ local OVERLAY_LIFT   = 1   -- studs above terrain surface
 -- Declared here so computeZoneAreas (below) can read it for the fast path.
 local zoneGridCache: { [string]: number } = {}
 
--- to call after every paint batch.  Returns a table keyed by zone number (0–4)
+-- to call after every paint batch.  Returns a table keyed by zone number (0–6)
 -- where each value is a percentage (0–100) of total map cells.
+-- Zones 0-4 = territory; 5 = Impassable; 6 = No Build.
 -- Uses zoneGridCache (kept in sync by updateZoneVisualization) when available
 -- to avoid an O(cells×strokes) scan on every paint.
 local ZONE_SAMPLE_CELL = 24 -- stud resolution for sampling (used for full-scan fallback)
@@ -97,7 +101,7 @@ local function computeZoneAreas(mapData: any): { [number]: number }
 	-- Fast path: if the grid cache is populated, derive areas directly from it.
 	-- The cache uses OVERLAY_CELL resolution; we sum counts per zone.
 	if next(zoneGridCache) ~= nil then
-		local counts: { [number]: number } = { [0]=0,[1]=0,[2]=0,[3]=0,[4]=0 }
+		local counts: { [number]: number } = { [0]=0,[1]=0,[2]=0,[3]=0,[4]=0,[5]=0,[6]=0 }
 		local total = 0
 		for _, zone in pairs(zoneGridCache) do
 			counts[zone] = (counts[zone] or 0) + 1
@@ -109,7 +113,7 @@ local function computeZoneAreas(mapData: any): { [number]: number }
 		local mapCells = math.floor(mapSize / OVERLAY_CELL) * math.floor(mapSize / OVERLAY_CELL)
 		if mapCells <= 0 then mapCells = total end
 		local result: { [number]: number } = {}
-		for zone = 0, 4 do
+		for zone = 0, 6 do
 			result[zone] = math.floor((counts[zone] or 0) / mapCells * 1000 + 0.5) / 10
 		end
 		return result
@@ -120,7 +124,7 @@ local function computeZoneAreas(mapData: any): { [number]: number }
 	local mapSize = mapData.Size or 1000
 	local half = mapSize / 2
 
-	local counts: { [number]: number } = { [0] = 0, [1] = 0, [2] = 0, [3] = 0, [4] = 0 }
+	local counts: { [number]: number } = { [0]=0,[1]=0,[2]=0,[3]=0,[4]=0,[5]=0,[6]=0 }
 	local totalCells = 0
 
 	local x = -half
@@ -149,7 +153,7 @@ local function computeZoneAreas(mapData: any): { [number]: number }
 	end
 
 	local result: { [number]: number } = {}
-	for zone = 0, 4 do
+	for zone = 0, 6 do
 		result[zone] = if totalCells > 0 then math.floor((counts[zone] or 0) / totalCells * 1000 + 0.5) / 10 else 0
 	end
 	return result
@@ -296,9 +300,9 @@ function MapEditorManager.leaveEditor(player: Player)
 
 	-- Clean up zone paint visualization
 	local zoneFolder = workspace:FindFirstChild("MapEditorZones")
-	if zoneFolder then
-		zoneFolder:Destroy()
-	end
+	if zoneFolder then zoneFolder:Destroy() end
+	local zoneBgFolder = workspace:FindFirstChild("MapEditorZonesBg")
+	if zoneBgFolder then zoneBgFolder:Destroy() end
 	zoneGridCache = {}
 
 	-- Clean up spawn zone discs
@@ -1427,6 +1431,8 @@ local ZONE_VIZ_COLORS: { [number]: Color3 } = {
 	[2] = Color3.fromRGB(200, 80, 80),   -- Player 2
 	[3] = Color3.fromRGB(80, 180, 80),   -- Player 3
 	[4] = Color3.fromRGB(200, 160, 40),  -- Player 4
+	[5] = Color3.fromRGB(60, 55, 65),    -- Impassable (dark slate)
+	[6] = Color3.fromRGB(190, 110, 40),  -- No Build (amber)
 }
 
 -- Create/refresh resource patch visualization folder
@@ -1604,176 +1610,138 @@ end
 
 function MapEditorManager.updateZoneVisualization(mapData: any, dirtyStrokes: { any }?, forceVisible: boolean?)
 	local folder = workspace:FindFirstChild("MapEditorZones")
-	-- Use forceVisible when provided (caller knows the intended state),
-	-- otherwise read from the existing folder attribute.
 	local isVisible = if forceVisible ~= nil then forceVisible
 		else (folder ~= nil and folder:GetAttribute("Visible") == true)
 
-	local strokes = mapData.ZonePaintStrokes
-	if not strokes or #strokes == 0 then
-		zoneGridCache = {}
-		if folder then folder:Destroy() end
-		return
-	end
+	local strokes = mapData.ZonePaintStrokes or {}
+	local mapSize: number = mapData.Size or 1000
 
 	local terrain = workspace:FindFirstChildWhichIsA("Terrain")
 	local rayParams = RaycastParams.new()
 	rayParams.FilterType = Enum.RaycastFilterType.Include
 	if terrain then rayParams.FilterDescendantsInstances = { terrain } end
 
-	local function surfaceYAt(wx: number, wz: number): number
+	-- Determine grid bounds from the larger of mapData.Size and actual terrain extents,
+	-- capped at 1500 so we never create an excessive number of parts.
+	local gridHalf: number = mapSize / 2
+	if terrain then
+		local ext = terrain.MaxExtents
+		local terrainHalf = math.max(
+			math.abs(ext.Min.X), math.abs(ext.Max.X),
+			math.abs(ext.Min.Z), math.abs(ext.Max.Z)
+		)
+		if terrainHalf > gridHalf then gridHalf = terrainHalf end
+	end
+	gridHalf = math.min(gridHalf, 1500)
+
+	local halfCells = math.ceil(gridHalf / OVERLAY_CELL)
+
+	local function surfaceAt(wx: number, wz: number): number
 		if not terrain then return 0 end
 		local result = workspace:Raycast(Vector3.new(wx, 2000, wz), Vector3.new(0, -4000, 0), rayParams)
 		return if result then result.Position.Y else 0
 	end
 
-	local transparency = isVisible and 0.45 or 1
+	local overlayTransparency = isVisible and 0.45 or 1
 
-	-- On a full rebuild (no dirtyStrokes hint, or cache is empty), rebuild everything.
-	local fullRebuild = (dirtyStrokes == nil or next(zoneGridCache) == nil)
+	-- Clean up any legacy separate bg folder from old code
+	local oldBg = workspace:FindFirstChild("MapEditorZonesBg")
+	if oldBg then oldBg:Destroy() end
+
+	-- ── Full rebuild ──────────────────────────────────────────────────────────
+	-- Triggered on first open, after undo/redo, or when no folder exists.
+	-- Strategy: single unified grid — every cell gets exactly ONE part whose
+	-- colour reflects its zone (neutral/zone-0 for unpainted cells).
+	-- No separate background layer means no transparency-blending artefacts.
+	local fullRebuild = (dirtyStrokes == nil or not folder or next(zoneGridCache) == nil)
 
 	if fullRebuild then
-		-- Rasterise all strokes from scratch
+		-- Step 1: rasterise all strokes into the cache (last stroke painted wins).
 		zoneGridCache = {}
 		for _, stroke in ipairs(strokes) do
 			local cx, cz = stroke.Position.X, stroke.Position.Z
-			local r = stroke.Radius or 40
-			local zone = stroke.Zone or 0
-			local isSquare = stroke.Shape == "Square"
+			local r      = stroke.Radius or 40
+			local zone   = stroke.Zone or 0
+			local isSq   = stroke.Shape == "Square"
+			local r2     = r * r
 			for ix = math.floor((cx - r) / OVERLAY_CELL), math.floor((cx + r) / OVERLAY_CELL) do
 				for iz = math.floor((cz - r) / OVERLAY_CELL), math.floor((cz + r) / OVERLAY_CELL) do
 					local dx = (ix + 0.5) * OVERLAY_CELL - cx
 					local dz = (iz + 0.5) * OVERLAY_CELL - cz
-					if isSquare and math.abs(dx) <= r and math.abs(dz) <= r then
-						zoneGridCache[ix .. "," .. iz] = zone
-					elseif (not isSquare) and dx * dx + dz * dz <= r * r then
-						zoneGridCache[ix .. "," .. iz] = zone
-					end
+					local inside = if isSq then math.abs(dx) <= r and math.abs(dz) <= r
+					              else dx * dx + dz * dz <= r2
+					if inside then zoneGridCache[ix .. "," .. iz] = zone end
 				end
 			end
 		end
 
-		-- Full part rebuild
+		-- Step 2: build one Part per cell across the whole map.
+		-- Cells not in the cache are neutral (zone 0).
+		-- Run async in a coroutine so the server thread never hangs — we yield
+		-- after every row of cells (each yield is one frame ≈ 1/60 s).
 		if folder then folder:Destroy() end
 		local newFolder = Instance.new("Folder")
-		newFolder.Name = "MapEditorZones"
+		newFolder.Name  = "MapEditorZones"
 		newFolder:SetAttribute("Visible", isVisible)
-		for key, zone in pairs(zoneGridCache) do
-			local commaPos = string.find(key, ",") :: number
-			local ix = tonumber(string.sub(key, 1, commaPos - 1)) :: number
-			local iz = tonumber(string.sub(key, commaPos + 1)) :: number
-			local cellCX = (ix + 0.5) * OVERLAY_CELL
-			local cellCZ = (iz + 0.5) * OVERLAY_CELL
-			local part = Instance.new("Part")
-			part.Name = key
-			part.Anchored = true
-			part.CanCollide = false
-			part.Transparency = transparency
-			part.Material = Enum.Material.Neon
-			part.Color = ZONE_VIZ_COLORS[zone] or Color3.fromRGB(150, 150, 150)
-			part.CastShadow = false
-			part.Shape = Enum.PartType.Block
-			part.Size = Vector3.new(OVERLAY_CELL, OVERLAY_PART_H, OVERLAY_CELL)
-			part.Position = Vector3.new(cellCX, surfaceYAt(cellCX, cellCZ) + OVERLAY_LIFT + OVERLAY_PART_H / 2, cellCZ)
-			part.Parent = newFolder
-		end
-		newFolder.Parent = workspace
-	else
-		-- Incremental: only process cells touched by the new strokes.
-		-- For each dirty stroke, rasterize its cells, re-evaluate their final zone
-		-- (replay all strokes that overlap that cell), then update/add/remove the Part.
-		if not folder then
-			-- Folder was lost somehow — fall back to full rebuild next call
-			zoneGridCache = {}
-			MapEditorManager.updateZoneVisualization(mapData, nil)
-			return
-		end
+		newFolder.Parent = workspace  -- parent early so parts stream in visibly
 
-		-- Collect the set of cells that may have changed
-		local dirtyCells: { [string]: boolean } = {}
+		task.spawn(function()
+			for ix = -halfCells, halfCells - 1 do
+				-- Abort if another rebuild replaced our folder
+				if workspace:FindFirstChild("MapEditorZones") ~= newFolder then return end
+				for iz = -halfCells, halfCells - 1 do
+					local key    = ix .. "," .. iz
+					local zone   = zoneGridCache[key] or 0
+					local cellCX = (ix + 0.5) * OVERLAY_CELL
+					local cellCZ = (iz + 0.5) * OVERLAY_CELL
+					local part   = Instance.new("Part")
+					part.Name         = key
+					part.Anchored     = true
+					part.CanCollide   = false
+					part.CastShadow   = false
+					part.Transparency = overlayTransparency
+					part.Material     = Enum.Material.Neon
+					part.Color        = ZONE_VIZ_COLORS[zone] or ZONE_VIZ_COLORS[0]
+					part.Shape        = Enum.PartType.Block
+					part.Size         = Vector3.new(OVERLAY_CELL, OVERLAY_PART_H, OVERLAY_CELL)
+					part.Position     = Vector3.new(cellCX, surfaceAt(cellCX, cellCZ) + OVERLAY_LIFT + OVERLAY_PART_H / 2, cellCZ)
+					part.Parent       = newFolder
+				end
+				task.wait() -- yield once per row — keeps server responsive
+			end
+		end)
+
+	else
+		-- ── Incremental update ────────────────────────────────────────────────
+		-- New strokes are always the most recent, so their zone wins for every
+		-- cell they cover. Just update the cache and flip the colour on the
+		-- existing Part — no need to replay all prior strokes.
 		for _, stroke in ipairs(dirtyStrokes :: { any }) do
 			local cx, cz = stroke.Position.X, stroke.Position.Z
-			local r = stroke.Radius or 40
-			local isSquare = stroke.Shape == "Square"
+			local r      = stroke.Radius or 40
+			local zone   = stroke.Zone or 0
+			local isSq   = stroke.Shape == "Square"
+			local r2     = r * r
 			for ix = math.floor((cx - r) / OVERLAY_CELL), math.floor((cx + r) / OVERLAY_CELL) do
 				for iz = math.floor((cz - r) / OVERLAY_CELL), math.floor((cz + r) / OVERLAY_CELL) do
 					local dx = (ix + 0.5) * OVERLAY_CELL - cx
 					local dz = (iz + 0.5) * OVERLAY_CELL - cz
-					if isSquare and math.abs(dx) <= r and math.abs(dz) <= r then
-						dirtyCells[ix .. "," .. iz] = true
-					elseif (not isSquare) and dx * dx + dz * dz <= r * r then
-						dirtyCells[ix .. "," .. iz] = true
+					local inside = if isSq then math.abs(dx) <= r and math.abs(dz) <= r
+					              else dx * dx + dz * dz <= r2
+					if inside then
+						local key      = ix .. "," .. iz
+						zoneGridCache[key] = zone
+						local part = folder:FindFirstChild(key)
+						if part and part:IsA("BasePart") then
+							part.Color = ZONE_VIZ_COLORS[zone] or ZONE_VIZ_COLORS[0]
+						else
+							-- Part missing (e.g. stroke went outside original grid bounds).
+							-- Trigger a full rebuild on next call.
+							zoneGridCache = {}
+							MapEditorManager.updateZoneVisualization(mapData, nil, forceVisible)
+							return
+						end
 					end
-				end
-			end
-		end
-
-		-- For each dirty cell, determine its new zone by replaying only strokes that touch it
-		for key in pairs(dirtyCells) do
-			local commaPos = string.find(key, ",") :: number
-			local ix = tonumber(string.sub(key, 1, commaPos - 1)) :: number
-			local iz = tonumber(string.sub(key, commaPos + 1)) :: number
-			local cellCX = (ix + 0.5) * OVERLAY_CELL
-			local cellCZ = (iz + 0.5) * OVERLAY_CELL
-
-			-- Last-writer-wins across all strokes
-			local newZone = -1
-			for _, stroke in ipairs(strokes) do
-				local cx, cz = stroke.Position.X, stroke.Position.Z
-				local r = stroke.Radius or 40
-				local dx = cellCX - cx
-				local dz = cellCZ - cz
-				local isSquare = stroke.Shape == "Square"
-				local inside = if isSquare
-					then math.abs(dx) <= r and math.abs(dz) <= r
-					else dx * dx + dz * dz <= r * r
-				if inside then newZone = stroke.Zone or 0 end
-			end
-
-			local oldZone = zoneGridCache[key]
-
-			if newZone < 0 then
-				-- Cell is no longer covered — remove part and cache entry
-				zoneGridCache[key] = nil
-				local existing = folder:FindFirstChild(key)
-				if existing then existing:Destroy() end
-			elseif newZone ~= oldZone then
-				-- Zone changed — update cache and part
-				zoneGridCache[key] = newZone
-				local existing = folder:FindFirstChild(key)
-				if existing and existing:IsA("BasePart") then
-					existing.Color = ZONE_VIZ_COLORS[newZone] or Color3.fromRGB(150, 150, 150)
-				else
-					-- Part missing — create it
-					local part = Instance.new("Part")
-					part.Name = key
-					part.Anchored = true
-					part.CanCollide = false
-					part.Transparency = transparency
-					part.Material = Enum.Material.Neon
-					part.Color = ZONE_VIZ_COLORS[newZone] or Color3.fromRGB(150, 150, 150)
-					part.CastShadow = false
-					part.Shape = Enum.PartType.Block
-					part.Size = Vector3.new(OVERLAY_CELL, OVERLAY_PART_H, OVERLAY_CELL)
-					part.Position = Vector3.new(cellCX, surfaceYAt(cellCX, cellCZ) + OVERLAY_LIFT + OVERLAY_PART_H / 2, cellCZ)
-					part.Parent = folder
-				end
-			else
-				-- Same zone — check if part exists, create if missing
-				zoneGridCache[key] = newZone
-				if not folder:FindFirstChild(key) then
-					local part = Instance.new("Part")
-					part.Name = key
-					part.Anchored = true
-					part.CanCollide = false
-					part.Transparency = transparency
-					part.Material = Enum.Material.Neon
-					part.Color = ZONE_VIZ_COLORS[newZone] or Color3.fromRGB(150, 150, 150)
-					part.CastShadow = false
-					part.Shape = Enum.PartType.Block
-					part.Size = Vector3.new(OVERLAY_CELL, OVERLAY_PART_H, OVERLAY_CELL)
-					part.Position = Vector3.new(cellCX, surfaceYAt(cellCX, cellCZ) + OVERLAY_LIFT + OVERLAY_PART_H / 2, cellCZ)
-					part.Parent = folder
 				end
 			end
 		end
@@ -1784,7 +1752,6 @@ end
 function MapEditorManager.setZoneOverlayVisible(_player: Player, visible: boolean)
 	local folder = workspace:FindFirstChild("MapEditorZones")
 	if not folder then return end
-	-- Skip if already in the desired state
 	if folder:GetAttribute("Visible") == visible then return end
 	folder:SetAttribute("Visible", visible)
 	local transparency = visible and 0.45 or 1
@@ -1793,6 +1760,9 @@ function MapEditorManager.setZoneOverlayVisible(_player: Player, visible: boolea
 			child.Transparency = transparency
 		end
 	end
+	-- Clean up any legacy bg folder from old sessions
+	local oldBg = workspace:FindFirstChild("MapEditorZonesBg")
+	if oldBg then oldBg:Destroy() end
 end
 
 -- Zone materials for terrain painting overlay (one per zone number).
@@ -2679,3 +2649,4 @@ function MapEditorManager.loadCustomMapData(userId: number, mapId: string): any?
 end
 
 return MapEditorManager
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                

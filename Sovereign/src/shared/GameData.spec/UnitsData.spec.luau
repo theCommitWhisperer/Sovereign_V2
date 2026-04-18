@@ -25,10 +25,9 @@ return function()
 			expect(knightUnit).to.be.a("table")
 			expect(knightUnit.type).to.equal("Unit")
 
-			-- Health
+			-- Health: Knight only defines max_health (current_health is runtime state, not data)
 			expect(knightUnit.health).to.be.a("table")
 			expect(knightUnit.health.max_health).to.be.a("number")
-			expect(knightUnit.health.current_health).to.be.a("number")
 
 			-- Movement
 			expect(knightUnit.movement).to.be.a("table")

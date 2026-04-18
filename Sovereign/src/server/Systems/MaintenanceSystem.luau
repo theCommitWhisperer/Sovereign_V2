@@ -8,6 +8,7 @@ local MaintenanceManager = require(script.Parent.Parent.Managers.MaintenanceMana
 local PlayerManager = require(script.Parent.Parent.Managers.PlayerManager)
 local WorkerManager = require(script.Parent.Parent.Managers.WorkerManager)
 local NotificationManager = require(script.Parent.Parent.Managers.NotificationManager)
+local GameSettings = require(ReplicatedStorage.Shared.GameSettings)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
 local MaintenanceSystemDebug = DebugManager.createChannel("MaintenanceSystem", false)
@@ -67,7 +68,7 @@ end
 function MaintenanceSystem.startLoop()
 	task.spawn(function()
 		while true do
-			task.wait(MAINTENANCE_CYCLE)
+			task.wait(GameSettings.waitInterval(MAINTENANCE_CYCLE))
 			for _, player in ipairs(Players:GetPlayers()) do
 				processMaintenance(player)
 			end

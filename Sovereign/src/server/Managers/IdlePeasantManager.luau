@@ -21,6 +21,7 @@ export type IdleBehavior = {
 	campfirePosition: Vector3?, -- Position to gather at (for Campfire behavior)
 	roamCenter: Vector3?, -- Center point for roaming (for Roaming behavior)
 	roamRadius: number, -- Roaming radius (default: 30 studs)
+	roamMinRadius: number?, -- Minimum distance from center (outside obstacle)
 	nextRoamTime: number, -- When to pick a new roaming destination
 	targetPosition: Vector3?, -- Current roaming target
 }
@@ -32,14 +33,17 @@ local ROAM_RADIUS = 30 -- Peasants roam within 30 studs of Keep
 local CAMPFIRE_POSITIONS_COUNT = 6 -- 6 positions around the campfire
 local CAMPFIRE_RADIUS = 8 -- 8 studs from SpawnPoint
 
--- Get campfire positions in a circle around Keep's SpawnPoint
-local function getCampfirePositions(keepSpawnPoint: Vector3, count: number): { Vector3 }
+-- Get campfire positions in a circle around Keep's SpawnPoint.
+-- radius parameter overrides CAMPFIRE_RADIUS so positions can be pushed
+-- outside the Keep's pathfinding obstacle.
+local function getCampfirePositions(keepSpawnPoint: Vector3, count: number, radius: number?): { Vector3 }
 	local positions = {}
+	local r = radius or CAMPFIRE_RADIUS
 
 	for i = 1, count do
 		local angle = (math.pi * 2 * (i - 1)) / count
-		local xOffset = math.cos(angle) * CAMPFIRE_RADIUS
-		local zOffset = math.sin(angle) * CAMPFIRE_RADIUS
+		local xOffset = math.cos(angle) * r
+		local zOffset = math.sin(angle) * r
 		local position = keepSpawnPoint + Vector3.new(xOffset, 0, zOffset)
 		table.insert(positions, position)
 	end
@@ -89,14 +93,19 @@ function IdlePeasantManager.addIdlePeasant(peasant: Model, ownerId: number)
 		spawnPoint = keep.PrimaryPart and keep.PrimaryPart.Position or Vector3.new(0, 0, 0)
 	end
 
+	-- Compute a safe idle radius that sits outside the Keep's pathfinding obstacle.
+	-- The obstacle covers the model bounding box + 2-stud padding, so we add a margin.
+	local _, keepSize = keep:GetBoundingBox()
+	local safeIdleRadius = math.max(keepSize.X, keepSize.Z) / 2 + 10
+
 	-- Randomly assign behavior type (60% campfire, 40% roaming)
 	local behaviorType: "Campfire" | "Roaming" = math.random() < 0.6 and "Campfire" or "Roaming"
 
 	local behavior: IdleBehavior
 
 	if behaviorType == "Campfire" then
-		-- Assign to one of the campfire positions
-		local campfirePositions = getCampfirePositions(spawnPoint, CAMPFIRE_POSITIONS_COUNT)
+		-- Assign to one of the campfire positions (outside the Keep obstacle)
+		local campfirePositions = getCampfirePositions(spawnPoint, CAMPFIRE_POSITIONS_COUNT, safeIdleRadius)
 		local randomPosition = campfirePositions[math.random(1, #campfirePositions)]
 
 		behavior = {
@@ -112,7 +121,8 @@ function IdlePeasantManager.addIdlePeasant(peasant: Model, ownerId: number)
 
 		IdleDebug:info(`Peasant {peasant.Name} assigned to Campfire at {randomPosition}`)
 	else
-		-- Roaming behavior
+		-- Roaming behavior — roam between safeIdleRadius and safeIdleRadius+ROAM_RADIUS
+		-- so targets always land outside the Keep obstacle
 		behavior = {
 			peasant = peasant,
 			behaviorType = "Roaming",
@@ -120,6 +130,7 @@ function IdlePeasantManager.addIdlePeasant(peasant: Model, ownerId: number)
 			campfirePosition = nil,
 			roamCenter = spawnPoint,
 			roamRadius = ROAM_RADIUS,
+			roamMinRadius = safeIdleRadius, -- minimum distance to stay outside obstacle
 			nextRoamTime = tick() + math.random(2, 5), -- Random initial delay
 			targetPosition = nil,
 		}
@@ -256,3 +267,4 @@ function IdlePeasantManager.update(dt: number)
 end
 
 return IdlePeasantManager
+                                                                                                                                                                                                                                                                                                                                   

@@ -42,6 +42,17 @@ function TopBar:render()
 	local population = self.props.population or 0
 	local date = self.props.date or "Year 1 Month 1"
 	local weather = self.props.weather
+	local peaceTimeRemaining = self.props.peaceTimeRemaining or 0
+	local victoryCondition = self.props.victoryCondition or "Score"
+
+	-- Map lobby victory mode to a short display label
+	local victoryIcons = {
+		Score = "🏆 Score",
+		Conquest = "⚔️ Conquest",
+		Wonder = "🏛 Wonder",
+		Regicide = "👑 Regicide",
+	}
+	local victoryLabel = victoryIcons[victoryCondition] or ("🏆 " .. victoryCondition)
 
 	return React.createElement("ImageLabel", {
 		Name = "TopBar",
@@ -217,6 +228,38 @@ function TopBar:render()
 				TextStrokeTransparency = 0.5,
 				TextStrokeColor3 = Color3.fromRGB(0, 0, 0),
 				LayoutOrder = 9,
+			}),
+
+			-- Peace time countdown (only shown when peace time is active)
+			PeaceTimeDisplay = peaceTimeRemaining > 0 and React.createElement("TextLabel", {
+				Size = UDim2.fromOffset(80, 25),
+				Position = UDim2.fromOffset(0, 0),
+				BackgroundTransparency = 1,
+				Text = string.format("🕊 %d:%02d", math.floor(peaceTimeRemaining / 60), peaceTimeRemaining % 60),
+				Font = Enum.Font.GothamBold,
+				TextSize = 14,
+				TextColor3 = Color3.fromRGB(180, 220, 255), -- Light blue to stand out
+				TextXAlignment = Enum.TextXAlignment.Center,
+				TextYAlignment = Enum.TextYAlignment.Center,
+				TextStrokeTransparency = 0.5,
+				TextStrokeColor3 = Color3.fromRGB(0, 0, 0),
+				LayoutOrder = 10,
+			}) or nil,
+
+			-- Victory condition indicator (always visible)
+			VictoryDisplay = React.createElement("TextLabel", {
+				Size = UDim2.fromOffset(100, 25),
+				Position = UDim2.fromOffset(0, 0),
+				BackgroundTransparency = 1,
+				Text = victoryLabel,
+				Font = Enum.Font.GothamBold,
+				TextSize = 13,
+				TextColor3 = Color3.fromRGB(255, 215, 100), -- Gold color
+				TextXAlignment = Enum.TextXAlignment.Center,
+				TextYAlignment = Enum.TextYAlignment.Center,
+				TextStrokeTransparency = 0.5,
+				TextStrokeColor3 = Color3.fromRGB(0, 0, 0),
+				LayoutOrder = 11,
 			}),
 		}),
 	})

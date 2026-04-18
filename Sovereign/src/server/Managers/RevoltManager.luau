@@ -144,22 +144,30 @@ function RevoltManager.triggerRevoltStage(player: Player, stage: number)
         RevoltDebug:info(`{player.Name} is stable.`)
         WorkerManager.setProductionModifier(player, 1.0) -- Restore production
         if GameEvent then
-            GameEvent:FireClient(player, "RevoltEnded", {})
+            pcall(function()
+                GameEvent:FireClient(player, "RevoltEnded", {})
+            end)
         end
     elseif stage == 1 then
         RevoltDebug:warn(`{player.Name} is in a state of unrest! Production efficiency reduced.`)
         WorkerManager.setProductionModifier(player, 0.9) -- 90% production
         if GameEvent then
-            GameEvent:FireClient(player, "RevoltStageChanged", { stage = 1, message = "Production efficiency has dropped due to unrest!" })
+            pcall(function()
+                GameEvent:FireClient(player, "RevoltStageChanged", { stage = 1, message = "Production efficiency has dropped due to unrest!" })
+            end)
         end
     elseif stage == 2 then
         RevoltDebug:warn(`{player.Name} is in a state of discontent! Production has been significantly reduced.`)
         WorkerManager.setProductionModifier(player, 0.75) -- 75% production
-        if math.random() < 0.1 then
-            UnitManager.destroyRandomUnit(player)
-        end
+        pcall(function()
+            if math.random() < 0.1 then
+                UnitManager.destroyRandomUnit(player)
+            end
+        end)
         if GameEvent then
-            GameEvent:FireClient(player, "RevoltStageChanged", { stage = 2, message = "Production has been significantly reduced due to discontent! A unit has deserted!" })
+            pcall(function()
+                GameEvent:FireClient(player, "RevoltStageChanged", { stage = 2, message = "Production has been significantly reduced due to discontent! A unit has deserted!" })
+            end)
         end
     elseif stage == 3 then
         RevoltDebug:error(`{player.Name} is in open rebellion!`)
@@ -173,17 +181,21 @@ function RevoltManager.triggerRevoltStage(player: Player, stage: number)
         local playerFaction = playerData.Faction or "Player"
         local rebelFaction = "Rebel_" .. player.UserId
 
-        FactionManager.createFaction(rebelFaction)
-        FactionManager.setRelationship(playerFaction, rebelFaction, "Enemy")
+        pcall(function()
+            FactionManager.createFaction(rebelFaction)
+            FactionManager.setRelationship(playerFaction, rebelFaction, "Enemy")
 
-        -- Spawn rebel units
-        local spawnPosition = playerData.SpawnPoint and playerData.SpawnPoint.Position or Vector3.new(0, 10, 0)
-        for i = 1, 5 do
-            UnitManager.createUnit("Swordsman", -1, spawnPosition + Vector3.new(math.random(-20, 20), 0, math.random(-20, 20)), rebelFaction)
-        end
+            -- Spawn rebel units
+            local spawnPosition = playerData.SpawnPoint and playerData.SpawnPoint.Position or Vector3.new(0, 10, 0)
+            for i = 1, 5 do
+                UnitManager.createUnit("Swordsman", -1, spawnPosition + Vector3.new(math.random(-20, 20), 0, math.random(-20, 20)), rebelFaction)
+            end
+        end)
 
         if GameEvent then
-            GameEvent:FireClient(player, "RevoltStageChanged", { stage = 3, message = "A rebellion has begun!" })
+            pcall(function()
+                GameEvent:FireClient(player, "RevoltStageChanged", { stage = 3, message = "A rebellion has begun!" })
+            end)
         end
     end
 end

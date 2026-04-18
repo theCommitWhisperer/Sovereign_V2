@@ -100,6 +100,10 @@ function HUD:init()
 		-- Battle log messages
 		battleLogMessages = {},
 		battleLogExpanded = false,
+		-- Peace time countdown (seconds remaining, 0 = expired / not active)
+		peaceTimeRemaining = 0,
+		-- Active victory condition mode from lobby settings
+		victoryCondition = "Score",
 	})
 
 	-- Get game event reference with timeout to prevent infinite hang
@@ -228,10 +232,24 @@ function HUD:init()
 				"Tutorial setting from event",
 				{ showTutorial = data.showTutorial, tutorialEnabled = tutorialEnabled }
 			)
+			local peaceTimeSecs = data.peaceTimeSeconds or 0
 			self:setState({
 				resources = data.resources,
 				tutorialEnabled = tutorialEnabled,
+				peaceTimeRemaining = peaceTimeSecs,
+				victoryCondition = data.victoryCondition or "Score",
 			})
+			-- Start client-side countdown if peace time is active
+			if peaceTimeSecs > 0 then
+				task.spawn(function()
+					local remaining = peaceTimeSecs
+					while remaining > 0 do
+						task.wait(1)
+						remaining -= 1
+						self:setState({ peaceTimeRemaining = remaining })
+					end
+				end)
+			end
 		elseif action == "BuildingPlaced" and data.buildingType then
 			-- Handle tutorial progression when buildings are placed
 			HUDDebug:info("Building placed", { buildingType = data.buildingType })
@@ -1006,6 +1024,8 @@ function HUD:render()
 			population = self.state.population,
 			date = self.state.date,
 			weather = self.state.weather,
+			peaceTimeRemaining = self.state.peaceTimeRemaining,
+			victoryCondition = self.state.victoryCondition,
 		}),
 
 		-- ===== BOTTOM BAR ===== (Delete/Policies | Minimap | 5 Categories | Content Area)

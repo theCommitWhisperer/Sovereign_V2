@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local PopulationManager = require(script.Parent.Parent.Managers.PopulationManager)
 local PlayerManager = require(script.Parent.Parent.Managers.PlayerManager)
+local GameSettings = require(ReplicatedStorage.Shared.GameSettings)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
 local PopulationSystemDebug = DebugManager.createChannel("PopulationSystem", false)
@@ -76,7 +77,7 @@ end
 function PopulationSystem.startLoop()
 	task.spawn(function()
 		while true do
-			task.wait(10)
+			task.wait(GameSettings.waitInterval(10))
 			for _, player in ipairs(Players:GetPlayers()) do
 				checkPopulationGrowth(player)
 			end

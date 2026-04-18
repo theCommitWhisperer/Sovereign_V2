@@ -21,6 +21,61 @@ local BuildingManager = {}
 -- Track stored resources in buildings
 local BuildingStorage: { [Instance]: { [string]: number } } = {}
 
+-- Ensure a building model has the named worker-point parts that
+-- PathfindingIntegration.addObstacle scans for when punching walkable holes.
+-- If any required point is missing from the model we create a small invisible
+-- part at a sensible offset so the pathfinding grid stays navigable.
+local function ensureWorkerPoints(building: Model, buildingInfo: any, cframe: CFrame)
+	-- Use the model's ACTUAL bounding box, not buildingInfo.size.
+	-- addObstacle uses getCustomBoundingBox (the real model geometry) to mark
+	-- the obstacle, so we must base our offsets on the real extent or worker
+	-- points end up inside the obstacle (especially for large models like Keep).
+	local _, actualSize = building:GetBoundingBox()
+	local size = actualSize or buildingInfo.size or Vector3.new(8, 8, 8)
+	local halfX = size.X / 2
+	local halfZ = size.Z / 2
+	-- margin must exceed BUILDING_PADDING (2 studs) in PathfindingIntegration
+	-- so points sit clearly outside the unwalkable footprint.
+	local margin = 6
+	local forward = cframe.LookVector
+	local right = cframe.RightVector
+	local center = cframe.Position
+
+	local function createPoint(name: string, position: Vector3)
+		if building:FindFirstChild(name, true) then
+			return -- model already has this part
+		end
+		local point = Instance.new("Part")
+		point.Name = name
+		point.Size = Vector3.new(1, 1, 1)
+		point.Position = position
+		point.Anchored = true
+		point.CanCollide = false
+		point.Transparency = 1
+		point.Parent = building
+	end
+
+	local needsWorker = buildingInfo.requires_worker ~= nil
+	local needsStorage = buildingInfo.storage_capacity ~= nil
+
+	-- Every interactive building needs an entrance peasants can walk to
+	if needsWorker or needsStorage then
+		createPoint("BuildingEntrance", center + forward * (halfZ + margin))
+	end
+
+	if needsWorker then
+		-- All worker points OUTSIDE the obstacle footprint (actual model bbox + padding).
+		-- PathfindingIntegration punches 16-stud walkable holes around each.
+		createPoint("ProductionStation", center + forward * (halfZ + margin) + right * margin)
+		createPoint("ResourceDropoff", center + right * (halfX + margin))
+		createPoint("WorkerRestPosition", center - forward * (halfZ + margin))
+	end
+
+	if needsStorage then
+		createPoint("StorageAreaGeneral", center - right * (halfX + margin))
+	end
+end
+
 -- Ensure Buildings folder exists
 local BuildingsFolder = Workspace:FindFirstChild("Buildings")
 if not BuildingsFolder then
@@ -235,6 +290,11 @@ function BuildingManager.createBuilding(
 		WallSystem.registerWall(building)
 	end
 
+	-- Ensure the model has named worker-point parts so PathfindingIntegration
+	-- can punch walkable holes around them. Missing points are created as
+	-- invisible anchored parts at sensible offsets from the building center.
+	ensureWorkerPoints(building, buildingInfo, cframe)
+
 	-- Add building as obstacle to A* pathfinding grid
 	PathfindingIntegration.addObstacle(building)
 
@@ -349,3 +409,4 @@ function BuildingManager.hasStorageSpace(building: Instance, resourceType: strin
 end
 
 return BuildingManager
+                                                                                                                                                                                                                                                                                                                                                                                                                  

@@ -548,8 +548,8 @@ local function updateGhostPosition()
 			end
 		end
 	else
-		-- Non-wall placement
-		if ghostBuilding and ghostBuilding:IsA("Model") then
+		-- Non-wall placement (works for both Model ghosts and Part placeholders)
+		if ghostBuilding then
 			-- First position at ground level to get accurate bounding box
 			local tempPos = Vector3.new(snappedX, groundY, snappedZ)
 			ghostBuilding:PivotTo(CFrame.new(tempPos) * CFrame.Angles(0, math.rad(manualRotation), 0))
@@ -579,6 +579,10 @@ local function updateGhostPosition()
 	end
 
 	local color = canPlace and Color3.new(0, 1, 0) or Color3.new(1, 0, 0)
+	-- Tint the ghost itself if it is a plain Part placeholder (no descendants)
+	if ghostBuilding:IsA("BasePart") then
+		ghostBuilding.Color = color
+	end
 	for _, v in ghostBuilding:GetDescendants() do
 		if v:IsA("BasePart") then
 			v.Color = color

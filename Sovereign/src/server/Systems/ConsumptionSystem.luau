@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ConsumptionManager = require(script.Parent.Parent.Managers.ConsumptionManager)
 local PlayerManager = require(script.Parent.Parent.Managers.PlayerManager)
 local NotificationManager = require(script.Parent.Parent.Managers.NotificationManager)
+local GameSettings = require(ReplicatedStorage.Shared.GameSettings)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
 local ConsumptionSystemDebug = DebugManager.createChannel("ConsumptionSystem", false)
@@ -56,7 +57,7 @@ end
 function ConsumptionSystem.startLoop()
 	task.spawn(function()
 		while true do
-			task.wait(CONSUMPTION_CYCLE)
+			task.wait(GameSettings.waitInterval(CONSUMPTION_CYCLE))
 			for _, player in ipairs(Players:GetPlayers()) do
 				processConsumption(player)
 			end
