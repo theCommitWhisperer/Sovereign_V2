@@ -124,24 +124,23 @@ function ArenaMode.startForPlayer(player: Player, playerData: any, settings: any
 	local arenaCenter = CombatSandbox.setupArena(player)
 
 	-- The client camera initializes at the character's position when GameStarted
-	-- arrives — so the character MUST be standing at the arena before we fire it,
-	-- or the player stares at open water while armies fight 1500 studs away.
-	task.spawn(function()
-		local character = player.Character
-		if not character or not character.Parent then
-			local deadline = os.clock() + 8
-			repeat
-				task.wait(0.1)
-				character = player.Character
-			until (character and character.Parent) or os.clock() > deadline
-		end
+	-- arrives. Players.CharacterAutoLoads is FALSE in this game — the normal
+	-- StartGame path calls player:LoadCharacter(), and the arena branch skips
+	-- that path, so we must spawn the character ourselves or the camera waits
+	-- forever and the player stares at open water.
+	local viewPos = arenaCenter + Vector3.new(0, 6, 150)
+	local spawnCFrame = CFrame.lookAt(viewPos, arenaCenter + Vector3.new(0, 3, 0))
+	playerData.SpawnPoint = spawnCFrame -- respawns also come back to the arena
 
-		local viewPos = arenaCenter + Vector3.new(0, 6, 150)
-		if character and character.Parent then
-			character:PivotTo(CFrame.lookAt(viewPos, arenaCenter + Vector3.new(0, 3, 0)))
-			-- Give replication a beat so the client camera reads the new position
-			task.wait(0.2)
+	task.spawn(function()
+		player:LoadCharacter()
+		local character = player.Character or player.CharacterAdded:Wait()
+		local humanoidRootPart = character:WaitForChild("HumanoidRootPart", 10) :: BasePart?
+		if humanoidRootPart then
+			humanoidRootPart.CFrame = spawnCFrame * CFrame.new(0, 3, 0)
 		end
+		-- Give replication a beat so the client camera reads the new position
+		task.wait(0.2)
 
 		-- Fire GameStarted so the client routes to HUD + shows the Battle Setup panel
 		local remoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
