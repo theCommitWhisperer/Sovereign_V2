@@ -8,6 +8,16 @@ local HttpService = game:GetService("HttpService")
 
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local MapEditorDebug = DebugManager.createChannel("MapEditorManager", false)
+-- Shared node sizing so the editor overlay previews exactly what spawns in-game
+local ResourceNodesConfig = require(ReplicatedStorage.Shared.GameData.ResourceNodesConfig)
+
+-- Target world height for a node type: config height × global multiplier ± jitter
+local function nodeTargetHeight(nodeType: string): number
+	local cfg = ResourceNodesConfig.get(nodeType)
+	return cfg.TargetHeight
+		* ResourceNodesConfig.GlobalSizeMultiplier
+		* (1 + (math.random() * 2 - 1) * cfg.HeightJitter)
+end
 
 local MapEditorManager = {}
 
@@ -79,82 +89,147 @@ end
 -- Forward declaration: defined later in file but called from placeResourcePatch
 local placeFoodDiscParts: ((folder: Instance, patches: { any }) -> ())?
 
--- Zone overlay constants (declared here so computeZoneAreas fast path can use them)
--- Single unified grid: every cell has exactly one Part whose colour reflects its zone.
--- 32-stud cells keep part count low (≤2304 for max 1500-stud map) while still giving
--- readable zone boundaries at RTS camera distances.
+-- ─── Zone overlay grid constants ─────────────────────────────────────────────
+-- Single unified grid: every cell has exactly ONE Part whose colour reflects its
+-- zone (neutral = zone 0 for unpainted cells).  32-stud cells give ≤2304 parts
+-- for the largest supported map (1500 studs) while still being readable from an
+-- RTS camera angle.
 local OVERLAY_CELL   = 32  -- studs per grid cell
-local OVERLAY_PART_H = 3   -- slab height (studs)
+local OVERLAY_PART_H = 3   -- slab thickness (studs)
 local OVERLAY_LIFT   = 1   -- studs above terrain surface
 
+-- Rasterise a list of paint strokes into a flat key→zone cache at OVERLAY_CELL
+-- resolution.  This is the single authoritative implementation used by both the
+-- visualization builder and the area computation.  Last stroke painted wins.
+local function rasteriseStrokes(strokes: { any }): { [string]: number }
+	local cache: { [string]: number } = {}
+	for _, stroke in ipairs(strokes) do
+		local cx   = stroke.Position.X
+		local cz   = stroke.Position.Z
+		local r    = stroke.Radius or 40
+		local zone = stroke.Zone or 0
+		local isSq = stroke.Shape == "Square"
+		local r2   = r * r
+		local minI = math.floor((cx - r) / OVERLAY_CELL)
+		local maxI = math.floor((cx + r) / OVERLAY_CELL)
+		local minJ = math.floor((cz - r) / OVERLAY_CELL)
+		local maxJ = math.floor((cz + r) / OVERLAY_CELL)
+		for ix = minI, maxI do
+			for iz = minJ, maxJ do
+				local dx = (ix + 0.5) * OVERLAY_CELL - cx
+				local dz = (iz + 0.5) * OVERLAY_CELL - cz
+				local inside = if isSq then math.abs(dx) <= r and math.abs(dz) <= r
+				              else dx * dx + dz * dz <= r2
+				if inside then cache[ix .. "," .. iz] = zone end
+			end
+		end
+	end
+	return cache
+end
+
 -- Cached grid state for zone visualization: key "ix,iz" → zone number.
--- Declared here so computeZoneAreas (below) can read it for the fast path.
+-- Kept in sync by updateZoneVisualization; read by computeZoneAreas.
 local zoneGridCache: { [string]: number } = {}
 
--- to call after every paint batch.  Returns a table keyed by zone number (0–6)
--- where each value is a percentage (0–100) of total map cells.
--- Zones 0-4 = territory; 5 = Impassable; 6 = No Build.
--- Uses zoneGridCache (kept in sync by updateZoneVisualization) when available
--- to avoid an O(cells×strokes) scan on every paint.
-local ZONE_SAMPLE_CELL = 24 -- stud resolution for sampling (used for full-scan fallback)
+-- Rebuild sequence counter: incremented each full rebuild so any in-flight
+-- coroutine from a previous rebuild knows to abort.
+local zoneRebuildSeq = 0
+
+-- ─── Reusable async grid overlay builder ─────────────────────────────────────
+-- Creates (or replaces) a workspace Folder containing one coloured Neon Part per
+-- grid cell.  Building happens in a coroutine (one task.wait per row) so the
+-- server thread never hangs even for large maps.
+--
+-- Parameters:
+--   folderName   — workspace Folder name (e.g. "MapEditorZones")
+--   halfCells    — number of cells in each direction from origin
+--   cellSize     — studs per cell
+--   partH        — part thickness in studs
+--   lift         — studs above terrain surface
+--   transparency — 0 = opaque, 1 = invisible
+--   colorFn      — function(ix, iz): Color3  called for each cell
+--   surfaceFn    — function(wx, wz): number  returns terrain Y at world pos
+--   seqTable     — { n: number } — increment .n before calling to abort old runs
+--   isVisible    — stored as Folder attribute
+-- Returns: the new Folder (parts stream in asynchronously)
+local function buildGridOverlay(
+	folderName:   string,
+	halfCells:    number,
+	cellSize:     number,
+	partH:        number,
+	lift:         number,
+	transparency: number,
+	colorFn:      (ix: number, iz: number) -> Color3,
+	surfaceFn:    (wx: number, wz: number) -> number,
+	seqTable:     { n: number },
+	isVisible:    boolean
+): Folder
+	local existing = workspace:FindFirstChild(folderName)
+	if existing then existing:Destroy() end
+
+	local folder = Instance.new("Folder")
+	folder.Name = folderName
+	folder:SetAttribute("Visible", isVisible)
+	folder.Parent = workspace  -- parent early so parts appear as they stream in
+
+	local mySeq = seqTable.n
+	task.spawn(function()
+		for ix = -halfCells, halfCells - 1 do
+			-- Abort if a newer rebuild has started
+			if seqTable.n ~= mySeq then return end
+			for iz = -halfCells, halfCells - 1 do
+				local key    = ix .. "," .. iz
+				local cellCX = (ix + 0.5) * cellSize
+				local cellCZ = (iz + 0.5) * cellSize
+				local part   = Instance.new("Part")
+				part.Name         = key
+				part.Anchored     = true
+				part.CanCollide   = false
+				part.CastShadow   = false
+				part.Transparency = transparency
+				part.Material     = Enum.Material.Neon
+				part.Color        = colorFn(ix, iz)
+				part.Shape        = Enum.PartType.Block
+				part.Size         = Vector3.new(cellSize, partH, cellSize)
+				part.Position     = Vector3.new(cellCX, surfaceFn(cellCX, cellCZ) + lift + partH / 2, cellCZ)
+				part.Parent       = folder
+			end
+			task.wait()  -- yield once per row — keeps server responsive
+		end
+	end)
+	return folder
+end
+
+-- ─── Zone area computation ────────────────────────────────────────────────────
+-- Returns a table [zone 0-6] → % of total map area (0–100, one decimal place).
+-- Uses zoneGridCache when available (fast, O(cache)); otherwise populates it
+-- from strokes first (same algorithm as the visualization, so percentages and
+-- the visual grid always agree).
 local function computeZoneAreas(mapData: any): { [number]: number }
-	-- Fast path: if the grid cache is populated, derive areas directly from it.
-	-- The cache uses OVERLAY_CELL resolution; we sum counts per zone.
-	if next(zoneGridCache) ~= nil then
-		local counts: { [number]: number } = { [0]=0,[1]=0,[2]=0,[3]=0,[4]=0,[5]=0,[6]=0 }
-		local total = 0
-		for _, zone in pairs(zoneGridCache) do
-			counts[zone] = (counts[zone] or 0) + 1
-			total += 1
-		end
-		-- Total possible cells = map area / cell area (cells outside any stroke aren't in cache)
-		-- We want % of MAP area, so compute total map cells at OVERLAY_CELL resolution.
-		local mapSize = mapData.Size or 1000
-		local mapCells = math.floor(mapSize / OVERLAY_CELL) * math.floor(mapSize / OVERLAY_CELL)
-		if mapCells <= 0 then mapCells = total end
-		local result: { [number]: number } = {}
-		for zone = 0, 6 do
-			result[zone] = math.floor((counts[zone] or 0) / mapCells * 1000 + 0.5) / 10
-		end
-		return result
+	-- Populate cache if empty (e.g. first call before overlay is built)
+	if next(zoneGridCache) == nil then
+		zoneGridCache = rasteriseStrokes(mapData.ZonePaintStrokes or {})
 	end
 
-	-- Slow path: no cache yet (called before first overlay build). Full scan.
-	local strokes = mapData.ZonePaintStrokes or {}
-	local mapSize = mapData.Size or 1000
-	local half = mapSize / 2
+	local mapSize  = mapData.Size or 1000
+	-- Total cells in the map at OVERLAY_CELL resolution (grid covers exactly this)
+	local mapCells = math.ceil(mapSize / OVERLAY_CELL) * 2  -- cells per axis (same as halfCells*2)
+	mapCells = mapCells * mapCells
+	if mapCells <= 0 then mapCells = 1 end
 
+	-- Count how many grid cells belong to each zone
 	local counts: { [number]: number } = { [0]=0,[1]=0,[2]=0,[3]=0,[4]=0,[5]=0,[6]=0 }
-	local totalCells = 0
-
-	local x = -half
-	while x < half do
-		local z = -half
-		while z < half do
-			local assignedZone = -1
-			for _, stroke in ipairs(strokes) do
-				local dx = x - stroke.Position.X
-				local dz = z - stroke.Position.Z
-				local r = stroke.Radius or 40
-				local inside = if stroke.Shape == "Square"
-					then math.abs(dx) <= r and math.abs(dz) <= r
-					else dx * dx + dz * dz <= r * r
-				if inside then
-					assignedZone = stroke.Zone or 0
-				end
-			end
-			if assignedZone >= 0 then
-				counts[assignedZone] = (counts[assignedZone] or 0) + 1
-			end
-			totalCells += 1
-			z += ZONE_SAMPLE_CELL
-		end
-		x += ZONE_SAMPLE_CELL
+	local paintedCells = 0
+	for _, zone in pairs(zoneGridCache) do
+		counts[zone] = (counts[zone] or 0) + 1
+		paintedCells += 1
 	end
+	-- Cells not in the cache are neutral (zone 0)
+	counts[0] = (counts[0] or 0) + (mapCells - paintedCells)
 
 	local result: { [number]: number } = {}
 	for zone = 0, 6 do
-		result[zone] = if totalCells > 0 then math.floor((counts[zone] or 0) / totalCells * 1000 + 0.5) / 10 else 0
+		result[zone] = math.floor((counts[zone] or 0) / mapCells * 1000 + 0.5) / 10
 	end
 	return result
 end
@@ -1605,144 +1680,84 @@ function MapEditorManager.deleteResourcePatch(player: Player, patchId: string)
 end
 
 -- Zone paint overlay visualization
--- (constants and zoneGridCache declared near top of file)
--- (zoneGridCache declared near top of file so computeZoneAreas can use it)
-
 function MapEditorManager.updateZoneVisualization(mapData: any, dirtyStrokes: { any }?, forceVisible: boolean?)
 	local folder = workspace:FindFirstChild("MapEditorZones")
 	local isVisible = if forceVisible ~= nil then forceVisible
 		else (folder ~= nil and folder:GetAttribute("Visible") == true)
 
-	local strokes = mapData.ZonePaintStrokes or {}
-	local mapSize: number = mapData.Size or 1000
+	-- Clean up any legacy two-layer bg folder
+	local oldBg = workspace:FindFirstChild("MapEditorZonesBg")
+	if oldBg then oldBg:Destroy() end
 
+	-- ── Shared terrain surface helper ────────────────────────────────────────
 	local terrain = workspace:FindFirstChildWhichIsA("Terrain")
 	local rayParams = RaycastParams.new()
 	rayParams.FilterType = Enum.RaycastFilterType.Include
 	if terrain then rayParams.FilterDescendantsInstances = { terrain } end
 
-	-- Determine grid bounds from the larger of mapData.Size and actual terrain extents,
-	-- capped at 1500 so we never create an excessive number of parts.
+	local function surfaceAt(wx: number, wz: number): number
+		if not terrain then return 0 end
+		local hit = workspace:Raycast(Vector3.new(wx, 2000, wz), Vector3.new(0, -4000, 0), rayParams)
+		return if hit then hit.Position.Y else 0
+	end
+
+	-- ── Grid bounds ──────────────────────────────────────────────────────────
+	-- Use the larger of mapData.Size and the actual terrain extent, capped at
+	-- 1500 studs so we never create an unmanageable number of parts.
+	local mapSize: number = mapData.Size or 1000
 	local gridHalf: number = mapSize / 2
 	if terrain then
 		local ext = terrain.MaxExtents
-		local terrainHalf = math.max(
-			math.abs(ext.Min.X), math.abs(ext.Max.X),
-			math.abs(ext.Min.Z), math.abs(ext.Max.Z)
-		)
-		if terrainHalf > gridHalf then gridHalf = terrainHalf end
+		local th  = math.max(math.abs(ext.Min.X), math.abs(ext.Max.X),
+		                     math.abs(ext.Min.Z), math.abs(ext.Max.Z))
+		if th > gridHalf then gridHalf = th end
 	end
 	gridHalf = math.min(gridHalf, 1500)
-
 	local halfCells = math.ceil(gridHalf / OVERLAY_CELL)
 
-	local function surfaceAt(wx: number, wz: number): number
-		if not terrain then return 0 end
-		local result = workspace:Raycast(Vector3.new(wx, 2000, wz), Vector3.new(0, -4000, 0), rayParams)
-		return if result then result.Position.Y else 0
-	end
-
 	local overlayTransparency = isVisible and 0.45 or 1
-
-	-- Clean up any legacy separate bg folder from old code
-	local oldBg = workspace:FindFirstChild("MapEditorZonesBg")
-	if oldBg then oldBg:Destroy() end
-
-	-- ── Full rebuild ──────────────────────────────────────────────────────────
-	-- Triggered on first open, after undo/redo, or when no folder exists.
-	-- Strategy: single unified grid — every cell gets exactly ONE part whose
-	-- colour reflects its zone (neutral/zone-0 for unpainted cells).
-	-- No separate background layer means no transparency-blending artefacts.
 	local fullRebuild = (dirtyStrokes == nil or not folder or next(zoneGridCache) == nil)
 
 	if fullRebuild then
-		-- Step 1: rasterise all strokes into the cache (last stroke painted wins).
-		zoneGridCache = {}
-		for _, stroke in ipairs(strokes) do
-			local cx, cz = stroke.Position.X, stroke.Position.Z
-			local r      = stroke.Radius or 40
-			local zone   = stroke.Zone or 0
-			local isSq   = stroke.Shape == "Square"
-			local r2     = r * r
-			for ix = math.floor((cx - r) / OVERLAY_CELL), math.floor((cx + r) / OVERLAY_CELL) do
-				for iz = math.floor((cz - r) / OVERLAY_CELL), math.floor((cz + r) / OVERLAY_CELL) do
-					local dx = (ix + 0.5) * OVERLAY_CELL - cx
-					local dz = (iz + 0.5) * OVERLAY_CELL - cz
-					local inside = if isSq then math.abs(dx) <= r and math.abs(dz) <= r
-					              else dx * dx + dz * dz <= r2
-					if inside then zoneGridCache[ix .. "," .. iz] = zone end
-				end
-			end
-		end
+		-- ── Full rebuild ──────────────────────────────────────────────────────
+		-- Rasterise all strokes into the cache, then use buildGridOverlay to
+		-- stream Parts into workspace one row per frame (non-blocking).
+		zoneGridCache = rasteriseStrokes(mapData.ZonePaintStrokes or {})
+		zoneRebuildSeq += 1
 
-		-- Step 2: build one Part per cell across the whole map.
-		-- Cells not in the cache are neutral (zone 0).
-		-- Run async in a coroutine so the server thread never hangs — we yield
-		-- after every row of cells (each yield is one frame ≈ 1/60 s).
-		if folder then folder:Destroy() end
-		local newFolder = Instance.new("Folder")
-		newFolder.Name  = "MapEditorZones"
-		newFolder:SetAttribute("Visible", isVisible)
-		newFolder.Parent = workspace  -- parent early so parts stream in visibly
-
-		task.spawn(function()
-			for ix = -halfCells, halfCells - 1 do
-				-- Abort if another rebuild replaced our folder
-				if workspace:FindFirstChild("MapEditorZones") ~= newFolder then return end
-				for iz = -halfCells, halfCells - 1 do
-					local key    = ix .. "," .. iz
-					local zone   = zoneGridCache[key] or 0
-					local cellCX = (ix + 0.5) * OVERLAY_CELL
-					local cellCZ = (iz + 0.5) * OVERLAY_CELL
-					local part   = Instance.new("Part")
-					part.Name         = key
-					part.Anchored     = true
-					part.CanCollide   = false
-					part.CastShadow   = false
-					part.Transparency = overlayTransparency
-					part.Material     = Enum.Material.Neon
-					part.Color        = ZONE_VIZ_COLORS[zone] or ZONE_VIZ_COLORS[0]
-					part.Shape        = Enum.PartType.Block
-					part.Size         = Vector3.new(OVERLAY_CELL, OVERLAY_PART_H, OVERLAY_CELL)
-					part.Position     = Vector3.new(cellCX, surfaceAt(cellCX, cellCZ) + OVERLAY_LIFT + OVERLAY_PART_H / 2, cellCZ)
-					part.Parent       = newFolder
-				end
-				task.wait() -- yield once per row — keeps server responsive
-			end
-		end)
+		buildGridOverlay(
+			"MapEditorZones",
+			halfCells,
+			OVERLAY_CELL,
+			OVERLAY_PART_H,
+			OVERLAY_LIFT,
+			overlayTransparency,
+			function(ix: number, iz: number): Color3
+				local zone = zoneGridCache[ix .. "," .. iz] or 0
+				return ZONE_VIZ_COLORS[zone] or ZONE_VIZ_COLORS[0]
+			end,
+			surfaceAt,
+			{ n = zoneRebuildSeq },
+			isVisible
+		)
 
 	else
 		-- ── Incremental update ────────────────────────────────────────────────
-		-- New strokes are always the most recent, so their zone wins for every
-		-- cell they cover. Just update the cache and flip the colour on the
-		-- existing Part — no need to replay all prior strokes.
-		for _, stroke in ipairs(dirtyStrokes :: { any }) do
-			local cx, cz = stroke.Position.X, stroke.Position.Z
-			local r      = stroke.Radius or 40
-			local zone   = stroke.Zone or 0
-			local isSq   = stroke.Shape == "Square"
-			local r2     = r * r
-			for ix = math.floor((cx - r) / OVERLAY_CELL), math.floor((cx + r) / OVERLAY_CELL) do
-				for iz = math.floor((cz - r) / OVERLAY_CELL), math.floor((cz + r) / OVERLAY_CELL) do
-					local dx = (ix + 0.5) * OVERLAY_CELL - cx
-					local dz = (iz + 0.5) * OVERLAY_CELL - cz
-					local inside = if isSq then math.abs(dx) <= r and math.abs(dz) <= r
-					              else dx * dx + dz * dz <= r2
-					if inside then
-						local key      = ix .. "," .. iz
-						zoneGridCache[key] = zone
-						local part = folder:FindFirstChild(key)
-						if part and part:IsA("BasePart") then
-							part.Color = ZONE_VIZ_COLORS[zone] or ZONE_VIZ_COLORS[0]
-						else
-							-- Part missing (e.g. stroke went outside original grid bounds).
-							-- Trigger a full rebuild on next call.
-							zoneGridCache = {}
-							MapEditorManager.updateZoneVisualization(mapData, nil, forceVisible)
-							return
-						end
-					end
-				end
+		-- New strokes are always the most recent writer.  Rasterise only the
+		-- dirty strokes, update the cache, and recolour the existing Parts.
+		-- If a Part is missing (stroke outside original grid), fall back to
+		-- a full rebuild.
+		local newCells = rasteriseStrokes(dirtyStrokes :: { any })
+		for key, zone in pairs(newCells) do
+			zoneGridCache[key] = zone
+			local part = folder:FindFirstChild(key)
+			if part and part:IsA("BasePart") then
+				part.Color = ZONE_VIZ_COLORS[zone] or ZONE_VIZ_COLORS[0]
+			else
+				-- Part missing — full rebuild
+				zoneGridCache = {}
+				MapEditorManager.updateZoneVisualization(mapData, nil, forceVisible)
+				return
 			end
 		end
 	end
@@ -2246,6 +2261,21 @@ local function placeTree(folder: Folder, x: number, z: number)
 			bp.Transparency = 0
 		end
 
+		-- Normalise to the shared gameplay tree height so the editor preview
+		-- matches what ResourceNodeFactory spawns in-game
+		local targetH = nodeTargetHeight("Wood")
+		if clone:IsA("Model") then
+			local nativeH = clone:GetExtentsSize().Y
+			if nativeH > 0.1 then
+				clone:ScaleTo(clone:GetScale() * targetH / nativeH)
+			end
+		elseif clone:IsA("BasePart") then
+			local bp = clone :: BasePart
+			if bp.Size.Y > 0.1 then
+				bp.Size = bp.Size * (targetH / bp.Size.Y)
+			end
+		end
+
 		-- Parent, pivot to XZ at Y=0, read bounding box bottom, then shift up to baseY
 		clone.Parent = folder
 		clone:PivotTo(CFrame.new(x, 0, z))
@@ -2316,7 +2346,7 @@ local function placeRock(folder: Folder, x: number, z: number, isCenterBridge: b
 		-- Place a decorative scatter rock scaled to ~6 studs tall (±30% jitter for variety)
 		if #scatters > 0 then
 			local template = scatters[math.random(1, #scatters)] :: BasePart
-			placeRockMesh(folder, template, x, z, 6, 0.3)
+			placeRockMesh(folder, template, x, z, nodeTargetHeight("Stone"), 0)
 		else
 			-- Fallback: procedural sphere rock
 			local baseY = getTerrainSurfaceY(x, z)
@@ -2339,7 +2369,8 @@ end
 -- Place an iron ore boulder at the given world position.
 local function placeIronOre(folder: Folder, x: number, z: number)
 	local baseY = getTerrainSurfaceY(x, z)
-	local r = math.random(3, 6)
+	-- Radius derived from the shared gameplay ore height (config-driven)
+	local r = nodeTargetHeight("Iron_Ore") / 1.4
 	local ore = Instance.new("Part")
 	ore.Name = "IronOre"
 	ore.Shape = Enum.PartType.Ball

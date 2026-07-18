@@ -15,6 +15,7 @@ local WallSystem = require(script.Parent.WallSystem)
 local RemoteEvents: Folder? = nil
 local placePathEvent: RemoteEvent? = nil
 local removeWallPieceEvent: RemoteEvent? = nil
+local rotateWallPieceEvent: RemoteEvent? = nil
 local getEndpointsEvent: RemoteFunction? = nil
 
 -- Create our wall system remote events
@@ -43,6 +44,7 @@ end
 local CONFIG = {
 	PieceTypes = {
 		Tower = "Stone_Wall_Small_Tower",
+		Tower45 = "Stone_Wall_Small_Tower_90_to_45", -- 45° corner variant (faces at local 0° and 135°)
 		Straight = "Stone_Wall_Straight",
 		Short = "Stone_Wall_Short_Straight",
 		Corner = "Stone_Wall_Small_Tower", -- No corner model, use tower
@@ -64,6 +66,42 @@ local CONFIG = {
 local wallEndpoints: { { position: Vector3, incomingDir: Vector3, pieceRef: Model } } = {}
 
 -- === HELPERS ===
+
+-- Reads the Tower45 template's ConnectionPoint markers for its real face bearings
+-- (cached). Falls back to {0°, 135°} if the template has no markers.
+local tower45FaceBearings: { number }? = nil
+local function getTower45FaceBearings(): { number }
+	if tower45FaceBearings then
+		return tower45FaceBearings
+	end
+
+	local bearings: { number } = { 0, math.rad(135) }
+	local Assets = ReplicatedStorage:FindFirstChild("Assets")
+	local Buildings = Assets and Assets:FindFirstChild("Buildings")
+	local template = Buildings and Buildings:FindFirstChild(CONFIG.PieceTypes.Tower45)
+	if template and template:IsA("Model") then
+		local pivot = template:GetPivot()
+		local folder = template:FindFirstChild("ConnectionPoints")
+		if folder then
+			local found: { number } = {}
+			for _, cp in folder:GetChildren() do
+				if cp:IsA("BasePart") and cp.Name == "ConnectionPoint" then
+					local localPos = pivot:PointToObjectSpace(cp.Position)
+					local flat = Vector3.new(localPos.X, 0, localPos.Z)
+					if flat.Magnitude > 0.05 then
+						table.insert(found, math.atan2(flat.X, flat.Z))
+					end
+				end
+			end
+			if #found >= 2 then
+				bearings = found
+			end
+		end
+	end
+
+	tower45FaceBearings = bearings
+	return bearings
+end
 
 local function getWallEndpoints(centerPos: Vector3, rotation: number, length: number): (Vector3, Vector3)
 	local cf = CFrame.new(centerPos) * CFrame.Angles(0, rotation, 0)
@@ -119,6 +157,19 @@ local function registerWallEndpoints(piece: Model, position: Vector3, rotation: 
 			incomingDir = Vector3.new(1, 0, 0),  -- Incoming from east
 			pieceRef = piece
 		})
+	elseif pieceType == "Tower45" then
+		-- 45° corner tower: face bearings read from the template's ConnectionPoint
+		-- markers (so they always match the real model), rotated by placed rotation
+		local offset = CONFIG.TowerRadius or 12
+		for _, localBearing in getTower45FaceBearings() do
+			local a = rotation + localBearing
+			local face = Vector3.new(math.sin(a), 0, math.cos(a))
+			table.insert(wallEndpoints, {
+				position = position + face * offset,
+				incomingDir = -face, -- points into the endpoint along the attached wall
+				pieceRef = piece,
+			})
+		end
 	end
 end
 
@@ -240,6 +291,10 @@ local function placeSinglePiece(pieceType: string, position: Vector3, rotation: 
 	end
 
 	local piece = template:Clone() :: Model
+	do
+		local BuildingScaleConfig = require(ReplicatedStorage.Shared.GameData.BuildingScaleConfig)
+		BuildingScaleConfig.applyToModel(piece)
+	end
 	piece.Name = pieceType .. "_" .. tostring(tick())
 
 	-- Mark as placed wall piece
@@ -282,6 +337,32 @@ local function placeSinglePiece(pieceType: string, position: Vector3, rotation: 
 	return piece
 end
 
+-- Maps a placed model's WallPieceType attribute back to a piece type key
+local function getPieceTypeFromModel(model: Model): string
+	local wallPieceType = model:GetAttribute("WallPieceType")
+	if wallPieceType then
+		local s = tostring(wallPieceType)
+		if string.find(s, "90_to_45") then
+			return "Tower45" -- must be checked before the generic "Tower" match
+		elseif string.find(s, "Tower") then
+			return "Tower"
+		elseif string.find(s, "Gatehouse") then
+			return "Gatehouse"
+		elseif string.find(s, "Short") then
+			return "Short"
+		elseif string.find(s, "Ladder") then
+			return "Ladder"
+		end
+	end
+	return "Straight"
+end
+
+-- Yaw (Y rotation) of a placed piece
+local function getYaw(cf: CFrame): number
+	local _, ry, _ = cf:ToEulerAnglesYXZ()
+	return ry
+end
+
 -- === EVENTS ===
 -- Event connections are set up in initialize() to avoid circular dependency
 
@@ -292,6 +373,7 @@ function WallSystemServer.initialize()
 	RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
 	placePathEvent = getOrCreateRemote("PlaceWallPath", "RemoteEvent") :: RemoteEvent
 	removeWallPieceEvent = getOrCreateRemote("RemoveWallPiece", "RemoteEvent") :: RemoteEvent
+	rotateWallPieceEvent = getOrCreateRemote("RotateWallPiece", "RemoteEvent") :: RemoteEvent
 	getEndpointsEvent = getOrCreateRemote("GetWallEndpoints", "RemoteFunction") :: RemoteFunction
 
 	-- Set up endpoint sync for clients
@@ -339,34 +421,49 @@ function WallSystemServer.initialize()
 		end
 	end)
 
+	rotateWallPieceEvent.OnServerEvent:Connect(function(player: Player, model: Instance, delta: any)
+		-- Validate the rotation delta (finite, at most 180°)
+		if typeof(delta) ~= "number" or delta ~= delta or math.abs(delta) > math.pi then
+			return
+		end
+		if not model or not model.Parent or not model:IsA("Model") then
+			return
+		end
+		if not model:FindFirstChild("PlacedPiece") or model:GetAttribute("OwnerId") ~= player.UserId then
+			return
+		end
+
+		local char = player.Character
+		local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if not root or not model.PrimaryPart then
+			return
+		end
+		if (model.PrimaryPart.Position - root.Position).Magnitude > CONFIG.MaxBuildDistance then
+			return
+		end
+
+		-- Rotate in place around the piece's own pivot
+		model:PivotTo(model:GetPivot() * CFrame.Angles(0, delta, 0))
+
+		-- Re-register snap endpoints with the new yaw
+		unregisterWallEndpoints(model)
+		local pieceType = getPieceTypeFromModel(model)
+		local pp = model.PrimaryPart :: BasePart
+		registerWallEndpoints(model, pp.Position, getYaw(pp.CFrame), pieceType)
+	end)
+
 	-- Initialize existing walls on server start
 	-- print("[WallSystemServer] Scanning for existing walls...")
 	local BuildingsFolder = Workspace:FindFirstChild("Buildings")
 	if BuildingsFolder then
 		for _, child in BuildingsFolder:GetChildren() do
 			local bType = child:GetAttribute("BuildingType")
-			local wallPieceType = child:GetAttribute("WallPieceType")
 			if bType and (bType == "Stone_Wall" or string.find(tostring(bType), "Wall")) and child:IsA("Model") then
-				-- Determine piece type from model name or attributes
-				local pieceType = "Straight" -- Default
-				if wallPieceType then
-					if string.find(wallPieceType, "Tower") then
-						pieceType = "Tower"
-					elseif string.find(wallPieceType, "Gatehouse") then
-						pieceType = "Gatehouse"
-					elseif string.find(wallPieceType, "Short") then
-						pieceType = "Short"
-					elseif string.find(wallPieceType, "Ladder") then
-						pieceType = "Ladder"
-					end
-				end
-
 				-- Register endpoints from existing walls
 				if child.PrimaryPart then
+					local pieceType = getPieceTypeFromModel(child)
 					local pos = child.PrimaryPart.Position
-					local _, _, _, _, _, _, m11, m12, m13 = child.PrimaryPart.CFrame:GetComponents()
-					local rotation = math.atan2(-m13, m11)
-					registerWallEndpoints(child, pos, rotation, pieceType)
+					registerWallEndpoints(child, pos, getYaw(child.PrimaryPart.CFrame), pieceType)
 				end
 			end
 		end

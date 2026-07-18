@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local WallGridConfig = require(ReplicatedStorage.Shared.WallGridConfig)
+local BuildingScaleConfig = require(ReplicatedStorage.Shared.GameData.BuildingScaleConfig)
 
 local WallSystem = {}
 
@@ -133,6 +134,9 @@ local function updateWallVisuals(x: number, z: number)
 	end
 
 	local newModel = originalAsset:Clone()
+	if newModel:IsA("Model") then
+		BuildingScaleConfig.applyToModel(newModel)
+	end
 
 	-- 5. Calculate Absolute Target Position
 	-- We want the new model to stay exactly where the placed wall currently is

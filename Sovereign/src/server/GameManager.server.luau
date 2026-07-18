@@ -1407,6 +1407,22 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 
 		GameManagerDebug:info(`{player.Name} successfully left game - all data cleaned up`)
 
+		-- If no one is left in-game, reset the shared map state so the next
+		-- match spawns fresh resource nodes instead of inheriting depleted ones.
+		local anyoneInGame = false
+		for _, otherPlayer in ipairs(Players:GetPlayers()) do
+			local otherData = PlayerManager.get(otherPlayer)
+			if otherData and otherData.GameState == "InGame" then
+				anyoneInGame = true
+				break
+			end
+		end
+		if not anyoneInGame then
+			ResourceNodeManager.clearAllNodes()
+			studioResourcePatchesSpawned = false
+			GameManagerDebug:info("Last player left game — cleared resource nodes for next match")
+		end
+
 		-- Notify client that cleanup is complete
 		GameEvent:FireClient(player, "GameLeft", {})
 	end

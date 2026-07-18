@@ -12,6 +12,7 @@ local WeatherManager = require(script.Parent.WeatherManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local WorkerPointSystem = require(script.Parent.Parent.Systems.WorkerPointSystem)
 local IdlePeasantManager = require(script.Parent.IdlePeasantManager)
+local ResourceNodeManager = require(script.Parent.ResourceNodeManager)
 
 local WorkerManager = {}
 
@@ -467,8 +468,18 @@ local function updateWorkerTasks(dt: number)
 				local arrivedAtNode = pathfindToPosition(task.worker, nodePos, 5)
 
 				if arrivedAtNode then
-					-- Gather from node
-					local gatherAmount = math.min(carryCapacity - task.resourcesCarrying, 1)
+					-- Gather from node, depleting it (nodes shrink/fade and are
+					-- destroyed by ResourceNodeManager when exhausted)
+					local wantAmount = math.min(carryCapacity - task.resourcesCarrying, 1)
+					local gatherAmount = ResourceNodeManager.gatherFromInstance(task.targetNode, wantAmount)
+
+					if gatherAmount <= 0 then
+						-- Node just ran dry (or isn't tracked); find another one
+						task.targetNode = nil
+						task.state = "Working"
+						continue
+					end
+
 					task.resourcesCarrying = task.resourcesCarrying + gatherAmount
 					task.worker:SetAttribute("ResourcesCarrying", task.resourcesCarrying)
 

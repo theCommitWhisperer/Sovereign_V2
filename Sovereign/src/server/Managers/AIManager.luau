@@ -8,6 +8,7 @@ local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local AIDebug = DebugManager.createChannel("AIManager", false)
 
 local GameData = require(ReplicatedStorage.Shared.GameData)
+local BuildingScaleConfig = require(ReplicatedStorage.Shared.GameData.BuildingScaleConfig)
 local UnitManager = require(script.Parent.UnitManager)
 local BuildingManager = require(script.Parent.BuildingManager)
 
@@ -588,7 +589,10 @@ function AIManager.placeBuilding(ownerId: number, buildingName: string, cframe: 
 	end
 
 	-- Create a temporary clone to measure bounding box (don't parent it yet)
+	-- Apply the global building scale so measurements match what
+	-- BuildingManager.createBuilding will actually spawn.
 	local tempModel = template:Clone()
+	BuildingScaleConfig.applyToModel(tempModel)
 	tempModel.Parent = nil -- Keep unparented for measurement
 
 	-- Get bounding box of the template
@@ -1069,7 +1073,7 @@ function AIManager.getValidBuildingPosition(ownerId: number, buildingName: strin
 
 		-- Check if position is clear (check against ALL buildings, units, and resources)
 		local isClear = true
-		local minimumBuildingDistance = 20 -- Distance from other buildings
+		local minimumBuildingDistance = BuildingScaleConfig.scaleDistance(20) -- Distance from other buildings
 		local minimumUnitDistance = 15 -- Distance from units (peasants, soldiers)
 		local minimumResourceDistance = 12 -- Distance from resource nodes (trees, stone)
 

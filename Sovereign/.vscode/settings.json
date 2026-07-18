@@ -10,5 +10,6 @@
   "[luau]": {
     "editor.formatOnSave": false,
     "editor.defaultFormatter": null
-  }
+  },
+  "stylua.targetReleaseVersion": "latest"
 }

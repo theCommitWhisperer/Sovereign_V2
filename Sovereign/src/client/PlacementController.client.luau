@@ -12,6 +12,7 @@ local camera = Workspace.CurrentCamera
 
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local WallGridConfig = require(ReplicatedStorage.Shared.WallGridConfig)
+local BuildingScaleConfig = require(ReplicatedStorage.Shared.GameData.BuildingScaleConfig)
 local PlacementDebug = DebugManager.createChannel("Placement", true)
 
 -- Events
@@ -393,6 +394,7 @@ local function updateGhostPosition()
 		if template and ghostBuilding.Name ~= assetName then
 			ghostBuilding:Destroy()
 			ghostBuilding = template:Clone()
+			BuildingScaleConfig.applyToModel(ghostBuilding)
 			ghostBuilding.Name = assetName
 			ghostBuilding.Parent = Workspace
 			for _, v in ghostBuilding:GetDescendants() do
@@ -635,6 +637,9 @@ local function startPlacement(buildingName: string)
 
 	if template then
 		ghostBuilding = template:Clone()
+		if ghostBuilding:IsA("Model") then
+			BuildingScaleConfig.applyToModel(ghostBuilding)
+		end
 		ghostBuilding.Name = "GhostBuildingPreview" -- Use a generic name to avoid conflicts
 		ghostBuilding.Parent = Workspace
 		for _, v in ghostBuilding:GetDescendants() do
@@ -656,7 +661,7 @@ local function startPlacement(buildingName: string)
 		-- buildings that have `model_asset_name = nil` in their data.
 		ghostBuilding = Instance.new("Part")
 		ghostBuilding.Name = "Ghost"
-		ghostBuilding.Size = info.size or Vector3.new(4, 4, 4) -- Use a default size if not defined
+		ghostBuilding.Size = (info.size or Vector3.new(4, 4, 4)) * BuildingScaleConfig.GlobalScale
 		ghostBuilding.Anchored = true
 		ghostBuilding.CanCollide = false
 		ghostBuilding.Transparency = 0.5

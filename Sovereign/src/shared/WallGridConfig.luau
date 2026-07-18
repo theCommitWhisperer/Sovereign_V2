@@ -78,9 +78,29 @@ WallGridConfig.PIECES = {
 }
 
 -- Grid configuration
-WallGridConfig.GRID_SIZE = 16 -- Each grid cell is 16x16 studs
+-- NOTE: model-derived distances scale with BuildingScaleConfig.GlobalScale
+-- (applied below) so the wall grid stays aligned with the scaled piece models.
+WallGridConfig.GRID_SIZE = 16 -- Each grid cell is 16x16 studs (at scale 1.0)
 WallGridConfig.SNAP_RADIUS = 20 -- How close connection points must be to snap
 WallGridConfig.CONNECTION_TOLERANCE = 4.0 -- Max distance for a valid connection
+
+-- Apply the global building scale to every model-derived measurement.
+-- Wall piece clones are scaled by the same factor at placement time, so the
+-- grid spacing, offsets, and tolerances must shrink in lockstep.
+do
+	local BuildingScaleConfig = require(script.Parent.GameData.BuildingScaleConfig)
+	local s = BuildingScaleConfig.GlobalScale
+	if s ~= 1 then
+		for _, piece in pairs(WallGridConfig.PIECES) do
+			piece.connectionPointOffset = piece.connectionPointOffset * s
+			piece.walkwayOffset = piece.walkwayOffset * s
+			piece.gridSpacing = piece.gridSpacing * s
+		end
+		WallGridConfig.GRID_SIZE = WallGridConfig.GRID_SIZE * s
+		WallGridConfig.SNAP_RADIUS = WallGridConfig.SNAP_RADIUS * s
+		WallGridConfig.CONNECTION_TOLERANCE = WallGridConfig.CONNECTION_TOLERANCE * s
+	end
+end
 
 -- Cardinal directions for grid-based neighbor checking
 WallGridConfig.DIRECTIONS = {

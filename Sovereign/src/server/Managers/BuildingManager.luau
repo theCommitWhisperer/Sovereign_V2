@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local GameData = require(ReplicatedStorage.Shared.GameData)
+local BuildingScaleConfig = require(ReplicatedStorage.Shared.GameData.BuildingScaleConfig)
 local PlayerManager = require(script.Parent.PlayerManager)
 local SpawnManager = require(script.Parent.SpawnManager)
 local WallSystem = require(script.Parent.Parent.Systems.WallSystem)
@@ -167,7 +168,8 @@ function BuildingManager.createBuilding(
 	end
 
 	-- Check for collisions with existing buildings and units
-	if not isPositionClear(cframe.Position, 25) then
+	-- (clearance shrinks with the global building scale)
+	if not isPositionClear(cframe.Position, BuildingScaleConfig.scaleDistance(25)) then
 		channel:warn(`{ownerName} cannot build {buildingName} - position blocked by existing structure or unit`)
 		return nil
 	end
@@ -201,6 +203,11 @@ function BuildingManager.createBuilding(
 		local foundTemplate = buildingAssets:FindFirstChild(assetName)
 		if foundTemplate then
 			modelAsset = foundTemplate:Clone()
+
+			-- Global building miniaturisation (see BuildingScaleConfig)
+			if modelAsset:IsA("Model") then
+				BuildingScaleConfig.applyToModel(modelAsset)
+			end
 
 			-- Ensure all ConnectionPoints are non-collidable and NOT anchored so they move with the model pivot.
 			local connectionPointsFolder = modelAsset:FindFirstChild("ConnectionPoints")
@@ -238,7 +245,7 @@ function BuildingManager.createBuilding(
 
 		local part = Instance.new("Part")
 		part.Name = "MainPart"
-		part.Size = buildingInfo.size
+		part.Size = buildingInfo.size * BuildingScaleConfig.GlobalScale
 		part.CFrame = cframe
 		part.Anchored = true
 		part.Material = Enum.Material.Wood
