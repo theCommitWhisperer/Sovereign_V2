@@ -1042,7 +1042,9 @@ function HUD:render()
 			BackgroundTransparency = 1, -- Transparent to show background images
 			BorderSizePixel = 0,
 			ZIndex = 10,
-			Visible = not isArenaMode, -- Battle Arena: no build/economy bar
+			-- Battle Arena: bar appears only with units selected, so players get
+			-- formations/stances/selection controls but no build/economy UI
+			Visible = not isArenaMode or hasUnitsSelected,
 		}, {
 
 			MainBackground = React.createElement("ImageLabel", {
@@ -1630,6 +1632,10 @@ function HUD:render()
 		-- Tutorial Modal (required buildings guide)
 		-- Step 1 (Keep) always shows, Steps 2-3 only if tutorialEnabled
 		TutorialModal = (function()
+			-- Battle Arena: no buildings, no Keep — never show the tutorial modal
+			if isArenaMode then
+				return nil
+			end
 			-- Determine if modal should be shown
 			local isKeepStep = self.state.tutorialStep == 1
 			local showKeep = isKeepStep and self.state.showKeepModal

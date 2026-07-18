@@ -174,6 +174,19 @@ function MovementSystem.update()
 						speed = math.clamp(humanoid.WalkSpeed, 1, 100)
 					end
 
+					-- No pathfinding grid (e.g. Battle Arena — flat ground, no map):
+					-- walk straight at the target instead of standing still forever.
+					if not PathfindingIntegration.isInitialized() and targetChanged then
+						if humanoid then
+							humanoid:MoveTo(targetPos)
+						end
+						unitPaths[unit] = {
+							path = { targetPos },
+							index = 1,
+						}
+						lastTargetPositions[unit] = targetPos
+					end
+
 					-- Start or restart pathfinding if target changed
 					if PathfindingIntegration.isInitialized() and targetChanged then
 						-- Check if we should retry pathfinding (retry limiting)
