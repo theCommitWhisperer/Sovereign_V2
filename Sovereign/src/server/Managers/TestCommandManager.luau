@@ -19,6 +19,7 @@ local NotificationManager = require(script.Parent.NotificationManager)
 local UnitManager = require(script.Parent.UnitManager)
 local BuildingManager = require(script.Parent.BuildingManager)
 local FogOfWarManager = require(script.Parent.FogOfWarManager)
+local CombatSandbox = require(script.Parent.Parent.Combat.CombatSandbox)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
 local TestDebug = DebugManager.createChannel("TestCommands", false)
@@ -244,6 +245,41 @@ local function cmdFogOfWar(player: Player, args: { string })
 	end
 end
 
+-- Command: Build combat arena and teleport there
+local function cmdArena(player: Player, args: { string })
+	CombatSandbox.setupArena(player)
+	NotificationManager.success(player, "Arena Ready", "Combat arena created. Use /battle to spawn armies.")
+	TestDebug:info(`{player.Name} set up combat arena`)
+end
+
+-- Command: Spawn an instant battle
+local function cmdBattle(player: Player, args: { string })
+	local specText = table.concat(args, " ")
+	if specText == "" then
+		NotificationManager.info(
+			player,
+			"Usage",
+			"/battle 10xSpearman,5xArcher vs 12xViking [@Faction]\nSide A is yours, side B is the enemy."
+		)
+		return
+	end
+
+	local err = CombatSandbox.startBattle(player, specText)
+	if err then
+		NotificationManager.warning(player, "Battle Error", err)
+	else
+		NotificationManager.success(player, "Battle Started", "Armies spawned — fight!")
+	end
+	TestDebug:info(`{player.Name} started battle: {specText}`)
+end
+
+-- Command: Kill every combat unit
+local function cmdKillAll(player: Player, args: { string })
+	CombatSandbox.killAll()
+	NotificationManager.success(player, "Cleared", "All combat units removed")
+	TestDebug:info(`{player.Name} cleared all combat units`)
+end
+
 -- Command: Show all commands
 local function cmdHelp(player: Player, args: { string })
 	local helpText = [[
@@ -259,6 +295,9 @@ TEST COMMANDS:
 /skiptime - Advance season and weather
 /testnotify - Test all notification types
 /fog [on|off] - Toggle fog of war
+/arena - Build combat test arena
+/battle [spec] vs [spec] - Instant battle (e.g. /battle 10xSpearman vs 12xViking)
+/killall - Remove all combat units
 /help - Show this help
 ]]
 
@@ -278,6 +317,9 @@ local COMMANDS = {
 	skiptime = cmdSkipTime,
 	testnotify = cmdTestNotify,
 	fog = cmdFogOfWar,
+	arena = cmdArena,
+	battle = cmdBattle,
+	killall = cmdKillAll,
 	help = cmdHelp,
 }
 
