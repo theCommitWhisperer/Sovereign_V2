@@ -281,30 +281,15 @@ local function onUnitKilled(victim: CombatUnit, _killer: CombatUnit?)
 	end
 end
 
-function CombatSandbox.startBattle(player: Player, specText: string): string?
-	-- Optional enemy faction override: "... @Empire"
-	local enemyFaction = DEFAULT_ENEMY_FACTION
-	local factionOverride = string.match(specText, "@(%a+)%s*$")
-	if factionOverride then
-		enemyFaction = factionOverride
-		specText = string.gsub(specText, "@%a+%s*$", "")
-	end
-
-	specText = string.gsub(specText, "%s+[vV][sS]%s+", " vs ")
-	local sides = string.split(specText, " vs ")
-	if #sides ~= 2 then
-		return 'Usage: /battle 10xSpearman,5xArcher vs 12xViking [@Faction]'
-	end
-
-	local armyA, errA = CombatSandbox.parseArmySpec(sides[1])
-	if not armyA then
-		return `Side A: {errA}`
-	end
-	local armyB, errB = CombatSandbox.parseArmySpec(sides[2])
-	if not armyB then
-		return `Side B: {errB}`
-	end
-
+-- Spawn two armies from parsed specs and track the battle. Shared by the chat
+-- command path and the Battle Arena UI path (ArenaMode).
+function CombatSandbox.startBattleWithArmies(
+	player: Player,
+	armyA: ArmySpec,
+	armyB: ArmySpec,
+	enemyFactionOverride: string?
+): string?
+	local enemyFaction = enemyFactionOverride or DEFAULT_ENEMY_FACTION
 	local center = CombatSandbox.setupArena(player)
 
 	-- Side A must get an explicit hostile-capable faction: most UnitsData entries
@@ -315,8 +300,8 @@ function CombatSandbox.startBattle(player: Player, specText: string): string?
 	local lineA = center + Vector3.new(0, 0, -ARMY_GAP / 2)
 	local lineB = center + Vector3.new(0, 0, ARMY_GAP / 2)
 
-	local sideA = spawnArmy(armyA :: ArmySpec, player.UserId, playerFaction, lineA, -1)
-	local sideB = spawnArmy(armyB :: ArmySpec, ENEMY_OWNER_ID, enemyFaction, lineB, 1)
+	local sideA = spawnArmy(armyA, player.UserId, playerFaction, lineA, -1)
+	local sideB = spawnArmy(armyB, ENEMY_OWNER_ID, enemyFaction, lineB, 1)
 
 	activeBattle = {
 		startTime = os.clock(),
@@ -339,6 +324,33 @@ function CombatSandbox.startBattle(player: Player, specText: string): string?
 		enemyFaction = enemyFaction,
 	})
 	return nil -- no error
+end
+
+function CombatSandbox.startBattle(player: Player, specText: string): string?
+	-- Optional enemy faction override: "... @Empire"
+	local enemyFaction: string? = nil
+	local factionOverride = string.match(specText, "@(%a+)%s*$")
+	if factionOverride then
+		enemyFaction = factionOverride
+		specText = string.gsub(specText, "@%a+%s*$", "")
+	end
+
+	specText = string.gsub(specText, "%s+[vV][sS]%s+", " vs ")
+	local sides = string.split(specText, " vs ")
+	if #sides ~= 2 then
+		return 'Usage: /battle 10xSpearman,5xArcher vs 12xViking [@Faction]'
+	end
+
+	local armyA, errA = CombatSandbox.parseArmySpec(sides[1])
+	if not armyA then
+		return `Side A: {errA}`
+	end
+	local armyB, errB = CombatSandbox.parseArmySpec(sides[2])
+	if not armyB then
+		return `Side B: {errB}`
+	end
+
+	return CombatSandbox.startBattleWithArmies(player, armyA :: ArmySpec, armyB :: ArmySpec, enemyFaction)
 end
 
 function CombatSandbox.killAll()

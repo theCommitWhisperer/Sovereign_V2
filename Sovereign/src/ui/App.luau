@@ -13,6 +13,7 @@ local VictoryScreen = require(script.Parent.screens.PostGame.VictoryScreen)
 local DefeatScreen = require(script.Parent.screens.PostGame.DefeatScreen)
 local Keybindings = require(script.Parent.screens.Keybindings.Keybindings)
 local MapEditor = require(script.Parent.screens.MapEditor.MapEditor)
+local BattleSetup = require(script.Parent.screens.HUD.BattleSetup)
 
 -- Components
 local Tooltip = require(script.Parent.components.Tooltip)
@@ -71,7 +72,15 @@ function App:render()
 
 	local tooltipApi = self.tooltipRef and self.tooltipRef.current and self.tooltipRef.current.api
 
+	-- Battle Arena mode: overlay the army builder on top of the HUD
+	local isBattleArena = self.state.route == "hud"
+		and self.state.gameStartData ~= nil
+		and self.state.gameStartData.mode == "BattleArena"
+
 	return React.createElement(React.Fragment, {}, {
+		BattleSetup = isBattleArena and React.createElement(BattleSetup, {
+			armyCap = self.state.gameStartData.armyCap,
+		}) or nil,
 		ErrorBoundary = React.createElement(ErrorBoundary, {}, {
 			Router = React.createElement(Router, {
 				route = self.state.route,

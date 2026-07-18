@@ -91,6 +91,36 @@ MapData.Maps = {
 		},
 	} :: MapConfig,
 
+	-- Combat testing mode — no economy, no buildings. Players load straight into
+	-- a flat arena with the Battle Setup panel and spawn armies to fight.
+	-- Handled by ArenaMode on the server (GameManager branches before terrain).
+	["BattleArena"] = {
+		Name = "⚔ Battle Arena",
+		Description = "Combat testing grounds. Skip the economy — build two armies and watch them clash. Great for learning unit matchups.",
+		Size = 400,
+		TerrainType = "Arena",
+		MaxPlayers = 4,
+		QuadrantSize = 200,
+		NeutralZoneWidth = 0,
+		SpawnHeight = 5,
+		ResourceDensity = {
+			Wood = 0,
+			Stone = 0,
+			Food = 0,
+			Iron_Ore = 0,
+		},
+		Features = {
+			HasCentralLake = false,
+			HasMountains = false,
+			HasForests = false,
+			HasRivers = false,
+		},
+		PreviewColors = {
+			Base = { 150, 125, 85 },
+			Accent = { 200, 170, 90 },
+		},
+	} :: MapConfig,
+
 }
 
 -- Sentinel entry used when a player selects one of their own editor-saved maps in the lobby.

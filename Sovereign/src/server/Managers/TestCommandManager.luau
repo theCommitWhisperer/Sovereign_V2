@@ -345,19 +345,37 @@ function TestCommandManager.processCommand(player: Player, commandText: string)
 	end
 end
 
--- Initialize test command system
-function TestCommandManager.init()
-	-- Listen for test commands from client
-	local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
-	local GameEvent = RemoteEvents:WaitForChild("GameEvent")
-
-	GameEvent.OnServerEvent:Connect(function(player, action, data)
-		if action == "TestCommand" and typeof(data) == "string" then
-			TestCommandManager.processCommand(player, data)
+-- Hook a player's chat: any message starting with "/" is treated as a command
+local function hookPlayerChat(player: Player)
+	player.Chatted:Connect(function(message)
+		if string.sub(message, 1, 1) == "/" then
+			TestCommandManager.processCommand(player, string.sub(message, 2))
 		end
 	end)
+end
 
-	TestDebug:info("TestCommandManager initialized")
+-- Initialize test command system
+function TestCommandManager.init()
+	-- Listen for test commands from client (remote path, e.g. from dev UI)
+	task.spawn(function()
+		local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
+		local GameEvent = RemoteEvents:WaitForChild("GameEvent")
+
+		GameEvent.OnServerEvent:Connect(function(player, action, data)
+			if action == "TestCommand" and typeof(data) == "string" then
+				TestCommandManager.processCommand(player, data)
+			end
+		end)
+	end)
+
+	-- Chat path: "/battle 10xSpearman vs 12xViking" straight from the chat bar.
+	-- Player.Chatted fires for TextChatService messages too (compat behavior).
+	for _, player in Players:GetPlayers() do
+		hookPlayerChat(player)
+	end
+	Players.PlayerAdded:Connect(hookPlayerChat)
+
+	TestDebug:info("TestCommandManager initialized (chat + remote)")
 end
 
 return TestCommandManager

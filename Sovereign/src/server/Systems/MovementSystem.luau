@@ -326,7 +326,14 @@ function MovementSystem.setConfig(key, value)
 	end
 end
 
+local movementLoopStarted = false
+
 function MovementSystem.startLoop()
+	-- Idempotent: ArenaMode and GameManager may both call this
+	if movementLoopStarted then
+		return
+	end
+	movementLoopStarted = true
 	RunService.Heartbeat:Connect(function()
 		MovementSystem.update()
 	end)

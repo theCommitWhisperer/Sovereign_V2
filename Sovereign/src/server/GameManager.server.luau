@@ -104,6 +104,7 @@ local DashboardSystem = require(Systems.DashboardSystem)
 local VictorySystem = require(Systems.VictorySystem)
 local WallSystemServer = require(Systems.WallSystemServer)
 local TerrainGenerator = require(Systems.TerrainGenerator)
+local ArenaMode = require(script.Parent.Combat.ArenaMode)
 
 -- Initialize systems
 PopulationSystem.init()
@@ -158,6 +159,7 @@ local workerLoopStarted = false
 -- Initialize systems that depend on RemoteEvents
 WallSystemServer.initialize()
 TestCommandManager.init()
+ArenaMode.init()
 GameManagerDebug:info("RemoteEvents-dependent systems initialized")
 
 -- Start fog of war updates
@@ -558,6 +560,13 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		local selectedMap = settings.map or "TheIslands"
 		local showTutorial = if settings.showTutorial ~= nil then settings.showTutorial else true
 		local factionFromSettings = settings.faction -- From multiplayer lobby
+
+		-- Battle Arena mode: no terrain, no Keep, no economy. ArenaMode handles
+		-- the whole session (arena build, army spawning, GameStarted event).
+		if selectedMap == "BattleArena" then
+			ArenaMode.startForPlayer(player, playerData, settings)
+			return
+		end
 
 		-- Set the active map and configure SpawnManager
 		if not MapManager.setMap(selectedMap) then
