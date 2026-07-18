@@ -120,28 +120,51 @@ function ArenaMode.startForPlayer(player: Player, playerData: any, settings: any
 
 	ensureLoopsStarted()
 
-	-- Build the arena and bring the player's character there
-	CombatSandbox.setupArena(player)
+	-- Build the arena
+	local arenaCenter = CombatSandbox.setupArena(player)
 
-	-- Fire GameStarted so the client routes to HUD + shows the Battle Setup panel
-	local remoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
-	local gameEvent = remoteEvents:WaitForChild("GameEvent") :: RemoteEvent
-	gameEvent:FireClient(player, "GameStarted", {
-		mode = "BattleArena",
-		faction = faction,
-		resources = playerData.Resources or {},
-		showTutorial = false,
-		spawnZone = 0,
-		peaceTimeSeconds = 0,
-		victoryCondition = "None",
-		armyCap = maxPerSide,
-	})
+	-- The client camera initializes at the character's position when GameStarted
+	-- arrives — so the character MUST be standing at the arena before we fire it,
+	-- or the player stares at open water while armies fight 1500 studs away.
+	task.spawn(function()
+		local character = player.Character
+		if not character or not character.Parent then
+			local deadline = os.clock() + 8
+			repeat
+				task.wait(0.1)
+				character = player.Character
+			until (character and character.Parent) or os.clock() > deadline
+		end
 
-	NotificationManager.info(
-		player,
-		"Battle Arena",
-		"Open the Battle Setup panel to build two armies, then hit FIGHT. No economy here — just combat."
-	)
+		local viewPos = arenaCenter + Vector3.new(0, 6, 150)
+		if character and character.Parent then
+			character:PivotTo(CFrame.lookAt(viewPos, arenaCenter + Vector3.new(0, 3, 0)))
+			-- Give replication a beat so the client camera reads the new position
+			task.wait(0.2)
+		end
+
+		-- Fire GameStarted so the client routes to HUD + shows the Battle Setup panel
+		local remoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
+		local gameEvent = remoteEvents:WaitForChild("GameEvent") :: RemoteEvent
+		gameEvent:FireClient(player, "GameStarted", {
+			mode = "BattleArena",
+			faction = faction,
+			resources = playerData.Resources or {},
+			showTutorial = false,
+			spawnZone = 0,
+			peaceTimeSeconds = 0,
+			victoryCondition = "None",
+			armyCap = maxPerSide,
+			zoneCenter = arenaCenter,
+			zoneRadius = 200,
+		})
+
+		NotificationManager.info(
+			player,
+			"Battle Arena",
+			"Open the Battle Setup panel to build two armies, then hit FIGHT. No economy here — just combat."
+		)
+	end)
 
 	ArenaDebug:info("Player entered Battle Arena", { player = player.Name, faction = faction })
 end

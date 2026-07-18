@@ -1010,6 +1010,11 @@ function HUD:render()
 		Industry = "🔨",
 	}
 
+	-- Battle Arena mode: no economy — hide resource bars, build menus, meters,
+	-- quests, and undo. BattleLog and notifications stay (combat-relevant).
+	local isArenaMode = self.props.gameStartData ~= nil
+		and self.props.gameStartData.mode == "BattleArena"
+
 	return React.createElement("ScreenGui", {
 		Name = "HUDGui",
 		ResetOnSpawn = false,
@@ -1017,7 +1022,7 @@ function HUD:render()
 		IgnoreGuiInset = true,
 	}, {
 		-- ===== TOP BAR =====
-		TopBar = React.createElement(TopBar, {
+		TopBar = not isArenaMode and React.createElement(TopBar, {
 			resources = self.state.resources,
 			honor = self.state.honor,
 			glory = self.state.glory,
@@ -1026,7 +1031,7 @@ function HUD:render()
 			weather = self.state.weather,
 			peaceTimeRemaining = self.state.peaceTimeRemaining,
 			victoryCondition = self.state.victoryCondition,
-		}),
+		}) or nil,
 
 		-- ===== BOTTOM BAR ===== (Delete/Policies | Minimap | 5 Categories | Content Area)
 		BottomBar = React.createElement("Frame", {
@@ -1037,6 +1042,7 @@ function HUD:render()
 			BackgroundTransparency = 1, -- Transparent to show background images
 			BorderSizePixel = 0,
 			ZIndex = 10,
+			Visible = not isArenaMode, -- Battle Arena: no build/economy bar
 		}, {
 
 			MainBackground = React.createElement("ImageLabel", {
@@ -1277,6 +1283,7 @@ function HUD:render()
 			),
 			BackgroundTransparency = 1,
 			ZIndex = 10,
+			Visible = not isArenaMode, -- Battle Arena: no happiness/revolt meters
 		}, {
 			-- Expand/Collapse button (arrow at top, narrower)
 			ExpandButton = React.createElement(IconButton, {
@@ -1467,10 +1474,10 @@ function HUD:render()
 			end,
 		}) or nil,
 
-		-- Quest Tracker (right side panel, always visible)
-		QuestTrackerPanel = React.createElement(QuestTracker, {
+		-- Quest Tracker (right side panel; hidden in Battle Arena)
+		QuestTrackerPanel = not isArenaMode and React.createElement(QuestTracker, {
 			quests = self.state.activeQuests or {},
-		}),
+		}) or nil,
 
 		-- Achievement Notification (overlay, conditionally rendered)
 		AchievementNotificationOverlay = self.state.achievementData and React.createElement(AchievementNotification, {
@@ -1591,8 +1598,8 @@ function HUD:render()
 				})
 			or nil,
 
-		-- Undo Button (bottom-right, above minimap)
-		UndoButton = React.createElement(UndoButton, {
+		-- Undo Button (bottom-right, above minimap; hidden in Battle Arena)
+		UndoButton = not isArenaMode and React.createElement(UndoButton, {
 			history = self.state.deletionHistory,
 			onUndo = function()
 				if #self.state.deletionHistory > 0 then
