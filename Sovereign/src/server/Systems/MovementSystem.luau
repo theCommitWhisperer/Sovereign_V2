@@ -162,6 +162,23 @@ function MovementSystem.update()
 						-- Arrived at destination
 						unit:SetAttribute("IsMoving", false)
 						unit:SetAttribute("TargetPosition", nil)
+
+						-- Formation slot: snap exactly onto it and face the way the
+						-- formation faces — this is what makes ranks read as clean
+						-- lines instead of a loose crowd pointing everywhere
+						local formationFacing = unit:GetAttribute("FormationFacing")
+						if typeof(formationFacing) == "Vector3" then
+							local currentPos = unit.PrimaryPart.Position
+							local snapPos = Vector3.new(targetPos.X, currentPos.Y, targetPos.Z)
+							local flatFacing = Vector3.new(formationFacing.X, 0, formationFacing.Z)
+							if flatFacing.Magnitude > 0.01 then
+								unit:PivotTo(CFrame.lookAt(snapPos, snapPos + flatFacing))
+							else
+								unit:PivotTo(CFrame.new(snapPos))
+							end
+							unit:SetAttribute("FormationFacing", nil)
+						end
+
 						cleanupUnit(unit)
 						MovementDebug:info("Unit " .. unit.Name .. " arrived at destination")
 						return

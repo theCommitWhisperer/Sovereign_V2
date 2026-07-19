@@ -12,7 +12,17 @@ local FormationDebug = DebugManager.createChannel("Formation", false)
 local FormationManager = {}
 
 -- Formation types
-export type FormationType = "ShieldWall" | "Wedge" | "Circle" | "Schiltron" | "Loose" | "Line" | "Column"
+export type FormationType =
+	"ShieldWall"
+	| "Wedge"
+	| "Circle"
+	| "Schiltron"
+	| "Loose"
+	| "Line"
+	| "Column"
+	| "Phalanx"
+	| "Crescent"
+	| "Skirmish"
 
 export type Formation = {
 	type: FormationType,
@@ -114,6 +124,48 @@ local FORMATIONS = {
 		},
 		minUnits = 2,
 		description = "Standard battle line",
+	},
+	Phalanx = {
+		-- Deep infantry block: narrow front, four ranks
+		shape = "line",
+		rows = 4,
+		spacing = 4,
+		bonuses = {
+			attack = 1.1,
+			defense = 1.3,
+			speed = 0.6,
+			morale = 1.2,
+		},
+		minUnits = 8,
+		description = "Deep four-rank block for holding ground",
+	},
+	Crescent = {
+		-- Enveloping arc, wings pushed forward
+		shape = "arc",
+		rows = 1,
+		spacing = 4,
+		bonuses = {
+			attack = 1.2,
+			defense = 1.0,
+			speed = 0.9,
+			morale = 1.1,
+		},
+		minUnits = 6,
+		description = "Crescent with forward wings for envelopment",
+	},
+	Skirmish = {
+		-- Staggered checkerboard, hard to hit with volleys
+		shape = "staggered",
+		rows = 3,
+		spacing = 6,
+		bonuses = {
+			attack = 1.0,
+			defense = 0.85,
+			speed = 1.25,
+			morale = 0.95,
+		},
+		minUnits = 4,
+		description = "Staggered open order for skirmishers",
 	},
 	Column = {
 		-- Marching formation - multiple files side-by-side
@@ -225,6 +277,32 @@ local function calculateFormationPositions(
 
 			positions[unit] = center + lateralOffset + depthOffset
 		end
+	elseif config.shape == "arc" then
+		-- Crescent: units along an arc with the wings pushed FORWARD (toward
+		-- the enemy) for envelopment. Center of the crescent sits at `center`.
+		local span = math.rad(140)
+		local arcLength = math.max(unitCount - 1, 1) * config.spacing
+		local radius = arcLength / span
+
+		for i, unit in ipairs(units) do
+			local t = if unitCount > 1 then (i - 1) / (unitCount - 1) else 0.5
+			local angle = -span / 2 + span * t
+			local offset = rightVector * (math.sin(angle) * radius)
+				+ facing * ((1 - math.cos(angle)) * radius)
+			positions[unit] = center + offset
+		end
+	elseif config.shape == "staggered" then
+		-- Checkerboard: like a line but alternate rows shifted half a space
+		local unitsPerRow = math.ceil(unitCount / config.rows)
+		for i, unit in ipairs(units) do
+			local row = math.floor((i - 1) / unitsPerRow)
+			local col = (i - 1) % unitsPerRow - (unitsPerRow - 1) / 2
+			local stagger = (row % 2) * config.spacing * 0.5
+
+			local offset = rightVector * (col * config.spacing + stagger)
+				+ facing * (-row * config.spacing)
+			positions[unit] = center + offset
+		end
 	elseif config.shape == "scatter" then
 		-- Random scatter within area
 		for i, unit in ipairs(units) do
@@ -283,6 +361,45 @@ local function optimizeSlotAssignments(
 	for _, unit in ipairs(units) do
 		if positions[unit] and not optimized[unit] then
 			optimized[unit] = positions[unit]
+		end
+	end
+
+	-- 2-opt refinement: keep swapping any pair of assignments that lowers the
+	-- total squared travel distance. Removes the path crossings greedy leaves
+	-- behind, so units walk near-parallel lanes into position.
+	local unitList: { Model } = {}
+	for _, unit in ipairs(units) do
+		if optimized[unit] and unit.PrimaryPart then
+			table.insert(unitList, unit)
+		end
+	end
+
+	local function travelSq(unit: Model, slot: Vector3): number
+		local pos = (unit.PrimaryPart :: BasePart).Position
+		local dx = pos.X - slot.X
+		local dz = pos.Z - slot.Z
+		return dx * dx + dz * dz
+	end
+
+	local passes = 0
+	local improved = true
+	while improved and passes < 6 do
+		improved = false
+		passes += 1
+		for i = 1, #unitList - 1 do
+			local unitA = unitList[i]
+			for j = i + 1, #unitList do
+				local unitB = unitList[j]
+				local slotA = optimized[unitA]
+				local slotB = optimized[unitB]
+				local currentCost = travelSq(unitA, slotA) + travelSq(unitB, slotB)
+				local swappedCost = travelSq(unitA, slotB) + travelSq(unitB, slotA)
+				if swappedCost < currentCost - 0.01 then
+					optimized[unitA] = slotB
+					optimized[unitB] = slotA
+					improved = true
+				end
+			end
 		end
 	end
 

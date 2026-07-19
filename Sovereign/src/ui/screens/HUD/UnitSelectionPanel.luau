@@ -6,9 +6,14 @@ local UnitSelectionPanel = React.Component:extend("UnitSelectionPanel")
 -- Formation types (must match FormationManager names)
 local FORMATIONS = {
 	{ name = "Line", icon = "━━━", tooltip = "Line Formation" },
+	{ name = "Phalanx", icon = "▤", tooltip = "Phalanx — deep four-rank block" },
 	{ name = "Column", icon = "║", tooltip = "Column Formation" },
 	{ name = "ShieldWall", icon = "🛡️", tooltip = "Shield Wall" },
 	{ name = "Wedge", icon = "▶", tooltip = "Wedge Formation" },
+	{ name = "Crescent", icon = "◠", tooltip = "Crescent — enveloping wings" },
+	{ name = "Circle", icon = "◯", tooltip = "Circle — all-round defense" },
+	{ name = "Schiltron", icon = "▦", tooltip = "Schiltron — dense pike square" },
+	{ name = "Skirmish", icon = "⁘", tooltip = "Skirmish — staggered open order" },
 	{ name = "Loose", icon = "⋯", tooltip = "Loose Formation" },
 }
 
@@ -81,13 +86,12 @@ function UnitSelectionPanel:render()
 		})
 	end
 
-	-- Create formation control elements
+	-- Create formation control elements (grid: 10 formations wrap into rows)
 	local formationControls = {}
-	formationControls.Layout = React.createElement("UIListLayout", {
-		FillDirection = Enum.FillDirection.Horizontal,
+	formationControls.Layout = React.createElement("UIGridLayout", {
+		CellSize = UDim2.new(0, 36, 0, 36),
+		CellPadding = UDim2.new(0, 5, 0, 5),
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
-		VerticalAlignment = Enum.VerticalAlignment.Center,
-		Padding = UDim.new(0, 8),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	})
 
@@ -95,13 +99,12 @@ function UnitSelectionPanel:render()
 		local isSelected = self.props.selectedFormation == formation.name
 		formationControls[formation.name] = React.createElement("TextButton", {
 			Name = formation.name .. "Button",
-			Size = UDim2.new(0, UIConfig.HUD.FormationButtonSize, 0, UIConfig.HUD.FormationButtonSize),
 			BackgroundColor3 = isSelected and UIConfig.HUD.CategoryButtonSelected or UIConfig.HUD.FormationButtonBackground,
 			BorderSizePixel = 2,
 			BorderColor3 = isSelected and Color3.fromRGB(255, 200, 100) or UIConfig.HUD.FormationButtonBorder,
 			Text = formation.icon,
 			Font = Enum.Font.GothamBold,
-			TextSize = 20,
+			TextSize = 16,
 			TextColor3 = UIConfig.HUD.PanelTextColor,
 			LayoutOrder = i,
 			[React.Event.MouseButton1Click] = function()

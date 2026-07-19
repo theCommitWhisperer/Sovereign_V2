@@ -887,6 +887,14 @@ local function updateUnit(unitModel: Model, unit: CombatUnit, now: number)
 			end
 		end
 
+		-- Combat movement supersedes any stale formation-move state
+		if unitModel:GetAttribute("FormationFacing") ~= nil then
+			unitModel:SetAttribute("FormationFacing", nil)
+		end
+		if unitModel:GetAttribute("ArrivalDistance") ~= nil then
+			unitModel:SetAttribute("ArrivalDistance", nil)
+		end
+
 		-- Close the distance (MovementSystem consumes these attributes).
 		-- Melee units aim for a personal ring slot around the target so
 		-- attackers surround it instead of stacking on one point.
