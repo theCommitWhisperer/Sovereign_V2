@@ -16,7 +16,7 @@ local CONFIG = {
 	TARGET_CHANGE_THRESHOLD = 5, -- Studs - how far target must move to recalculate
 	ARRIVAL_DISTANCE = 5, -- Studs - distance to consider "arrived"
 	DEFAULT_SPEED = 16, -- Studs per second
-	MAX_UNITS_PER_FRAME = 50, -- Throttle to prevent lag spikes
+	MAX_UNITS_PER_FRAME = 100, -- Throttle to prevent lag spikes (round-robin resumes across frames)
 	ENABLE_PERFORMANCE_MONITORING = true,
 	STUCK_DETECTION_TIME = 10, -- Seconds before considering a unit stuck (was 5 — too aggressive for RTS)
 	STUCK_DISTANCE_THRESHOLD = 2, -- Studs - if unit moves less than this in STUCK_DETECTION_TIME
@@ -106,6 +106,12 @@ local function cleanupUnit(unit)
 	PathfindingIntegration.unregisterMover(unit)
 end
 
+-- Round-robin resume point: the old throttle iterated GetChildren() in a
+-- FIXED order and broke after MAX_UNITS_PER_FRAME — with more movers than
+-- the budget, the same units were processed every frame and the rest NEVER
+-- received a move command (permanently stuck).
+local roundRobinIndex = 1
+
 -- Update all moving units using A* pathfinding
 function MovementSystem.update()
 	local unitsFolder = workspace:FindFirstChild("Units")
@@ -113,16 +119,32 @@ function MovementSystem.update()
 		return
 	end
 
-	local unitsProcessedThisFrame = 0
+	local children = unitsFolder:GetChildren()
+	local totalChildren = #children
+	if totalChildren == 0 then
+		return
+	end
+	if roundRobinIndex > totalChildren then
+		roundRobinIndex = 1
+	end
 
-	-- Process each unit that wants to move
-	for _, unit in unitsFolder:GetChildren() do
+	local unitsProcessedThisFrame = 0
+	local visited = 0
+	local childIndex = roundRobinIndex
+
+	-- Process each unit that wants to move, resuming where last frame stopped
+	while visited < totalChildren do
+		local unit = children[childIndex]
+		childIndex = childIndex % totalChildren + 1
+		visited += 1
+
 		if not unit:IsA("Model") then
 			continue
 		end
 
-		-- Throttle processing to prevent lag
+		-- Throttle processing to prevent lag; resume from here next frame
 		if unitsProcessedThisFrame >= CONFIG.MAX_UNITS_PER_FRAME then
+			roundRobinIndex = childIndex
 			MovementDebug:warn("Unit processing throttled - too many units this frame")
 			break
 		end

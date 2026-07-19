@@ -139,6 +139,15 @@ function ArenaMode.startForPlayer(player: Player, playerData: any, settings: any
 		if humanoidRootPart then
 			humanoidRootPart.CFrame = spawnCFrame * CFrame.new(0, 3, 0)
 		end
+
+		-- Character joins the Units collision group: marching armies path in
+		-- straight lines here (no A* grid), and a solid character standing in
+		-- the lane would permanently block them.
+		for _, descendant in character:GetDescendants() do
+			if descendant:IsA("BasePart") then
+				descendant.CollisionGroup = "Units"
+			end
+		end
 		-- Give replication a beat so the client camera reads the new position
 		task.wait(0.2)
 

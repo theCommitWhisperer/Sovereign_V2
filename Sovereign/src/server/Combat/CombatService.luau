@@ -857,10 +857,12 @@ local function updateUnit(unitModel: Model, unit: CombatUnit, now: number)
 		unitModel:SetAttribute("IsMoving", false)
 		unitModel:SetAttribute("TargetPosition", nil)
 		unit.isCharging = false
-		faceTarget(unitModel, targetPos)
 
 		if now - unit.lastAttackTime >= unit.attackSpeed then
 			unit.lastAttackTime = now
+			-- Face the target once per attack. Writing the root CFrame every
+			-- tick fought humanoid physics and made units jitter/hover.
+			faceTarget(unitModel, targetPos)
 			if targetUnit then
 				executeAttackOnUnit(unit, targetUnit, now)
 			elseif targetBuilding then
