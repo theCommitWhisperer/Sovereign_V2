@@ -629,11 +629,15 @@ local function executeAttackOnUnit(attacker: CombatUnit, defender: CombatUnit, n
 			end
 		)
 	else
+		CombatReplication.swing(attacker.model)
 		resolveHit(attacker, defender, now)
 	end
 end
 
 local function executeAttackOnBuilding(attacker: CombatUnit, building: CombatBuilding)
+	if attacker.attackType ~= "Ranged" then
+		CombatReplication.swing(attacker.model)
+	end
 	local damage = DamageResolver.calculateVsBuilding(attacker)
 	building.health = math.max(0, building.health - damage)
 	building.model:SetAttribute("CurrentHealth", building.health)

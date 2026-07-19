@@ -199,6 +199,71 @@ local function abilityEffect(name: string, position: Vector3, radius: number?)
 	end
 end
 
+-- ── Melee swing animation (rotates the WeaponGrip weld locally) ────────────
+
+-- Weak keys: entries vanish when the weld (and its unit) are destroyed
+local originalGripC0: { [Weld]: CFrame } = setmetatable({} :: any, { __mode = "k" })
+local swinging: { [Weld]: boolean } = setmetatable({} :: any, { __mode = "k" })
+
+local function animateSwing(unit: Model)
+	local weapon = unit:FindFirstChild("Weapon")
+	if not weapon then
+		return
+	end
+	local weld = weapon:FindFirstChild("WeaponGrip", true)
+	if not weld or not weld:IsA("Weld") then
+		return
+	end
+	if swinging[weld] then
+		return
+	end
+	swinging[weld] = true
+
+	local baseC0 = originalGripC0[weld]
+	if not baseC0 then
+		baseC0 = weld.C0
+		originalGripC0[weld] = baseC0
+	end
+
+	local kind = unit:GetAttribute("WeaponKind")
+	local isThrust = kind == "Spear" or kind == "Javelin"
+
+	local windupC0: CFrame
+	local strikeC0: CFrame
+	if isThrust then
+		-- Pull back, then stab forward with the point levelled at the enemy
+		windupC0 = baseC0 * CFrame.new(0, 0, 0.35)
+		strikeC0 = baseC0 * CFrame.new(0, 0.3, -0.8) * CFrame.Angles(math.rad(-65), 0, 0)
+	else
+		-- Raise back over the shoulder, then chop forward
+		windupC0 = baseC0 * CFrame.Angles(math.rad(35), 0, 0)
+		strikeC0 = baseC0 * CFrame.Angles(math.rad(-80), 0, 0)
+	end
+
+	local windup = TweenService:Create(weld, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { C0 = windupC0 })
+	local strike = TweenService:Create(weld, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { C0 = strikeC0 })
+	local recover = TweenService:Create(weld, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { C0 = baseC0 })
+
+	windup:Play()
+	windup.Completed:Once(function()
+		if not weld.Parent then
+			swinging[weld] = nil
+			originalGripC0[weld] = nil
+			return
+		end
+		strike:Play()
+		strike.Completed:Once(function()
+			if weld.Parent then
+				recover:Play()
+			end
+			swinging[weld] = nil
+			if not weld.Parent then
+				originalGripC0[weld] = nil
+			end
+		end)
+	end)
+end
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- EVENT INTAKE
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -210,10 +275,19 @@ type CombatEvent = {
 	d: number?,
 	n: string?,
 	f: number?,
+	m: Model?,
 }
 
 local function handleEvents(events: { CombatEvent })
 	for _, event in events do
+		-- Instance-payload events (no position needed)
+		if event.t == "swing" then
+			if event.m and event.m.Parent then
+				animateSwing(event.m :: Model)
+			end
+			continue
+		end
+
 		local pos = event.p
 		if not pos then
 			continue

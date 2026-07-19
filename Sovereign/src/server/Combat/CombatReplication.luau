@@ -9,12 +9,13 @@ local CombatConfig = require(ReplicatedStorage.Shared.GameData.CombatConfig)
 local CombatReplication = {}
 
 export type CombatEvent = {
-	t: string, -- "hit" | "death" | "proj" | "ability" | "bhit" | "bdeath"
+	t: string, -- "hit" | "death" | "proj" | "ability" | "bhit" | "bdeath" | "swing"
 	p: Vector3?, -- position
 	p2: Vector3?, -- secondary position (projectile target)
 	d: number?, -- damage
 	n: string?, -- name/kind (ability name, projectile visual)
 	f: number?, -- float payload (radius, flight time)
+	m: Model?, -- instance payload (swinging unit)
 }
 
 local queue: { CombatEvent } = {}
@@ -71,6 +72,11 @@ end
 
 function CombatReplication.ability(name: string, position: Vector3, radius: number?)
 	CombatReplication.push({ t = "ability", p = position, n = name, f = radius })
+end
+
+-- Melee swing: clients animate the unit's weapon grip weld
+function CombatReplication.swing(unitModel: Model)
+	CombatReplication.push({ t = "swing", m = unitModel })
 end
 
 -- Called once per combat tick by CombatService

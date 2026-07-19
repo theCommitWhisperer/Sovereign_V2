@@ -15,6 +15,8 @@ export type ProjectileDef = {
 	movingPenalty: number, -- accuracy subtracted vs moving target
 }
 
+export type WeaponKind = "Sword" | "Axe" | "Spear" | "Bow" | "Javelin" | "Staff" | "Club" | "Sling" | "None"
+
 export type UnitCombatProfile = {
 	damageType: DamageType,
 	armorClass: ArmorClass,
@@ -23,6 +25,8 @@ export type UnitCombatProfile = {
 	bonusVsTags: { [string]: number }?, -- extra multiplier vs defender tags
 	projectile: string?, -- key into CombatConfig.Projectiles
 	abilities: { string }?, -- keys into CombatConfig.Abilities
+	weapon: WeaponKind?, -- visual weapon prop (see WeaponVisuals); inferred if nil
+	shield: boolean?, -- visual shield on the off-hand side
 }
 
 local CombatConfig = {}
@@ -188,6 +192,8 @@ local UnitProfiles: { [string]: UnitCombatProfile } = {
 		attackType = "Melee",
 		tags = { "hero" },
 		abilities = { "WarCry" },
+		weapon = "Sword",
+		shield = true,
 	},
 	Peasant = CIVILIAN,
 	Woodcutter = CIVILIAN,
@@ -214,6 +220,8 @@ local UnitProfiles: { [string]: UnitCombatProfile } = {
 		attackType = "Melee",
 		tags = { "spear", "infantry" },
 		bonusVsTags = { cavalry = 1.8 },
+		weapon = "Spear",
+		shield = true,
 	},
 	Viking = {
 		damageType = "Slash",
@@ -221,6 +229,8 @@ local UnitProfiles: { [string]: UnitCombatProfile } = {
 		attackType = "Melee",
 		tags = { "infantry", "raider" },
 		abilities = { "Berserk" },
+		weapon = "Axe",
+		shield = true,
 	},
 	Archer = {
 		damageType = "Pierce",
@@ -228,6 +238,7 @@ local UnitProfiles: { [string]: UnitCombatProfile } = {
 		attackType = "Ranged",
 		tags = { "ranged" },
 		projectile = "Arrow",
+		weapon = "Bow",
 	},
 	Knight = {
 		damageType = "Slash",
@@ -236,6 +247,8 @@ local UnitProfiles: { [string]: UnitCombatProfile } = {
 		tags = { "cavalry" },
 		bonusVsTags = { ranged = 1.3, civilian = 1.3 },
 		abilities = { "Trample" },
+		weapon = "Sword",
+		shield = true,
 	},
 	Monk = {
 		damageType = "Magic",
@@ -243,6 +256,7 @@ local UnitProfiles: { [string]: UnitCombatProfile } = {
 		attackType = "Melee",
 		tags = { "caster", "support" },
 		abilities = { "Heal" },
+		weapon = "Staff",
 	},
 	Priest = {
 		damageType = "Magic",
@@ -250,6 +264,7 @@ local UnitProfiles: { [string]: UnitCombatProfile } = {
 		attackType = "Melee",
 		tags = { "caster", "support", "civilian" },
 		abilities = { "Heal" },
+		weapon = "Staff",
 	},
 	Bard = {
 		damageType = "Blunt",
@@ -257,6 +272,7 @@ local UnitProfiles: { [string]: UnitCombatProfile } = {
 		attackType = "Melee",
 		tags = { "support" },
 		abilities = { "BattleSong" },
+		weapon = "Club",
 	},
 	Kern = {
 		damageType = "Slash",
@@ -264,6 +280,7 @@ local UnitProfiles: { [string]: UnitCombatProfile } = {
 		attackType = "Melee",
 		tags = { "infantry", "skirmisher" },
 		abilities = { "HitAndRun" },
+		weapon = "Sword",
 	},
 	Ceithern = {
 		damageType = "Pierce",
@@ -272,6 +289,7 @@ local UnitProfiles: { [string]: UnitCombatProfile } = {
 		tags = { "ranged", "skirmisher" },
 		projectile = "Javelin",
 		bonusVsTags = { cavalry = 1.4 },
+		weapon = "Javelin",
 	},
 	Bonnacht = {
 		damageType = "Slash",
@@ -279,6 +297,7 @@ local UnitProfiles: { [string]: UnitCombatProfile } = {
 		attackType = "Melee",
 		tags = { "infantry" },
 		abilities = { "Ambush" },
+		weapon = "Axe",
 	},
 	Gallowglass = {
 		damageType = "Slash",
@@ -286,6 +305,8 @@ local UnitProfiles: { [string]: UnitCombatProfile } = {
 		attackType = "Melee",
 		tags = { "infantry", "elite" },
 		abilities = { "ShieldBash" },
+		weapon = "Axe", -- two-handed galloglass axe
+		shield = true,
 	},
 	Fianna = {
 		damageType = "Slash",
@@ -293,6 +314,7 @@ local UnitProfiles: { [string]: UnitCombatProfile } = {
 		attackType = "Melee",
 		tags = { "infantry", "elite", "hero" },
 		abilities = { "Berserk", "WarCry" },
+		weapon = "Sword",
 	},
 	Slinger = {
 		damageType = "Blunt",
@@ -300,6 +322,7 @@ local UnitProfiles: { [string]: UnitCombatProfile } = {
 		attackType = "Ranged",
 		tags = { "ranged" },
 		projectile = "Stone",
+		weapon = "Sling",
 	},
 	Longbowman = {
 		damageType = "Pierce",
@@ -308,6 +331,7 @@ local UnitProfiles: { [string]: UnitCombatProfile } = {
 		tags = { "ranged" },
 		projectile = "Longbow",
 		abilities = { "Volley" },
+		weapon = "Bow",
 	},
 	Hobelar = {
 		damageType = "Slash",
@@ -316,6 +340,7 @@ local UnitProfiles: { [string]: UnitCombatProfile } = {
 		tags = { "cavalry", "skirmisher" },
 		bonusVsTags = { ranged = 1.3 },
 		abilities = { "Trample", "HitAndRun" },
+		weapon = "Spear", -- light lance
 	},
 	Druid = {
 		damageType = "Magic",
@@ -324,6 +349,7 @@ local UnitProfiles: { [string]: UnitCombatProfile } = {
 		tags = { "caster" },
 		projectile = "MagicBolt",
 		abilities = { "Heal" },
+		weapon = "Staff",
 	},
 	Banshee = {
 		damageType = "Magic",
@@ -332,6 +358,7 @@ local UnitProfiles: { [string]: UnitCombatProfile } = {
 		tags = { "caster" },
 		projectile = "MagicBolt",
 		abilities = { "Wail" },
+		weapon = "None",
 	},
 	Wolfhound = {
 		damageType = "Slash",
@@ -339,6 +366,7 @@ local UnitProfiles: { [string]: UnitCombatProfile } = {
 		attackType = "Melee",
 		tags = { "beast" },
 		abilities = { "PackHunter" },
+		weapon = "None",
 	},
 }
 
@@ -397,6 +425,26 @@ function CombatConfig.hasTag(profile: UnitCombatProfile, tag: string): boolean
 		return false
 	end
 	return table.find(profile.tags :: { string }, tag) ~= nil
+end
+
+-- Visual weapon for a profile: explicit if set, otherwise inferred from
+-- attack type + damage type. Civilians and beasts get none.
+function CombatConfig.getWeaponKind(profile: UnitCombatProfile): WeaponKind
+	if profile.weapon then
+		return profile.weapon :: WeaponKind
+	end
+	if CombatConfig.hasTag(profile, "civilian") or CombatConfig.hasTag(profile, "beast") then
+		return "None"
+	end
+	if profile.attackType == "Ranged" then
+		return if profile.damageType == "Magic" then "Staff" else "Bow"
+	end
+	if profile.damageType == "Pierce" then
+		return "Spear"
+	elseif profile.damageType == "Blunt" then
+		return "Club"
+	end
+	return "Sword"
 end
 
 return CombatConfig

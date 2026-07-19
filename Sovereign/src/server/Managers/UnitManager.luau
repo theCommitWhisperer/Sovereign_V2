@@ -16,6 +16,7 @@ local PlayerManager = require(Managers.PlayerManager)
 
 -- Import new A* pathfinding integration
 local PathfindingIntegration = require(script.Parent.Parent.Systems.PathfindingIntegration)
+local WeaponVisuals = require(script.Parent.Parent.Combat.WeaponVisuals)
 
 local UnitManager = {}
 
@@ -245,6 +246,9 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 
 	-- Initialize morale
 	MoraleManager.initializeUnit(unit, faction)
+
+	-- Attach visual weapon/shield props (pure cosmetics)
+	WeaponVisuals.attach(unit, unitType, unitInfo.subtype)
 
 	-- Create a fake player object for CombatManager if needed
 	local playerForCombat = nil
