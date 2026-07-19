@@ -23,6 +23,7 @@ local CONFIG = {
 	MAX_PATHFIND_RETRIES = 5, -- Maximum pathfinding retries before falling back to direct walk
 	PATHFIND_RETRY_DELAY = 2, -- Seconds to wait before retrying failed pathfinding
 	PATHFIND_COOLDOWN = 5, -- Seconds to wait after exhausting retries before trying again (was 30)
+	STUCK_ARRIVAL_DISTANCE = 9, -- Stuck within this range of the goal = treat as arrived
 }
 
 -- Track last target position for each unit to detect changes
@@ -97,12 +98,16 @@ end
 -- order refreshed or units stop partway to their destination.
 local lastMoveToTimes = {}
 
+-- Active sidestep detours (stuck units peel off geometry before re-pathing)
+local sidestepUntil = {}
+
 local function cleanupUnit(unit)
 	lastTargetPositions[unit] = nil
 	unitPositionHistory[unit] = nil
 	pathfindingFailures[unit] = nil
 	unitPaths[unit] = nil
 	lastMoveToTimes[unit] = nil
+	sidestepUntil[unit] = nil
 	PathfindingIntegration.unregisterMover(unit)
 end
 
@@ -213,9 +218,45 @@ function MovementSystem.update()
 
 					-- Check for stuck units
 					if isUnitStuck(unit) then
+						-- Stuck but already near the goal (workers pressing against a
+						-- building wall trying to reach an interior point): call it
+						-- arrived — interaction radii are more generous than this.
+						if distance < CONFIG.STUCK_ARRIVAL_DISTANCE then
+							unit:SetAttribute("IsMoving", false)
+							unit:SetAttribute("TargetPosition", nil)
+							cleanupUnit(unit)
+							MovementDebug:info("Unit " .. unit.Name .. " stuck near goal — treating as arrived")
+							return
+						end
+
 						MovementDebug:warn("Unit " .. unit.Name .. " appears stuck, recalculating path")
 						-- Force recalculation by clearing last target
 						lastTargetPositions[unit] = nil
+
+						-- Sidestep to peel off whatever geometry we're pressed against
+						-- before re-pathing — recalculating from a wall-hug position
+						-- tends to produce the same blocked path again.
+						local stuckHumanoid = unit:FindFirstChildOfClass("Humanoid")
+						if stuckHumanoid then
+							local awayDir = (targetPos - unit.PrimaryPart.Position)
+							local flatDir = Vector3.new(awayDir.X, 0, awayDir.Z)
+							if flatDir.Magnitude > 0.1 then
+								flatDir = flatDir.Unit
+								local sign = if math.random() < 0.5 then 1 else -1
+								local perpendicular = Vector3.new(-flatDir.Z, 0, flatDir.X) * sign * 8
+								stuckHumanoid:MoveTo(unit.PrimaryPart.Position + perpendicular)
+								lastMoveToTimes[unit] = tick()
+								sidestepUntil[unit] = tick() + 0.7
+							end
+						end
+					end
+
+					-- While sidestepping, let the detour play out before re-pathing
+					if sidestepUntil[unit] then
+						if tick() < sidestepUntil[unit] then
+							return
+						end
+						sidestepUntil[unit] = nil
 					end
 
 					-- Check if target has changed (unit was redirected)
@@ -268,8 +309,16 @@ function MovementSystem.update()
 
 						if canRetry then
 							-- Get path from PathfindingIntegration
-							local path = PathfindingIntegration.getPath(unit, targetPos)
-							local pathSuccess = path ~= nil and path ~= nil and #path > 0
+							local path, pathFailReason = PathfindingIntegration.getPath(unit, targetPos)
+
+							-- Frame budget exhaustion is NOT a failure — counting it
+							-- as one pushed units into the direct-walk fallback,
+							-- which beelines straight into buildings. Just wait.
+							if path == nil and pathFailReason == "throttled" then
+								return
+							end
+
+							local pathSuccess = path ~= nil and #path > 0
 							if pathSuccess and path then
 								-- Store path in local table
 								unitPaths[unit] = {

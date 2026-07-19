@@ -372,7 +372,9 @@ function PathfindingIntegration.unregisterMover(mover: Model)
 	activeMovers[mover] = nil
 end
 
-function PathfindingIntegration.getPath(unit: Model, targetPos: Vector3): { Vector3 }?
+-- Returns (path, failReason). failReason "throttled" means the per-frame path
+-- budget ran out — retry next frame, do NOT count as a pathfinding failure.
+function PathfindingIntegration.getPath(unit: Model, targetPos: Vector3): ({ Vector3 }?, string?)
 	if not activePathfinding then
 		PathfindingDebug:warn("getPath called but pathfinding not initialized")
 		return nil
@@ -395,7 +397,10 @@ function PathfindingIntegration.getPath(unit: Model, targetPos: Vector3): { Vect
 	end
 
 	if framePathCalculations >= CONFIG.MAX_PATH_CALCULATIONS_PER_FRAME then
-		return nil
+		-- Budget exhausted this frame — NOT a pathfinding failure. Callers must
+		-- not count this toward their failure/fallback logic (the direct-walk
+		-- fallback walks straight through buildings).
+		return nil, "throttled"
 	end
 
 	PathfindingIntegration.registerMover(unit)
