@@ -93,11 +93,16 @@ local function isUnitStuck(unit)
 end
 
 -- Clean up unit tracking data
+-- Humanoid:MoveTo silently times out after 8 seconds; long marches need the
+-- order refreshed or units stop partway to their destination.
+local lastMoveToTimes = {}
+
 local function cleanupUnit(unit)
 	lastTargetPositions[unit] = nil
 	unitPositionHistory[unit] = nil
 	pathfindingFailures[unit] = nil
 	unitPaths[unit] = nil
+	lastMoveToTimes[unit] = nil
 	PathfindingIntegration.unregisterMover(unit)
 end
 
@@ -184,6 +189,7 @@ function MovementSystem.update()
 					if not PathfindingIntegration.isInitialized() and targetChanged then
 						if humanoid then
 							humanoid:MoveTo(targetPos)
+							lastMoveToTimes[unit] = tick()
 						end
 						unitPaths[unit] = {
 							path = { targetPos },
@@ -277,6 +283,16 @@ function MovementSystem.update()
 						local currentWaypoint = pathData.path[pathData.index]
 						if currentWaypoint and unit.PrimaryPart then
 							local distanceToWaypoint = (unit.PrimaryPart.Position - currentWaypoint).Magnitude
+
+							-- Refresh MoveTo before its 8-second internal timeout so
+							-- long marches don't stall partway
+							if distanceToWaypoint >= 3 and tick() - (lastMoveToTimes[unit] or 0) > 4 then
+								local marchHumanoid = unit:FindFirstChildOfClass("Humanoid")
+								if marchHumanoid then
+									marchHumanoid:MoveTo(currentWaypoint)
+									lastMoveToTimes[unit] = tick()
+								end
+							end
 
 							-- If we're close to current waypoint, move to next one
 							if distanceToWaypoint < 3 then

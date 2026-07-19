@@ -4,6 +4,33 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local ServerStorage = game:GetService("ServerStorage")
+local PhysicsService = game:GetService("PhysicsService")
+
+-- Units pass through each other (they'd shove one another out of formation
+-- slots and clump in melee otherwise) but still collide with the world.
+local UNITS_COLLISION_GROUP = "Units"
+do
+	local ok = pcall(function()
+		PhysicsService:RegisterCollisionGroup(UNITS_COLLISION_GROUP)
+	end)
+	if ok then
+		PhysicsService:CollisionGroupSetCollidable(UNITS_COLLISION_GROUP, UNITS_COLLISION_GROUP, false)
+	end
+end
+
+local function assignUnitCollisionGroup(unit: Model)
+	for _, descendant in unit:GetDescendants() do
+		if descendant:IsA("BasePart") then
+			descendant.CollisionGroup = UNITS_COLLISION_GROUP
+		end
+	end
+	-- Parts added later (weapons, effects) join the group too
+	unit.DescendantAdded:Connect(function(descendant)
+		if descendant:IsA("BasePart") then
+			descendant.CollisionGroup = UNITS_COLLISION_GROUP
+		end
+	end)
+end
 
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
@@ -243,6 +270,9 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 	-- NOW initialize systems that read attributes
 	-- DEBUG: Print faction before passing to MoraleManager
 
+
+	-- Units don't collide with each other (formation slots + melee spacing)
+	assignUnitCollisionGroup(unit)
 
 	-- Initialize morale
 	MoraleManager.initializeUnit(unit, faction)

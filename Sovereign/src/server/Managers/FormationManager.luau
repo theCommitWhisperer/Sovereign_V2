@@ -49,7 +49,7 @@ local FORMATIONS = {
 		-- Offensive formation for breaking enemy lines
 		shape = "triangle",
 		rows = 3,
-		spacing = 3,
+		spacing = 4, -- >= body width (3) so units fit their slots
 		bonuses = {
 			attack = 1.3,
 			defense = 0.9,
@@ -63,7 +63,7 @@ local FORMATIONS = {
 		-- All-around defense, good against cavalry
 		shape = "circle",
 		rows = 1,
-		spacing = 3,
+		spacing = 4, -- >= body width (3) so units fit their slots
 		bonuses = {
 			attack = 0.9,
 			defense = 1.3,
@@ -77,7 +77,7 @@ local FORMATIONS = {
 		-- Scottish pike formation (included for Irish Gallowglass)
 		shape = "square",
 		rows = 3,
-		spacing = 2,
+		spacing = 3.5, -- dense pike square, but still >= body width
 		bonuses = {
 			attack = 1.1,
 			defense = 1.4,
