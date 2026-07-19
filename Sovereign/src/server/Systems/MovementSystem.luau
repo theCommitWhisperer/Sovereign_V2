@@ -343,6 +343,14 @@ function MovementSystem.update()
 					local unitPos = unit.PrimaryPart.Position
 					local separation = computeSeparation(unit, unitPos)
 
+					-- Fade separation to zero as a unit nears its target. Formation
+					-- slots sit ~4 studs apart — inside the separation radius — so
+					-- without this, neighbours shove a settling unit left↔right and
+					-- it never locks onto its slot. Full push while travelling
+					-- (>=12 studs), none while settling (<=5).
+					local sepScale = math.clamp((distance - 5) / 7, 0, 1)
+					separation = separation * sepScale
+
 					-- ── Flow-field following (shared group movement) ──────────
 					-- When a group was ordered via MovementSystem.moveGroup, every
 					-- member follows one precomputed field instead of running its
