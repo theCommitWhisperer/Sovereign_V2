@@ -135,6 +135,8 @@ function CombatService.registerCombatUnit(unitModel: Model, combatUnit: any)
 	combatUnit.damageDealt = 0
 	combatUnit.kills = 0
 	combatUnit.lastScanTime = 0
+	combatUnit.scanJitter = math.random() * CombatConfig.Targeting.SCAN_JITTER_MAX
+	combatUnit.slotAngle = math.random() * 2 * math.pi
 
 	ActiveCombatUnits[unitModel] = combatUnit :: CombatUnit
 
@@ -290,17 +292,63 @@ local function unregisterBuilding(buildingModel: Model)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- TARGET ACQUISITION (spatial grid)
+-- TARGET ACQUISITION (spatial grid, scored for organic group fights)
 -- ═══════════════════════════════════════════════════════════════════════════
 
-local function findNearestEnemyUnit(unit: CombatUnit, maxRange: number): Model?
-	local unitPos = getPosition(unit.model)
-	if not unitPos then
-		return nil
+local Targeting = CombatConfig.Targeting
+
+-- How many units are currently attacking each target. Rebuilt every combat
+-- tick (cheap at ~200 units) so it never drifts, no matter who clears targets.
+local engagementCounts: { [Model]: number } = {}
+
+local function rebuildEngagementCounts()
+	table.clear(engagementCounts)
+	for _, unit in ActiveCombatUnits do
+		local target = unit.targetModel
+		if target then
+			engagementCounts[target] = (engagementCounts[target] or 0) + 1
+		end
+	end
+end
+
+-- Lower score = better target. Blends distance, crowding, and counters so an
+-- army fans out into separate melees instead of blobbing onto one enemy.
+local function scoreEnemy(unit: CombatUnit, enemy: CombatUnit, distance: number): number
+	local score = distance
+
+	-- Crowding: avoid piling onto targets that are already swarmed
+	local attackers = engagementCounts[enemy.model] or 0
+	local crowdingMult = if unit.attackType == "Ranged" then Targeting.RANGED_CROWDING_MULT else 1
+	score += attackers * Targeting.CROWDING_PENALTY * crowdingMult
+	if attackers >= Targeting.SOFT_CAP_ATTACKERS then
+		score += Targeting.OVERCROWD_PENALTY * crowdingMult
 	end
 
-	local nearest: Model? = nil
-	local nearestDistSq = maxRange * maxRange
+	-- Counters: prefer matchups we're strong in (spears seek cavalry, etc.)
+	local matrixRow = CombatConfig.CounterMatrix[unit.profile.damageType]
+	local counterMult = (matrixRow and matrixRow[enemy.profile.armorClass]) or 1
+	local bonuses = unit.profile.bonusVsTags
+	if bonuses and enemy.profile.tags then
+		for _, tag in enemy.profile.tags :: { string } do
+			counterMult *= bonuses[tag] or 1
+		end
+	end
+	score -= (counterMult - 1) * Targeting.COUNTER_WEIGHT
+
+	-- Noise: identical units shouldn't all make the same choice
+	score += math.random() * Targeting.SCORE_JITTER
+
+	return score
+end
+
+local function findBestEnemyTarget(unit: CombatUnit, maxRange: number): (Model?, number)
+	local unitPos = getPosition(unit.model)
+	if not unitPos then
+		return nil, math.huge
+	end
+
+	local best: Model? = nil
+	local bestScore = math.huge
 
 	unitGrid:query(unitPos, maxRange, function(enemyModel, enemyPos)
 		if enemyModel == unit.model then
@@ -310,15 +358,15 @@ local function findNearestEnemyUnit(unit: CombatUnit, maxRange: number): Model?
 		if not enemy or enemy.health <= 0 or not areEnemies(unit, enemy) then
 			return nil
 		end
-		local distSq = (enemyPos - unitPos).Magnitude ^ 2
-		if distSq < nearestDistSq then
-			nearest = enemyModel
-			nearestDistSq = distSq
+		local score = scoreEnemy(unit, enemy, (enemyPos - unitPos).Magnitude)
+		if score < bestScore then
+			best = enemyModel
+			bestScore = score
 		end
 		return nil
 	end)
 
-	return nearest
+	return best, bestScore
 end
 
 local function findNearestEnemyBuilding(unit: CombatUnit, maxRange: number): Model?
@@ -699,15 +747,15 @@ local function updateUnit(unitModel: Model, unit: CombatUnit, now: number)
 		end
 	end
 
-	-- ── Acquire a new target (LOD-throttled when idle) ───────────────────
+	-- ── Acquire a new target (LOD-throttled, desynced per unit) ──────────
 	if not targetModel and unit.stance ~= "Hold" then
-		if now - unit.lastScanTime >= Engine.IDLE_SCAN_RATE then
+		if now - unit.lastScanTime >= Engine.IDLE_SCAN_RATE + unit.scanJitter then
 			unit.lastScanTime = now
 			local searchRange = Engine.SEARCH_RANGE
 			if unit.stance == "Aggressive" then
 				searchRange *= Engine.AGGRESSIVE_SEARCH_MULT
 			end
-			targetModel = findNearestEnemyUnit(unit, searchRange)
+			targetModel = findBestEnemyTarget(unit, searchRange)
 
 			-- No enemy units around: aggressive units siege enemy buildings
 			if not targetModel and unit.stance == "Aggressive" then
@@ -769,8 +817,35 @@ local function updateUnit(unitModel: Model, unit: CombatUnit, now: number)
 			end
 		end
 	else
-		-- Close the distance (MovementSystem consumes these attributes)
-		unitModel:SetAttribute("TargetPosition", targetPos)
+		-- Still chasing: occasionally re-evaluate so units peel off toward
+		-- better fights (nearby brawls, favourable counters, lonely enemies)
+		-- instead of tunnel-chasing across the whole battle.
+		if targetUnit and now - unit.lastScanTime >= Targeting.RETARGET_INTERVAL then
+			unit.lastScanTime = now
+			local searchRange = Engine.SEARCH_RANGE
+			if unit.stance == "Aggressive" then
+				searchRange *= Engine.AGGRESSIVE_SEARCH_MULT
+			end
+			local best, bestScore = findBestEnemyTarget(unit, searchRange)
+			if best and best ~= targetModel then
+				local currentScore = scoreEnemy(unit, targetUnit, distance)
+				if bestScore < currentScore - Targeting.RETARGET_MARGIN then
+					unit.targetModel = best
+					return -- engage the new target next tick
+				end
+			end
+		end
+
+		-- Close the distance (MovementSystem consumes these attributes).
+		-- Melee units aim for a personal ring slot around the target so
+		-- attackers surround it instead of stacking on one point.
+		local moveDest = targetPos
+		if targetUnit and unit.attackType == "Melee" then
+			moveDest = targetPos
+				+ Vector3.new(math.cos(unit.slotAngle), 0, math.sin(unit.slotAngle))
+					* Targeting.SURROUND_RADIUS
+		end
+		unitModel:SetAttribute("TargetPosition", moveDest)
 		unitModel:SetAttribute("IsMoving", true)
 
 		if unit.stance == "Aggressive" or unit.stance == "Charge" then
@@ -783,6 +858,7 @@ end
 
 local function updateCombat(now: number)
 	abilityContext.moraleEnabled = moraleEnabled
+	rebuildEngagementCounts()
 
 	for unitModel, unit in ActiveCombatUnits do
 		if not unitModel.Parent or unit.health <= 0 then

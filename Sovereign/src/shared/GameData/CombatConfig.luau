@@ -49,6 +49,25 @@ CombatConfig.Engine = {
 }
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- TARGET SELECTION (battle "feel": spread, group fights, natural chaos)
+-- Score = distance − counter preference + crowding penalties + jitter;
+-- lowest score wins. Tuning these changes how battles break apart.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+CombatConfig.Targeting = {
+	CROWDING_PENALTY = 10, -- score per ally already attacking that target
+	RANGED_CROWDING_MULT = 0.4, -- ranged units mind crowding less (they share targets fine)
+	SOFT_CAP_ATTACKERS = 4, -- beyond this many attackers, add OVERCROWD_PENALTY
+	OVERCROWD_PENALTY = 45,
+	COUNTER_WEIGHT = 16, -- score bonus for favourable counter matchups
+	SCORE_JITTER = 8, -- random noise so identical units choose differently
+	SCAN_JITTER_MAX = 0.35, -- seconds of per-unit scan desync
+	RETARGET_INTERVAL = 1.5, -- chasing (not yet fighting) units re-evaluate this often
+	RETARGET_MARGIN = 15, -- new target must beat current score by this much to switch
+	SURROUND_RADIUS = 3.2, -- melee approach ring radius around the target
+}
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- COUNTER MATRIX  (damage type vs armor class multiplier)
 -- ═══════════════════════════════════════════════════════════════════════════
 

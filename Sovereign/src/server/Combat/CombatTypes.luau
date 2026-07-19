@@ -45,6 +45,8 @@ export type CombatUnit = {
 	damageDealt: number, -- lifetime stats (used by sandbox reports)
 	kills: number,
 	lastScanTime: number, -- idle target-scan LOD throttle
+	scanJitter: number, -- per-unit scan desync so armies don't retarget in lockstep
+	slotAngle: number, -- stable ring-slot angle for surrounding targets
 }
 
 export type CombatBuilding = {
