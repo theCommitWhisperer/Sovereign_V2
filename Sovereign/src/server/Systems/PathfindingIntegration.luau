@@ -466,6 +466,19 @@ function PathfindingIntegration.getPath(unit: Model, targetPos: Vector3): ({ Vec
 		return nil
 	end
 
+	-- Smooth the raw grid path: string-pull collapses the staircase into
+	-- straight line-of-sight segments, then simplify drops collinear points.
+	-- Units then cut natural diagonals instead of walking cell-to-cell zigzags.
+	local ok, smoothed = pcall(function()
+		return Pathfinding.optimizePath(pathPoints, activePathfinding.grid, {
+			stringPull = true,
+			simplify = true,
+		})
+	end)
+	if ok and smoothed and #smoothed > 0 then
+		pathPoints = smoothed
+	end
+
 	-- Convert PathPoints (world x,z) to Vector3 positions
 	local worldPath = {}
 	for _, point in ipairs(pathPoints) do
@@ -545,6 +558,16 @@ end
 
 function PathfindingIntegration.isInitialized()
 	return activePathfinding ~= nil
+end
+
+-- Expose the grid + version so FlowFieldManager can build integration fields
+-- and invalidate them when buildings change the grid.
+function PathfindingIntegration.getGrid()
+	return activePathfinding and activePathfinding.grid or nil
+end
+
+function PathfindingIntegration.getGridVersion(): number
+	return gridVersion
 end
 
 PathfindingDebug:info("Production PathfindingIntegration module loaded")

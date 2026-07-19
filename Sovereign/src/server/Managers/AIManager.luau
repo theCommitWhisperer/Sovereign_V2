@@ -11,6 +11,7 @@ local GameData = require(ReplicatedStorage.Shared.GameData)
 local BuildingScaleConfig = require(ReplicatedStorage.Shared.GameData.BuildingScaleConfig)
 local UnitManager = require(script.Parent.UnitManager)
 local BuildingManager = require(script.Parent.BuildingManager)
+local MovementSystem = require(script.Parent.Parent.Systems.MovementSystem)
 
 local AIManager = {}
 
@@ -685,32 +686,21 @@ function AIManager.launchAttackWave(ownerId: number)
 		return
 	end
 
-	-- Command units to move to target
+	-- Command units to move to target as a coherent group: one shared flow
+	-- field instead of N separate A* solves (cheaper and moves as a wave).
+	local marchers = {}
 	for _, unit in combatUnits do
-		-- Verify unit has required components
-		local hasHumanoid = unit:FindFirstChildOfClass("Humanoid") ~= nil
-		local hasPrimaryPart = unit.PrimaryPart ~= nil
-
-		if not hasHumanoid or not hasPrimaryPart then
-			AIDebug:warn(`Unit {unit.Name} missing components - Humanoid: {hasHumanoid}, PrimaryPart: {hasPrimaryPart}`)
+		if unit and unit.Parent and unit.PrimaryPart and unit:FindFirstChildOfClass("Humanoid") then
+			local pathfindingFailed = unit:GetAttribute("PathfindingFailed")
+			if not (pathfindingFailed and (tick() - pathfindingFailed) < 30) then
+				unit:SetAttribute("AICommand", "Attack")
+				table.insert(marchers, unit)
+			end
 		end
-
-		-- Check if pathfinding recently failed (respect MovementSystem cooldown)
-		local pathfindingFailed = unit:GetAttribute("PathfindingFailed")
-		if pathfindingFailed and (tick() - pathfindingFailed) < 30 then
-			AIDebug:warn(`{unit.Name} pathfinding failed recently, skipping attack command`)
-			return -- Don't spam pathfinding
-		end
-
-		-- Set unit destination attribute for movement system
-		unit:SetAttribute("TargetPosition", targetPosition)
-		unit:SetAttribute("IsMoving", true)
-		unit:SetAttribute("AICommand", "Attack")
-
-		AIDebug:info(`Set {unit.Name} to move to {targetPosition} - IsMoving: {unit:GetAttribute("IsMoving")}`)
 	end
+	MovementSystem.moveGroup(marchers, targetPosition)
 
-	AIDebug:info(`{state.ownerName} launched attack wave with {#combatUnits} units to {targetPosition}`)
+	AIDebug:info(`{state.ownerName} launched attack wave with {#marchers} units to {targetPosition}`)
 end
 
 -- Command peasants to gather resources
@@ -940,22 +930,21 @@ function AIManager.checkDefensiveStatus(ownerId: number)
 	if threatsNearby >= config.retreatThreshold then
 		AIDebug:info(`{state.ownerName} is under attack! {threatsNearby} enemy units nearby (threshold: {config.retreatThreshold}), recalling defenders`)
 
-		-- Find all combat units
+		-- Recall all combat units to defend the Keep as one group
+		local defenders = {}
 		for _, unit in state.units do
-			if unit and unit.Parent then
+			if unit and unit.Parent and unit.PrimaryPart then
 				local unitType = unit:GetAttribute("UnitType")
 				if unitType and unitType ~= "Peasant" then
-					-- Check if pathfinding recently failed (respect MovementSystem cooldown)
 					local pathfindingFailed = unit:GetAttribute("PathfindingFailed")
 					if not (pathfindingFailed and (tick() - pathfindingFailed) < 30) then
-						-- Send units back to defend Keep
-						unit:SetAttribute("TargetPosition", keepPosition)
-						unit:SetAttribute("IsMoving", true)
 						unit:SetAttribute("AICommand", "Defend")
+						table.insert(defenders, unit)
 					end
 				end
 			end
 		end
+		MovementSystem.moveGroup(defenders, keepPosition)
 	end
 end
 

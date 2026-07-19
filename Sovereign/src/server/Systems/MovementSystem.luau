@@ -8,6 +8,7 @@ local MovementDebug = DebugManager.createChannel("Movement", false)
 
 -- Import new A* pathfinding system
 local PathfindingIntegration = require(script.Parent.PathfindingIntegration)
+local FlowFieldManager = require(script.Parent.FlowFieldManager)
 
 local MovementSystem = {}
 
@@ -24,6 +25,12 @@ local CONFIG = {
 	PATHFIND_RETRY_DELAY = 2, -- Seconds to wait before retrying failed pathfinding
 	PATHFIND_COOLDOWN = 5, -- Seconds to wait after exhausting retries before trying again (was 30)
 	STUCK_ARRIVAL_DISTANCE = 9, -- Stuck within this range of the goal = treat as arrived
+	-- Local separation steering (units flow around each other rather than
+	-- overlapping — collisions between units are disabled, so this is purely
+	-- a movement nudge)
+	SEPARATION_RADIUS = 5, -- Studs - neighbours inside this push apart
+	SEPARATION_STRENGTH = 3.5, -- Studs of lateral offset applied to move target
+	FLOW_LOOKAHEAD = 10, -- Studs ahead the unit steers along its flow field
 }
 
 -- Track last target position for each unit to detect changes
@@ -111,6 +118,66 @@ local function cleanupUnit(unit)
 	PathfindingIntegration.unregisterMover(unit)
 end
 
+-- ── Local separation steering ──────────────────────────────────────────────
+-- A lightweight spatial hash rebuilt each update from unit positions. Each
+-- moving unit queries its 9 surrounding cells and gets pushed away from close
+-- neighbours, so groups flow around one another instead of piling up.
+local SEP_CELL = 5 -- studs; ~= SEPARATION_RADIUS
+local sepBuckets: { [number]: { { pos: Vector3, model: Instance } } } = {}
+
+local function sepKey(x: number, z: number): number
+	local cx = math.floor(x / SEP_CELL)
+	local cz = math.floor(z / SEP_CELL)
+	return (cx + 32768) * 65536 + (cz + 32768)
+end
+
+local function buildSeparationBuckets(unitsFolder: Instance)
+	table.clear(sepBuckets)
+	for _, unit in unitsFolder:GetChildren() do
+		if unit:IsA("Model") and unit.PrimaryPart then
+			local pos = unit.PrimaryPart.Position
+			local key = sepKey(pos.X, pos.Z)
+			local bucket = sepBuckets[key]
+			if not bucket then
+				bucket = {}
+				sepBuckets[key] = bucket
+			end
+			table.insert(bucket, { pos = pos, model = unit })
+		end
+	end
+end
+
+-- Sum of repulsion from nearby units, as a horizontal Vector3 (may be zero)
+local function computeSeparation(unit: Instance, pos: Vector3): Vector3
+	local push = Vector3.zero
+	local radiusSq = CONFIG.SEPARATION_RADIUS * CONFIG.SEPARATION_RADIUS
+	local baseCx = math.floor(pos.X / SEP_CELL)
+	local baseCz = math.floor(pos.Z / SEP_CELL)
+	for dx = -1, 1 do
+		for dz = -1, 1 do
+			local bucket = sepBuckets[((baseCx + dx) + 32768) * 65536 + ((baseCz + dz) + 32768)]
+			if bucket then
+				for _, entry in bucket do
+					if entry.model ~= unit then
+						local delta = pos - entry.pos
+						local flat = Vector3.new(delta.X, 0, delta.Z)
+						local distSq = flat.X * flat.X + flat.Z * flat.Z
+						if distSq < radiusSq and distSq > 0.0001 then
+							-- Closer neighbours push harder (inverse falloff)
+							local dist = math.sqrt(distSq)
+							push += flat / dist * (1 - dist / CONFIG.SEPARATION_RADIUS)
+						end
+					end
+				end
+			end
+		end
+	end
+	if push.Magnitude > 0.001 then
+		return push.Unit * CONFIG.SEPARATION_STRENGTH
+	end
+	return Vector3.zero
+end
+
 -- Round-robin resume point: the old throttle iterated GetChildren() in a
 -- FIXED order and broke after MAX_UNITS_PER_FRAME — with more movers than
 -- the budget, the same units were processed every frame and the rest NEVER
@@ -132,6 +199,9 @@ function MovementSystem.update()
 	if roundRobinIndex > totalChildren then
 		roundRobinIndex = 1
 	end
+
+	-- Rebuild the separation spatial hash once for this update
+	buildSeparationBuckets(unitsFolder)
 
 	local unitsProcessedThisFrame = 0
 	local visited = 0
@@ -194,6 +264,7 @@ function MovementSystem.update()
 						-- Arrived at destination
 						unit:SetAttribute("IsMoving", false)
 						unit:SetAttribute("TargetPosition", nil)
+						unit:SetAttribute("FlowFieldId", nil)
 
 						-- Formation slot: snap exactly onto it and face the way the
 						-- formation faces — this is what makes ranks read as clean
@@ -269,18 +340,57 @@ function MovementSystem.update()
 						speed = math.clamp(humanoid.WalkSpeed, 1, 100)
 					end
 
+					local unitPos = unit.PrimaryPart.Position
+					local separation = computeSeparation(unit, unitPos)
+
+					-- ── Flow-field following (shared group movement) ──────────
+					-- When a group was ordered via MovementSystem.moveGroup, every
+					-- member follows one precomputed field instead of running its
+					-- own A*. Honored only while the field's goal still matches
+					-- this unit's target (combat retarget auto-invalidates it).
+					local flowId = unit:GetAttribute("FlowFieldId")
+					if flowId and typeof(flowId) == "number" and PathfindingIntegration.isInitialized() then
+						local fieldGoal = FlowFieldManager.getGoal(flowId)
+						if fieldGoal and (Vector3.new(fieldGoal.X, 0, fieldGoal.Z) - Vector3.new(targetPos.X, 0, targetPos.Z)).Magnitude <= 10 then
+							local flowDir = FlowFieldManager.sample(flowId, unitPos)
+							if humanoid then
+								local dest: Vector3
+								if flowDir.Magnitude < 0.01 then
+									-- Field exhausted near the goal: head straight in
+									dest = targetPos + separation
+								else
+									dest = unitPos + flowDir * CONFIG.FLOW_LOOKAHEAD + separation
+								end
+								if tick() - (lastMoveToTimes[unit] or 0) > 0.35 or targetChanged then
+									humanoid:MoveTo(dest)
+									lastMoveToTimes[unit] = tick()
+								end
+							end
+							lastTargetPositions[unit] = targetPos
+							return -- flow field handles this unit; skip A*
+						else
+							-- Field no longer relevant to this order
+							unit:SetAttribute("FlowFieldId", nil)
+						end
+					end
+
 					-- No pathfinding grid (e.g. Battle Arena — flat ground, no map):
 					-- walk straight at the target instead of standing still forever.
-					if not PathfindingIntegration.isInitialized() and targetChanged then
+					-- Separation keeps arena armies from overlapping into one mass.
+					if not PathfindingIntegration.isInitialized() then
 						if humanoid then
-							humanoid:MoveTo(targetPos)
-							lastMoveToTimes[unit] = tick()
+							local dest = targetPos + separation
+							if targetChanged or tick() - (lastMoveToTimes[unit] or 0) > 0.35 then
+								humanoid:MoveTo(dest)
+								lastMoveToTimes[unit] = tick()
+							end
 						end
 						unitPaths[unit] = {
 							path = { targetPos },
 							index = 1,
 						}
 						lastTargetPositions[unit] = targetPos
+						return
 					end
 
 					-- Start or restart pathfinding if target changed
@@ -379,10 +489,10 @@ function MovementSystem.update()
 
 							-- Refresh MoveTo before its 8-second internal timeout so
 							-- long marches don't stall partway
-							if distanceToWaypoint >= 3 and tick() - (lastMoveToTimes[unit] or 0) > 4 then
+							if distanceToWaypoint >= 3 and tick() - (lastMoveToTimes[unit] or 0) > 0.4 then
 								local marchHumanoid = unit:FindFirstChildOfClass("Humanoid")
 								if marchHumanoid then
-									marchHumanoid:MoveTo(currentWaypoint)
+									marchHumanoid:MoveTo(currentWaypoint + separation)
 									lastMoveToTimes[unit] = tick()
 								end
 							end
@@ -395,7 +505,8 @@ function MovementSystem.update()
 									-- Move to next waypoint
 									local humanoid = unit:FindFirstChildOfClass("Humanoid")
 									if humanoid then
-										humanoid:MoveTo(pathData.path[pathData.index])
+										humanoid:MoveTo(pathData.path[pathData.index] + separation)
+										lastMoveToTimes[unit] = tick()
 										MovementDebug:info(`Unit {unit.Name} reached waypoint {pathData.index - 1}/{#pathData.path}, moving to next`)
 									end
 								else
@@ -425,6 +536,35 @@ function MovementSystem.update()
 			end
 		end
 	end
+end
+
+-- Move a group of units to a shared destination using ONE flow field (falls
+-- back to plain per-unit targets if pathfinding is inactive or the goal is
+-- unreachable). Use this for AI army marches, worker rallies, and any order
+-- that sends many units to the same place — far cheaper than N separate A*
+-- solves and it produces coherent flow.
+function MovementSystem.moveGroup(units: { Model }, destination: Vector3)
+	local flowId: number? = nil
+	if PathfindingIntegration.isInitialized() then
+		flowId = FlowFieldManager.acquire(destination)
+	end
+
+	for _, unit in units do
+		if unit and unit.Parent and unit:IsA("Model") then
+			unit:SetAttribute("CombatTarget", nil)
+			unit:SetAttribute("TargetPosition", destination)
+			unit:SetAttribute("IsMoving", true)
+			unit:SetAttribute("PathfindingFailed", nil)
+			unit:SetAttribute("ArrivalDistance", nil)
+			unit:SetAttribute("FormationFacing", nil)
+			if flowId then
+				unit:SetAttribute("FlowFieldId", flowId)
+			else
+				unit:SetAttribute("FlowFieldId", nil)
+			end
+		end
+	end
+	return flowId ~= nil
 end
 
 -- Get movement statistics

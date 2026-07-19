@@ -91,6 +91,7 @@ GameplayEnhancementManager.init()
 local Systems = script.Parent.Systems
 local PathfindingIntegration = require(Systems.PathfindingIntegration)
 local MovementSystem = require(Systems.MovementSystem)
+local FlowFieldManager = require(Systems.FlowFieldManager)
 local VikingRaidSystem = require(Systems.VikingRaidSystem)
 local PopulationSystem = require(Systems.PopulationSystem)
 local ConsumptionSystem = require(Systems.ConsumptionSystem)
@@ -160,6 +161,7 @@ local workerLoopStarted = false
 WallSystemServer.initialize()
 TestCommandManager.init()
 ArenaMode.init()
+FlowFieldManager.init()
 GameManagerDebug:info("RemoteEvents-dependent systems initialized")
 
 -- Start fog of war updates
