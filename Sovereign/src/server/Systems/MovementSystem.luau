@@ -157,7 +157,12 @@ function MovementSystem.update()
 					-- clumps because units "arrived" while still in a blob).
 					local arrivalDistance = (unit:GetAttribute("ArrivalDistance") :: number?)
 						or CONFIG.ARRIVAL_DISTANCE
-					local distance = (unit.PrimaryPart.Position - targetPos).Magnitude
+					-- HORIZONTAL distance only: the root part sits ~4.5 studs above
+					-- ground-level targets, so a 3D check can exceed tight arrival
+					-- tolerances forever (formation snap never fired, IsMoving never
+					-- cleared, stragglers never corrected)
+					local arrivalDelta = unit.PrimaryPart.Position - targetPos
+					local distance = Vector3.new(arrivalDelta.X, 0, arrivalDelta.Z).Magnitude
 					if distance < arrivalDistance then
 						-- Arrived at destination
 						unit:SetAttribute("IsMoving", false)

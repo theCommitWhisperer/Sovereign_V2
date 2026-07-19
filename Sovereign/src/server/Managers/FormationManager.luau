@@ -205,7 +205,10 @@ local function calculateFormationPositions(
 		local unitsPerRow = math.ceil(unitCount / config.rows)
 		for i, unit in ipairs(units) do
 			local row = math.floor((i - 1) / unitsPerRow)
-			local col = (i - 1) % unitsPerRow - (unitsPerRow - 1) / 2
+			-- Center each row by its ACTUAL size so a partial back row sits in
+			-- the middle instead of hanging off the left flank
+			local rowSize = math.min(unitsPerRow, unitCount - row * unitsPerRow)
+			local col = (i - 1) % unitsPerRow - (rowSize - 1) / 2
 
 			local offset = rightVector * (col * config.spacing) + facing * (-row * config.spacing)
 			positions[unit] = center + offset
