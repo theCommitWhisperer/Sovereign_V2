@@ -714,9 +714,60 @@ local function faceTarget(unitModel: Model, targetPos: Vector3)
 	end
 end
 
+-- Broken units rout: drop combat and run from the nearest threats.
+-- MoraleManager owns the IsFleeing state (flee threshold + rally recovery);
+-- this makes the routing actually move the unit.
+local function updateFleeing(unitModel: Model, unit: CombatUnit, now: number)
+	unit.targetModel = nil
+	unit.isCharging = false
+
+	if now - unit.lastScanTime < 0.5 then
+		return
+	end
+	unit.lastScanTime = now
+
+	local unitPos = getPosition(unitModel)
+	if not unitPos then
+		return
+	end
+
+	-- Run directly away from the average position of nearby enemies
+	local threatSum = Vector3.zero
+	local threatCount = 0
+	forEachEnemyInRadius(unit, 50, function(enemy)
+		local enemyPos = getPosition(enemy.model)
+		if enemyPos then
+			threatSum += enemyPos
+			threatCount += 1
+		end
+	end)
+
+	local fleeDir: Vector3
+	if threatCount > 0 then
+		local away = unitPos - threatSum / threatCount
+		away = Vector3.new(away.X, 0, away.Z)
+		fleeDir = if away.Magnitude > 0.5
+			then away.Unit
+			else Vector3.new(math.cos(unit.slotAngle), 0, math.sin(unit.slotAngle))
+	else
+		-- No visible threats: keep running in this unit's own panic direction
+		fleeDir = Vector3.new(math.cos(unit.slotAngle), 0, math.sin(unit.slotAngle))
+	end
+
+	unitModel:SetAttribute("TargetPosition", unitPos + fleeDir * 30)
+	unitModel:SetAttribute("IsMoving", true)
+end
+
 local function updateUnit(unitModel: Model, unit: CombatUnit, now: number)
 	-- Stunned units do nothing
 	if now < unit.stunnedUntil then
+		return
+	end
+
+	-- Routing overrides everything — including player orders. Rally is handled
+	-- by MoraleManager clearing IsFleeing when morale recovers.
+	if unitModel:GetAttribute("IsFleeing") == true then
+		updateFleeing(unitModel, unit, now)
 		return
 	end
 

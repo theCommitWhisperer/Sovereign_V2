@@ -146,9 +146,14 @@ function MovementSystem.update()
 			if targetPos and typeof(targetPos) == "Vector3" then
 				-- Wrap in pcall for safety
 				local success, result = pcall(function()
-					-- Check if unit is close enough to target
+					-- Check if unit is close enough to target. Formation moves set
+					-- a tighter per-unit ArrivalDistance (slots are only 2-6 studs
+					-- apart — the default 5-stud tolerance turned formations into
+					-- clumps because units "arrived" while still in a blob).
+					local arrivalDistance = (unit:GetAttribute("ArrivalDistance") :: number?)
+						or CONFIG.ARRIVAL_DISTANCE
 					local distance = (unit.PrimaryPart.Position - targetPos).Magnitude
-					if distance < CONFIG.ARRIVAL_DISTANCE then
+					if distance < arrivalDistance then
 						-- Arrived at destination
 						unit:SetAttribute("IsMoving", false)
 						unit:SetAttribute("TargetPosition", nil)

@@ -339,8 +339,14 @@ local function updateMoraleLoop()
 
 				-- Apply gradual morale recovery
 				local naturalRecovery = 0
-				if moraleData.current < BASE_MORALE and moraleData.state ~= "Fleeing" then
-					naturalRecovery = 0.5 -- Slowly recover to base
+				if moraleData.current < BASE_MORALE then
+					if moraleData.state == "Fleeing" then
+						-- Routed units catch their breath while running — without
+						-- this they can never rally (recovery used to be 0)
+						naturalRecovery = 1.5
+					else
+						naturalRecovery = 0.5 -- Slowly recover to base
+					end
 				end
 
 				local totalChange = auraBonus + naturalRecovery

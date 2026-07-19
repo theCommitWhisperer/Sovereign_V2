@@ -1130,6 +1130,9 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 						unit:SetAttribute("TargetPosition", position)
 						unit:SetAttribute("IsMoving", true)
 						unit:SetAttribute("FormationId", formationId) -- Track formation membership
+						-- Tight arrival tolerance so units actually reach their
+						-- slots (default 5-stud tolerance clumped tight formations)
+						unit:SetAttribute("ArrivalDistance", 1.5)
 						-- Clear pathfinding failure - player command overrides previous failures
 						unit:SetAttribute("PathfindingFailed", nil)
 					end
@@ -1142,6 +1145,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 					unit:SetAttribute("CombatTarget", nil)
 					unit:SetAttribute("TargetPosition", data.targetPosition)
 					unit:SetAttribute("IsMoving", true)
+					unit:SetAttribute("ArrivalDistance", nil) -- default tolerance
 					-- Clear pathfinding failure - player command overrides previous failures
 					unit:SetAttribute("PathfindingFailed", nil)
 				end

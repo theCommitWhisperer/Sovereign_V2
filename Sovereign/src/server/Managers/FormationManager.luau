@@ -236,6 +236,59 @@ local function calculateFormationPositions(
 	return positions
 end
 
+-- Reassign formation slots by proximity: each slot goes to the nearest
+-- still-unassigned unit. Index-order assignment made units cross paths and
+-- shove through each other, ending in a clump — greedy matching keeps paths
+-- short and mostly parallel so formations actually form.
+local function optimizeSlotAssignments(
+	units: { Model },
+	positions: { [Model]: Vector3 }
+): { [Model]: Vector3 }
+	-- Collect slots in a stable order (front rows first, as generated)
+	local slots: { Vector3 } = {}
+	for _, unit in ipairs(units) do
+		local slot = positions[unit]
+		if slot then
+			table.insert(slots, slot)
+		end
+	end
+
+	local remaining: { Model } = {}
+	for _, unit in ipairs(units) do
+		if positions[unit] and unit.PrimaryPart then
+			table.insert(remaining, unit)
+		end
+	end
+
+	local optimized: { [Model]: Vector3 } = {}
+	for _, slot in ipairs(slots) do
+		local bestIndex: number? = nil
+		local bestDistSq = math.huge
+		for index, unit in ipairs(remaining) do
+			local primaryPart = unit.PrimaryPart :: BasePart
+			local delta = primaryPart.Position - slot
+			local distSq = delta.X * delta.X + delta.Z * delta.Z
+			if distSq < bestDistSq then
+				bestDistSq = distSq
+				bestIndex = index
+			end
+		end
+		if bestIndex then
+			optimized[remaining[bestIndex :: number]] = slot
+			table.remove(remaining, bestIndex :: number)
+		end
+	end
+
+	-- Units without PrimaryPart keep their original slot (edge case)
+	for _, unit in ipairs(units) do
+		if positions[unit] and not optimized[unit] then
+			optimized[unit] = positions[unit]
+		end
+	end
+
+	return optimized
+end
+
 -- Create a new formation
 function FormationManager.createFormation(
 	formationType: FormationType,
@@ -260,6 +313,7 @@ function FormationManager.createFormation(
 
 	local facingDirection = facing or Vector3.new(0, 0, -1)
 	local positions = calculateFormationPositions(formationType, units, position, facingDirection)
+	positions = optimizeSlotAssignments(units, positions)
 
 	local formation: Formation = {
 		type = formationType,
