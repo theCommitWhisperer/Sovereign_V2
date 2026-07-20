@@ -165,6 +165,18 @@ local function isGathererBuilding(buildingInfo: any): boolean
 	return buildingInfo.worker_gathers_from_nodes == true
 end
 
+-- Can this unit be put to work? Peasants, and any civilian/worker job unit that
+-- has been released back to idle (so unassigned workers can be re-staffed rather
+-- than draining the labour pool). Never soldiers.
+local function isAssignableCivilian(unit: Model): boolean
+	local unitType = unit:GetAttribute("UnitType")
+	if unitType == "Peasant" then
+		return true
+	end
+	local unitData = unitType and GameData.Units[unitType]
+	return unitData ~= nil and unitData.subtype == "Worker"
+end
+
 -- ============================================
 -- MOVEMENT (unified arrival with MovementSystem)
 -- ============================================
@@ -377,7 +389,7 @@ function WorkerManager.assignNearestIdlePeasant(building: Instance, ownerId: num
 	local nearest: Model? = nil
 	local nearestDist = math.huge
 	for _, unit in ipairs(idlePeasants) do
-		if unit and unit.Parent and unit.PrimaryPart and unit:GetAttribute("UnitType") == "Peasant" then
+		if unit and unit.Parent and unit.PrimaryPart and isAssignableCivilian(unit) then
 			local d = (unit.PrimaryPart.Position - entrance).Magnitude
 			if d < nearestDist then
 				nearestDist = d
