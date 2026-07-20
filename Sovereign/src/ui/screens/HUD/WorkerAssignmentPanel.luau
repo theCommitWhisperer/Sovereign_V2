@@ -36,21 +36,17 @@ function WorkerAssignmentPanel:updateAssignedWorkers()
 	local assignedWorkers = {}
 	for _, unit in unitsFolder:GetChildren() do
 		if unit:IsA("Model") then
-			local assignedTo = unit:GetAttribute("AssignedTo")
-			local isWorking = unit:GetAttribute("IsWorking")
-			local buildingType = selectedBuilding:GetAttribute("BuildingType")
+			-- Match by the unique building INSTANCE id, not the building type, so
+			-- the panel counts workers for THIS building only.
+			local assignedBuildingId = unit:GetAttribute("AssignedBuildingId")
 
-			-- Check if this worker is assigned to this type of building
-			if isWorking and assignedTo == buildingType then
-				local resourcesCarrying = unit:GetAttribute("ResourcesCarrying") or 0
-				local resourceType = unit:GetAttribute("ResourceType")
-				local unitType = unit:GetAttribute("UnitType") or "Peasant"
-
+			if unit:GetAttribute("IsWorking") and assignedBuildingId == selectedBuilding.Name then
 				table.insert(assignedWorkers, {
 					name = unit.Name,
-					unitType = unitType,
-					resourcesCarrying = resourcesCarrying,
-					resourceType = resourceType,
+					unitType = unit:GetAttribute("UnitType") or "Peasant",
+					resourcesCarrying = unit:GetAttribute("ResourcesCarrying") or 0,
+					resourceType = unit:GetAttribute("ResourceType"),
+					workerState = unit:GetAttribute("WorkerState") or "Working",
 				})
 			end
 		end
@@ -95,13 +91,19 @@ function WorkerAssignmentPanel:render()
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	})
 
+	-- Friendly labels for the live WorkerState attribute.
+	local STATE_LABELS = {
+		Walking = "🚶 Walking to work",
+		Working = "⚒️ Working",
+		Gathering = "🪓 Gathering",
+		Returning = "📦 Hauling back",
+	}
+
 	if #assignedWorkers > 0 then
 		for i, worker in assignedWorkers do
-			local statusText = ""
+			local statusText = STATE_LABELS[worker.workerState] or "⚒️ Working"
 			if worker.resourcesCarrying > 0 and worker.resourceType then
-				statusText = `Carrying {worker.resourcesCarrying} {worker.resourceType}`
-			else
-				statusText = "Gathering..."
+				statusText = `{statusText} · {worker.resourcesCarrying} {worker.resourceType}`
 			end
 
 			workerItems[`Worker{i}`] = React.createElement("Frame", {
@@ -161,9 +163,19 @@ function WorkerAssignmentPanel:render()
 		})
 	end
 
-	-- Building storage info
+	-- Building storage info (storage_capacity is a table keyed by resource type)
 	local storedAmount = selectedBuilding:GetAttribute(`Storage_{resourceType}`) or 0
-	local maxStorage = buildingInfo.storage_capacity or 0
+	local maxStorage = (buildingInfo.storage_capacity and buildingInfo.storage_capacity[resourceType]) or 0
+
+	-- Live effective output estimate: output/tick × staffed workers ÷ interval.
+	local producesResource = buildingInfo.produces_resource ~= nil
+	local outputPer = buildingInfo.production_output or 1
+	local interval = buildingInfo.production_time or (1 / (buildingInfo.production_rate or 1))
+	local effectiveWorkers = math.min(#assignedWorkers, capacity)
+	local ratePerSec = (interval > 0) and (outputPer * effectiveWorkers / interval) or 0
+	local storageText = producesResource
+			and `Storage: {storedAmount}/{maxStorage} {resourceType}  ·  ~{string.format("%.1f", ratePerSec)}/s`
+		or `Workers: {#assignedWorkers}/{capacity}`
 
 	return React.createElement("Frame", {
 		Name = "WorkerAssignmentPanel",
@@ -192,7 +204,7 @@ function WorkerAssignmentPanel:render()
 				Size = UDim2.new(1, -10, 0, 14),
 				Position = UDim2.new(0, 5, 0, 20),
 				BackgroundTransparency = 1,
-				Text = `Storage: {storedAmount}/{maxStorage} {resourceType}`,
+				Text = storageText,
 				Font = Enum.Font.Gotham,
 				TextSize = 11,
 				TextColor3 = UIConfig.HUD.StatLabelColor,

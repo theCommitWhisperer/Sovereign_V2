@@ -288,6 +288,8 @@ function BuildingManager.createBuilding(
 		BuildingStorage[building] = {}
 		for resourceType, _ in pairs(buildingInfo.storage_capacity) do
 			BuildingStorage[building][resourceType] = 0
+			-- Replicated mirror so the client shows 0/max before any production.
+			building:SetAttribute(`Storage_{resourceType}`, 0)
 		end
 	end
 
@@ -356,6 +358,10 @@ function BuildingManager.takeFromStorage(building: Instance, resourceType: strin
 	local amountToTake = math.min(amount, currentAmount)
 	BuildingStorage[building][resourceType] = currentAmount - amountToTake
 
+	-- Mirror to a replicated attribute so the client (WorkerAssignmentPanel,
+	-- tooltips) sees live storage without an extra remote.
+	building:SetAttribute(`Storage_{resourceType}`, BuildingStorage[building][resourceType])
+
 	return amountToTake
 end
 
@@ -385,6 +391,9 @@ function BuildingManager.addToStorage(building: Instance, resourceType: string, 
 
 	local amountToAdd = math.min(amount, spaceAvailable)
 	BuildingStorage[building][resourceType] = currentAmount + amountToAdd
+
+	-- Mirror to a replicated attribute so the client sees live storage.
+	building:SetAttribute(`Storage_{resourceType}`, BuildingStorage[building][resourceType])
 
 	StorageDebug:info(`Added to storage`, {
 		building = buildingType,
