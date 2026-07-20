@@ -1056,6 +1056,38 @@ BuildingsData["Celtic Cross"] = {
 -- Automatically add worker_points to all production buildings that don't have them explicitly set
 -- This ensures backward compatibility while allowing custom configurations
 
+-- ========================================
+-- ECONOMY BALANCE (economy-rework-v2)
+-- ========================================
+-- Centralised, tiered production balance keyed by the resource a building makes.
+-- This is the single source of truth for economy tuning — edit here, not in each
+-- building entry. `output` = units produced per tick (passive) or hauled back per
+-- node visit (gatherer); `interval` = seconds between passive ticks; `slots` =
+-- max workers a building employs (passive output scales with staffed workers).
+type ResourceTier = { output: number, interval: number, slots: number }
+
+local RESOURCE_TIERS: { [string]: ResourceTier } = {
+	-- Raw resources — abundant, drive the early game.
+	Wood = { output = 2, interval = 4, slots = 3 },
+	Stone = { output = 2, interval = 5, slots = 3 },
+	Food = { output = 2, interval = 4, slots = 3 },
+	Iron_Ore = { output = 1, interval = 5, slots = 3 },
+	Coal = { output = 1, interval = 5, slots = 3 },
+	-- Refined goods — mid game, consume a raw input.
+	Flour = { output = 2, interval = 5, slots = 2 },
+	Bread = { output = 2, interval = 5, slots = 2 },
+	Ale = { output = 2, interval = 6, slots = 2 },
+	Iron_Bars = { output = 1, interval = 5, slots = 2 },
+	Leather = { output = 1, interval = 6, slots = 2 },
+	Furniture = { output = 1, interval = 6, slots = 2 },
+	-- Advanced / strategic — slow, valuable.
+	Weapons = { output = 1, interval = 8, slots = 2 },
+	Siege_Equipment = { output = 1, interval = 12, slots = 1 },
+	Manuscripts = { output = 1, interval = 8, slots = 1 },
+}
+
+local DEFAULT_TIER: ResourceTier = { output = 1, interval = 6, slots = 2 }
+
 -- Buildings whose workers physically walk out to world ResourceNodes to harvest.
 -- Everything else that produces is a passive processor/producer.
 local GATHERER_BUILDINGS: { [string]: boolean } = {
@@ -1066,29 +1098,25 @@ local GATHERER_BUILDINGS: { [string]: boolean } = {
 }
 
 for buildingName, buildingData in BuildingsData do
-	-- Economy defaults (economy-rework-v2): make every worker building assignable
-	-- and every producer tick with sane numbers, without hand-editing 25 entries.
 	if buildingData.requires_worker then
-		if buildingData.worker_slots == nil then
-			-- Producers get multiple slots (scales output); service buildings get one.
-			buildingData.worker_slots = buildingData.produces_resource ~= nil and 2 or 1
-		end
-
 		if buildingData.produces_resource then
-			if buildingData.production_output == nil then
-				buildingData.production_output = 1
-			end
-			if buildingData.production_rate == nil then
-				buildingData.production_rate = 1
-			end
+			local tier = RESOURCE_TIERS[buildingData.produces_resource] or DEFAULT_TIER
+
+			-- Tier is authoritative: production_time (seconds/tick) and output.
+			buildingData.production_output = tier.output
+			buildingData.production_time = tier.interval
+			buildingData.worker_slots = tier.slots
+			-- Keep a units/second figure in sync for any UI / tooltips that read it.
+			buildingData.production_rate = tier.output / tier.interval
 
 			if GATHERER_BUILDINGS[buildingName] then
 				buildingData.worker_gathers_from_nodes = true
-				buildingData.worker_slots = math.max(buildingData.worker_slots or 1, 3)
-				-- Gatherers haul a chunk back per node visit.
-				if (buildingData.production_output or 1) < 2 then
-					buildingData.production_output = 2
-				end
+			end
+		else
+			-- Service buildings that need a worker but make nothing (Market,
+			-- Church, Tavern, Arrow Tower ...) — a single operator slot.
+			if buildingData.worker_slots == nil then
+				buildingData.worker_slots = 1
 			end
 		end
 	end
