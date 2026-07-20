@@ -296,6 +296,16 @@ end
 -- WORKER TRANSFORMATION
 -- ============================================
 
+-- Set the built-in overhead humanoid name (what Roblox shows above the head) to
+-- a friendly role name. The MODEL name stays the unique id (Peasant_<owner>_<n>)
+-- used for selection/lookup — only the DISPLAY name changes.
+local function setUnitDisplayName(model: Model, displayName: string)
+	local hum = model:FindFirstChildOfClass("Humanoid")
+	if hum then
+		hum.DisplayName = (displayName:gsub("_", " "))
+	end
+end
+
 local function transformWorker(peasant: Model, jobType: string): Model
 	local unitData = GameData.Units[jobType]
 	if not unitData then
@@ -328,12 +338,14 @@ local function transformWorker(peasant: Model, jobType: string): Model
 		clone.Parent = peasant.Parent
 		peasant:Destroy()
 
+		setUnitDisplayName(clone, jobType)
 		WorkerDebug:info(`Transformed peasant into {jobType}`)
 		return clone
 	end
 
 	-- No dedicated model — keep the peasant model but tag it with the job type so
 	-- production still works (visual only differs).
+	setUnitDisplayName(peasant, jobType)
 	WorkerDebug:info(`No model "{modelName}" for {jobType}; keeping peasant model, tagged as {jobType}`)
 	return peasant
 end

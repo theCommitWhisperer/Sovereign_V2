@@ -261,6 +261,14 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 		end
 	end
 
+	-- Friendly overhead name (the model name stays the unique id used for lookup).
+	do
+		local humanoid = unit:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid.DisplayName = (unitType:gsub("_", " "))
+		end
+	end
+
 	-- PARENT TO WORKSPACE FIRST (attributes work better when parented)
 	local unitsFolder = workspace:FindFirstChild("Units")
 	if not unitsFolder then
