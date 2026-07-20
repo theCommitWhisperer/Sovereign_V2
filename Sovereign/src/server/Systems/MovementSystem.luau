@@ -311,7 +311,8 @@ function MovementSystem.update()
 							return
 						end
 
-						MovementDebug:warn("Unit " .. unit.Name .. " appears stuck, recalculating path")
+						-- Self-recovers (sidestep + re-path), so this is info, not a warning.
+						MovementDebug:info("Unit " .. unit.Name .. " appears stuck, recalculating path")
 						-- Force recalculation by clearing last target
 						lastTargetPositions[unit] = nil
 

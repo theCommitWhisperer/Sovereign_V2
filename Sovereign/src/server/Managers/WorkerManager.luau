@@ -3,32 +3,34 @@
 --
 -- Design (economy-rework-v2):
 --   • A peasant is ASSIGNED to a building (auto on placement or manually via the
---     WorkerAssignmentPanel). It walks to the building's BuildingEntrance and,
---     ON ARRIVAL, transforms into its job unit (Farmer, Woodcutter, ...). This
---     is the single moment the old code could never reach — see the arrival
---     unification below.
+--     WorkerAssignmentPanel). It walks to the building's approach position and,
+--     ON ARRIVAL, transforms into its job unit (Farmer, Woodcutter, ...).
 --   • Buildings produce in one of two modes:
 --       - PASSIVE (processors / farms): once staffed, the BUILDING produces its
 --         output on a timer straight into its own storage, consuming inputs for
---         production-chain buildings. Output scales with the number of staffed
---         workers (capped at worker_slots).
---       - GATHER (lumberjack / quarry / mine): the worker physically walks out
---         to the nearest matching ResourceNode, harvests, walks back and deposits
---         into the building's storage — the stored count rises on return. If a
---         map has no matching nodes the gatherer falls back to passive output so
---         the economy never stalls.
---   • HAULERS relay resources: production output from a building to central
---     storage, and (new) input supply from central storage to hungry processors.
+--         production-chain buildings. Output scales with staffed workers (capped
+--         at worker_slots).
+--       - GATHER (lumberjack / quarry / mine): the worker walks out to the nearest
+--         matching ResourceNode, harvests, walks back and deposits — the stored
+--         count rises on return. If a map has no matching nodes the gatherer falls
+--         back to passive output so the economy never stalls.
+--   • HAULERS relay resources: producer output → central storage, and input
+--     supply from central storage → hungry processors.
 --
--- Arrival unification (root-cause fix):
+-- Navigation (why we no longer depend on worker-point PARTS):
+--   Workers/haulers target a building's ApproachPosition — a guaranteed-walkable,
+--   graph-connected cell next to the building, computed from geometry + the live
+--   pathfinding grid at placement (see PathfindingIntegration.getApproachPosition
+--   and BuildingManager). Authored BuildingEntrance / ProductionStation parts are
+--   now an OPTIONAL refinement, not a requirement — they can no longer strand a
+--   worker by being missing, buried, or inside the obstacle.
+--
+-- Arrival unification:
 --   MovementSystem owns locomotion and clears IsMoving/TargetPosition once a unit
---   is within its own ~5-stud tolerance (or when it gives up pressed against
---   geometry near the goal). The old WorkerManager waited for a TIGHTER 3-stud
---   tolerance that MovementSystem never delivered, so workers parked a few studs
---   short forever and never transformed. `pathfindToPosition` below now (a) clamps
---   its arrival radius to sit OUTSIDE MovementSystem's, and (b) accepts a stopped
---   unit that is close as "arrived". A per-state stuck-timeout snap guarantees the
---   transform can always happen.
+--   is within its own ~5-stud tolerance (or gives up near the goal). pathfindTo-
+--   Position clamps its arrival radius OUTSIDE MovementSystem's and treats a
+--   stopped-near-goal unit as arrived, so workers never park short. A per-state
+--   stuck-timeout snap is a last-resort guarantee.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
@@ -41,6 +43,7 @@ local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local WorkerPointSystem = require(script.Parent.Parent.Systems.WorkerPointSystem)
 local IdlePeasantManager = require(script.Parent.IdlePeasantManager)
 local ResourceNodeManager = require(script.Parent.ResourceNodeManager)
+local PathfindingIntegration = require(script.Parent.Parent.Systems.PathfindingIntegration)
 
 local WorkerManager = {}
 
@@ -59,9 +62,9 @@ local CONFIG = {
 	-- If MovementSystem stopped a unit (IsMoving cleared) within this radius of
 	-- the goal, accept it — MovementSystem won't get any closer.
 	GIVEUP_RADIUS = 12,
-	-- Seconds a worker may spend trying to reach a point before we snap it there.
-	-- Guarantees transformation / deposits can always complete.
-	WALK_STUCK_TIMEOUT = 12,
+	-- Seconds a worker may spend trying to reach its building before we snap it
+	-- there. A last-resort guarantee; with reliable pathfinding it rarely fires.
+	WALK_STUCK_TIMEOUT = 8,
 	-- Gather loop
 	GATHER_ARRIVAL = 6,
 	-- Hauler cadence
@@ -182,9 +185,6 @@ end
 -- ============================================
 
 -- Issue / refresh a move order toward targetPos. Returns true once arrived.
--- The arrival radius is clamped so it always sits OUTSIDE MovementSystem's own
--- tolerance, and a unit MovementSystem has already stopped near the goal counts
--- as arrived — this is the fix for peasants parking short and never transforming.
 local function pathfindToPosition(unit: Model, targetPos: Vector3, arrivalThreshold: number): boolean
 	local pp = unit.PrimaryPart
 	if not pp then
@@ -218,34 +218,59 @@ local function pathfindToPosition(unit: Model, targetPos: Vector3, arrivalThresh
 	return false
 end
 
--- Pathfind to a named worker point (BuildingEntrance, ProductionStation, ...)
-local function pathfindToPoint(unit: Model, building: Instance, pointType: string, arrivalThreshold: number): boolean
+-- The position a worker/hauler should navigate to in order to interact with a
+-- building. Primary source is the cached, guaranteed-walkable ApproachPosition
+-- (computed from geometry + the walkable grid at placement); we fall back to an
+-- optional authored worker point, then the building centre.
+local function getInteractionPos(building: Instance): Vector3?
+	local cached = building:GetAttribute("ApproachPosition")
+	if typeof(cached) == "Vector3" then
+		return cached
+	end
+
+	-- Not cached yet (older buildings / battle sandbox) — compute and store it.
+	if building:IsA("Model") then
+		local pos = PathfindingIntegration.getApproachPosition(building)
+		if pos then
+			building:SetAttribute("ApproachPosition", pos)
+			return pos
+		end
+	end
+
+	-- Optional authored point, then centre, as a last resort.
+	local pointPos = WorkerPointSystem.getPointPosition(building :: any, "BuildingEntrance" :: any)
+	if pointPos then
+		return pointPos
+	end
+	return building:IsA("Model") and (building :: Model):GetPivot().Position or nil
+end
+
+-- Walk a unit to a building's approach position. Returns true on arrival.
+local function pathfindToBuilding(unit: Model, building: Instance, arrivalThreshold: number): boolean
 	if not unit.PrimaryPart then
 		return true
 	end
-
-	local targetPos = WorkerPointSystem.getPointPosition(building :: any, pointType :: any)
+	local targetPos = getInteractionPos(building)
 	if not targetPos then
-		WorkerDebug:warn(`Point {pointType} not found in {building.Name}`)
 		return false
 	end
-
 	return pathfindToPosition(unit, targetPos, arrivalThreshold)
 end
 
--- If a worker has been trying to reach a point for too long, snap it there so
--- the state machine can always make progress (transform / deposit / etc.).
-local function snapIfStuck(task: WorkerTask, pointType: string): boolean
+-- If a worker has been trying to reach its building for too long, snap it to the
+-- approach position so the state machine can always make progress. A last-resort
+-- guarantee — with reliable pathfinding it should almost never fire.
+local function snapIfStuck(task: WorkerTask): boolean
 	if tick() - task.walkStartTime < CONFIG.WALK_STUCK_TIMEOUT then
 		return false
 	end
-	local pos = WorkerPointSystem.getPointPosition(task.workplace :: any, pointType :: any)
+	local pos = getInteractionPos(task.workplace)
 	if pos and task.worker.PrimaryPart then
 		task.worker:PivotTo(CFrame.new(pos))
 	end
 	task.worker:SetAttribute("IsMoving", false)
 	task.worker:SetAttribute("TargetPosition", nil)
-	WorkerDebug:warn(`Worker snapped to {pointType} of {task.workplace.Name} after stuck timeout`)
+	WorkerDebug:info(`Worker snapped to approach position of {task.workplace.Name} after stuck timeout`)
 	return true
 end
 
@@ -361,6 +386,10 @@ function WorkerManager.assignWorkerToBuilding(peasant: Model?, building: Instanc
 	table.insert(WorkerTasks, task)
 	peasant:SetAttribute("IsWorking", true)
 	peasant:SetAttribute("AssignedTo", buildingType)
+	-- Unique per-building-instance id so the UI can count workers for THIS
+	-- building, not every building of the same type.
+	peasant:SetAttribute("AssignedBuildingId", building.Name)
+	peasant:SetAttribute("WorkerState", "Walking")
 	peasant:SetAttribute("ResourceType", buildingInfo.produces_resource)
 end
 
@@ -379,9 +408,8 @@ function WorkerManager.assignNearestIdlePeasant(building: Instance, ownerId: num
 		return false
 	end
 
-	local entrance = WorkerPointSystem.getPointPosition(building :: any, "BuildingEntrance" :: any)
-		or (building.PrimaryPart and building.PrimaryPart.Position)
-	if not entrance then
+	local approach = getInteractionPos(building)
+	if not approach then
 		return false
 	end
 
@@ -390,7 +418,7 @@ function WorkerManager.assignNearestIdlePeasant(building: Instance, ownerId: num
 	local nearestDist = math.huge
 	for _, unit in ipairs(idlePeasants) do
 		if unit and unit.Parent and unit.PrimaryPart and isAssignableCivilian(unit) then
-			local d = (unit.PrimaryPart.Position - entrance).Magnitude
+			local d = (unit.PrimaryPart.Position - approach).Magnitude
 			if d < nearestDist then
 				nearestDist = d
 				nearest = unit
@@ -399,7 +427,7 @@ function WorkerManager.assignNearestIdlePeasant(building: Instance, ownerId: num
 	end
 
 	if not nearest then
-		WorkerDebug:warn(`No idle peasant available to staff {buildingType}`)
+		WorkerDebug:info(`No idle peasant available to staff {buildingType}`)
 		return false
 	end
 
@@ -426,6 +454,8 @@ function WorkerManager.unassignWorker(building: Instance, count: number?): numbe
 			if worker and worker.Parent then
 				worker:SetAttribute("IsWorking", false)
 				worker:SetAttribute("AssignedTo", nil)
+				worker:SetAttribute("AssignedBuildingId", nil)
+				worker:SetAttribute("WorkerState", nil)
 				worker:SetAttribute("ResourcesCarrying", 0)
 				worker:SetAttribute("IsMoving", false)
 				worker:SetAttribute("TargetPosition", nil)
@@ -500,8 +530,7 @@ local function updateWorkerTasks(_dt: number)
 
 		-- ── WALKING TO ENTRANCE ────────────────────────────────────────────
 		if task.state == "WalkingToEntrance" then
-			local arrived = pathfindToPoint(task.worker, task.workplace, "BuildingEntrance", 3)
-				or snapIfStuck(task, "BuildingEntrance")
+			local arrived = pathfindToBuilding(task.worker, task.workplace, 3) or snapIfStuck(task)
 
 			if arrived then
 				if not task.hasTransformed then
@@ -545,10 +574,12 @@ local function updateWorkerTasks(_dt: number)
 					task.state = "GatheringResources"
 					task.walkStartTime = tick()
 					task.atStation = false
+					task.worker:SetAttribute("WorkerState", "Gathering")
 				else
 					-- No nodes on this map — fall back to passive output so the
-					-- building still functions. Stay near the station.
-					pathfindToPoint(task.worker, task.workplace, "ProductionStation", 3)
+					-- building still functions. Stay at the building.
+					pathfindToBuilding(task.worker, task.workplace, 3)
+					task.worker:SetAttribute("WorkerState", "Working")
 					local interval = getProductionInterval(buildingInfo)
 					if tick() - task.fallbackProductionTime >= interval then
 						task.fallbackProductionTime = tick()
@@ -559,11 +590,11 @@ local function updateWorkerTasks(_dt: number)
 					end
 				end
 			else
-				-- Passive operator: reach the station, then flag presence so the
+				-- Passive operator: reach the building, then flag presence so the
 				-- per-building production pass counts this worker.
-				local atStation = pathfindToPoint(task.worker, task.workplace, "ProductionStation", 3)
-					or snapIfStuck(task, "ProductionStation")
+				local atStation = pathfindToBuilding(task.worker, task.workplace, 3) or snapIfStuck(task)
 				task.atStation = atStation
+				task.worker:SetAttribute("WorkerState", atStation and "Working" or "Walking")
 			end
 
 		-- ── GATHERING RESOURCES (from the world) ───────────────────────────
@@ -586,6 +617,7 @@ local function updateWorkerTasks(_dt: number)
 						task.state = "ReturningToDropoff"
 						task.targetNode = nil
 						task.walkStartTime = tick()
+						task.worker:SetAttribute("WorkerState", "Returning")
 					else
 						task.targetNode = nil
 						task.state = "Working"
@@ -598,12 +630,7 @@ local function updateWorkerTasks(_dt: number)
 
 		-- ── RETURNING TO DROPOFF ───────────────────────────────────────────
 		elseif task.state == "ReturningToDropoff" then
-			local dropoffPoint = WorkerPointSystem.hasPoint(task.workplace :: any, "ResourceDropoff" :: any)
-					and "ResourceDropoff"
-				or "BuildingEntrance"
-
-			local arrived = pathfindToPoint(task.worker, task.workplace, dropoffPoint, 3)
-				or snapIfStuck(task, dropoffPoint)
+			local arrived = pathfindToBuilding(task.worker, task.workplace, 3) or snapIfStuck(task)
 
 			if arrived and task.resourceType then
 				-- Deposit into the building — the stored count rises on return.
@@ -814,7 +841,7 @@ local function updateHaulerTasks(_dt: number)
 
 		if task.state == "WalkingToPickup" then
 			if task.sourceBuilding and task.sourceBuilding.Parent and task.resourceType then
-				local pickupPos = WorkerPointSystem.getPickupPosition(task.sourceBuilding :: any)
+				local pickupPos = getInteractionPos(task.sourceBuilding)
 				if not pickupPos then
 					returnHaulerToIdle(task, i)
 					continue
@@ -856,8 +883,7 @@ local function updateHaulerTasks(_dt: number)
 
 		elseif task.state == "WalkingToStorage" then
 			if task.targetStorage and task.targetStorage.Parent and task.resourceType then
-				local entrancePos =
-					WorkerPointSystem.getPointPosition(task.targetStorage :: any, "BuildingEntrance" :: any)
+				local entrancePos = getInteractionPos(task.targetStorage)
 				if not entrancePos then
 					returnHaulerToIdle(task, i)
 					continue

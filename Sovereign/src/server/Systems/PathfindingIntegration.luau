@@ -47,6 +47,18 @@ local framePathCalculations = 0
 local lastFrameReset = 0
 local activeMovers = {}
 
+-- Rate-limited warnings: recoverable conditions (a unit briefly on an unwalkable
+-- cell, a transient path miss) used to spam the output every frame. Collapse
+-- repeats of the same key to one line every few seconds.
+local lastWarnTimes: { [string]: number } = {}
+local function throttledWarn(key: string, message: string, interval: number?)
+	local now = tick()
+	if (now - (lastWarnTimes[key] or 0)) >= (interval or 5) then
+		lastWarnTimes[key] = now
+		PathfindingDebug:warn(message)
+	end
+end
+
 -- ============================================
 -- INITIALIZATION
 -- ============================================
@@ -279,12 +291,40 @@ function PathfindingIntegration.addObstacle(building: Model)
 		workerPoints = getWorkerPoints(building),
 	}
 
+	-- Re-carve EVERY building's worker points. A newly added obstacle can bury a
+	-- neighbour's already-carved entrance (e.g. clustered farms), turning it into
+	-- a walkable pocket the A* graph can't reach — which is exactly what made
+	-- workers path-fail forever and only arrive via the emergency snap. Re-punching
+	-- all holes after each change keeps every entrance connected to open ground.
+	-- Cheap: only runs on placement / bulk grid rebuilds.
+	for otherBuilding in pairs(activePathfinding.obstacles) do
+		if otherBuilding ~= building and otherBuilding.Parent then
+			markWorkerPointsWalkable(otherBuilding)
+		end
+	end
+
 	-- Clear cache and invalidate paths
 	activePathfinding.pathCache = {}
 	gridVersion = gridVersion + 1
 	invalidateAllMovers()
 
 	PathfindingDebug:info(`Added obstacle: {building.Name} (grid version: {gridVersion})`)
+end
+
+-- Re-punch walkable holes for every registered building's worker points.
+-- Call after any batch of grid changes to guarantee entrances stay reachable.
+function PathfindingIntegration.recarveAllWorkerPoints()
+	if not activePathfinding then
+		return
+	end
+	for building in pairs(activePathfinding.obstacles) do
+		if building.Parent then
+			markWorkerPointsWalkable(building)
+		end
+	end
+	activePathfinding.pathCache = {}
+	gridVersion = gridVersion + 1
+	invalidateAllMovers()
 end
 
 -- Remove obstacle
@@ -420,9 +460,10 @@ function PathfindingIntegration.getPath(unit: Model, targetPos: Vector3): ({ Vec
 		return nil
 	end
 
-	-- Check if start position is walkable, adjust if needed
+	-- Check if start position is walkable, adjust if needed. This auto-recovers
+	-- (we relocate the unit), so it's info-level, not a warning.
 	if not isWalkable(activePathfinding.grid, startGridX, startGridY) then
-		PathfindingDebug:warn(`Unit {unit.Name} is on unwalkable cell ({startGridX},{startGridY}), finding nearest walkable position`)
+		PathfindingDebug:info(`Unit {unit.Name} on unwalkable cell ({startGridX},{startGridY}); relocating to nearest walkable`)
 
 		local nearestX, nearestY = findNearestWalkableCell(startGridX, startGridY)
 		if nearestX and nearestY then
@@ -436,7 +477,7 @@ function PathfindingIntegration.getPath(unit: Model, targetPos: Vector3): ({ Vec
 				PathfindingDebug:info(`Teleported {unit.Name} to walkable cell ({nearestX},{nearestY})`)
 			end
 		else
-			PathfindingDebug:warn(`Failed to find walkable start position for {unit.Name}`)
+			throttledWarn("nostart", `Failed to find walkable start position for a unit (throttled)`)
 			unit:SetAttribute("PathfindingFailed", currentTime)
 			return nil
 		end
@@ -451,7 +492,7 @@ function PathfindingIntegration.getPath(unit: Model, targetPos: Vector3): ({ Vec
 		if nearestX and nearestY then
 			targetGridX, targetGridY = nearestX, nearestY
 		else
-			PathfindingDebug:warn(`Failed to find path for {unit.Name}`)
+			throttledWarn("nogoal", `Failed to find walkable target for a unit (throttled)`)
 			unit:SetAttribute("PathfindingFailed", currentTime)
 			return nil
 		end
@@ -461,7 +502,7 @@ function PathfindingIntegration.getPath(unit: Model, targetPos: Vector3): ({ Vec
 	local pathPoints = Pathfinding.findPath(activePathfinding.grid, startGridX, startGridY, targetGridX, targetGridY)
 
 	if not pathPoints or #pathPoints == 0 then
-		PathfindingDebug:warn(`Failed to find path for {unit.Name}`)
+		throttledWarn("nopath", `A* found no path for a unit (throttled — check obstacle layout)`)
 		unit:SetAttribute("PathfindingFailed", currentTime)
 		return nil
 	end
@@ -542,6 +583,43 @@ function findNearestWalkableCell(gridX: number, gridY: number): (number?, number
 	end
 
 	return nil, nil
+end
+
+-- Compute a guaranteed-walkable "approach position" for a building: the nearest
+-- walkable, graph-connected grid cell to the building centre, in world space.
+-- This replaces reliance on authored/generated worker-point PARTS for navigation
+-- — a building never needs a correctly-placed BuildingEntrance to be reachable;
+-- workers just walk to the open ground the pathfinder already knows is next to it.
+-- Returns nil only if the building has no primary part.
+function PathfindingIntegration.getApproachPosition(building: Model): Vector3?
+	if not building or not building:IsA("Model") then
+		return nil
+	end
+	local center = building:GetPivot().Position
+
+	-- No grid (e.g. Battle Arena — flat open ground): walking straight at the
+	-- centre is fine, nothing is unwalkable.
+	if not activePathfinding or not activePathfinding.grid then
+		return center
+	end
+
+	local gx, gy = Pathfinding.worldToGrid(activePathfinding.grid, center.X, center.Z)
+	if not gx or not gy then
+		return center
+	end
+
+	-- If the centre cell itself is walkable (small building / no obstacle) use it;
+	-- otherwise find the closest open cell just outside the footprint.
+	if isWalkable(activePathfinding.grid, gx, gy) then
+		return center
+	end
+
+	local nx, ny = findNearestWalkableCell(gx, gy)
+	if not nx or not ny then
+		return center
+	end
+	local wx, wz = Pathfinding.gridToWorld(activePathfinding.grid, nx, ny)
+	return Vector3.new(wx, center.Y, wz)
 end
 
 -- ============================================

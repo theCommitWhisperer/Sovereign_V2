@@ -36,7 +36,7 @@ local CONFIG = {
 
 -- Find a specific point within a building model
 -- Returns the BasePart if found, nil otherwise
-local function findPointPart(buildingModel: Model, pointName: string): BasePart?
+local function findPointPart(buildingModel: Model, pointName: string, silent: boolean?): BasePart?
 	if not buildingModel or not buildingModel:IsA("Model") then
 		warn(`WorkerPointSystem: Invalid building model provided`)
 		return nil
@@ -75,7 +75,7 @@ local function findPointPart(buildingModel: Model, pointName: string): BasePart?
 	end
 
 	-- Point not found
-	if CONFIG.LOG_MISSING_POINTS then
+	if CONFIG.LOG_MISSING_POINTS and not silent then
 		-- Only log if it's not a storage-specific point (those are expected to be missing sometimes)
 		if not pointName:match("StorageArea") then
 			warn(`WorkerPointSystem: Point "{pointName}" not found in building {buildingModel.Name}`)
@@ -151,7 +151,9 @@ end
 
 -- Check if a building has a specific point
 function WorkerPointSystem.hasPoint(buildingModel: Model, pointType: WorkerPointType): boolean
-	local pointPart = findPointPart(buildingModel, pointType)
+	-- Silent: hasPoint is a presence probe (often for optional points like
+	-- TeleportIntoBuilding), so a missing point is not worth a warning.
+	local pointPart = findPointPart(buildingModel, pointType, true)
 	return pointPart ~= nil
 end
 

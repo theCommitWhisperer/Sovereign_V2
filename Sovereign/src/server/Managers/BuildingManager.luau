@@ -305,6 +305,14 @@ function BuildingManager.createBuilding(
 	-- Add building as obstacle to A* pathfinding grid
 	PathfindingIntegration.addObstacle(building)
 
+	-- Cache a guaranteed-walkable approach position so workers/haulers navigate to
+	-- open ground next to the building instead of depending on authored worker-point
+	-- parts (which can end up inside the obstacle or buried by a neighbour).
+	local approach = PathfindingIntegration.getApproachPosition(building)
+	if approach then
+		building:SetAttribute("ApproachPosition", approach)
+	end
+
 	-- Listen for building destruction to remove from pathfinding grid
 	building.Destroying:Connect(function()
 		PathfindingIntegration.removeObstacle(building)
