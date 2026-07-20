@@ -1187,6 +1187,18 @@ function HUD:render()
 						})
 					or hasProductionBuildingSelected and React.createElement(WorkerAssignmentPanel, {
 						selectedBuilding = self.state.selectedProductionBuilding,
+						onAddWorker = function()
+							local building = self.state.selectedProductionBuilding
+							if building and self.gameEvent then
+								self.gameEvent:FireServer("AssignWorker", { buildingId = building.Name })
+							end
+						end,
+						onRemoveWorker = function()
+							local building = self.state.selectedProductionBuilding
+							if building and self.gameEvent then
+								self.gameEvent:FireServer("UnassignWorker", { buildingId = building.Name })
+							end
+						end,
 						onClose = function()
 							HUDDebug:info("Worker assignment panel close button clicked")
 							self:setState({

@@ -85,6 +85,7 @@ function WorkerAssignmentPanel:render()
 
 	local assignedWorkers = self.state.assignedWorkers or {}
 	local resourceType = buildingInfo.produces_resource or "Resources"
+	local capacity = buildingInfo.worker_slots or 1
 
 	-- Create worker list items
 	local workerItems = {}
@@ -151,7 +152,7 @@ function WorkerAssignmentPanel:render()
 			Size = UDim2.new(1, -10, 0, 30),
 			Position = UDim2.new(0, 5, 0, 5),
 			BackgroundTransparency = 1,
-			Text = "No workers assigned\n\nRight-click peasants to assign them",
+			Text = "No workers assigned\n\nUse + to staff the nearest idle peasant",
 			Font = Enum.Font.Gotham,
 			TextSize = 11,
 			TextColor3 = UIConfig.HUD.StatLabelColor,
@@ -216,7 +217,7 @@ function WorkerAssignmentPanel:render()
 			}),
 		}),
 
-		-- Workers header
+		-- Workers header + add/remove controls
 		WorkersHeader = React.createElement("Frame", {
 			Size = UDim2.new(1, 0, 0, 25),
 			Position = UDim2.new(0, 0, 0, 40),
@@ -225,14 +226,48 @@ function WorkerAssignmentPanel:render()
 			BorderColor3 = UIConfig.HUD.TrainingQueueBorder,
 		}, {
 			Label = React.createElement("TextLabel", {
-				Size = UDim2.new(1, -10, 1, 0),
+				Size = UDim2.new(1, -70, 1, 0),
 				Position = UDim2.new(0, 5, 0, 0),
 				BackgroundTransparency = 1,
-				Text = `👥 Assigned Workers ({#assignedWorkers})`,
+				Text = `👥 Workers ({#assignedWorkers}/{capacity})`,
 				Font = Enum.Font.GothamBold,
 				TextSize = 12,
 				TextColor3 = UIConfig.HUD.PanelHeaderColor,
 				TextXAlignment = Enum.TextXAlignment.Left,
+			}),
+
+			RemoveButton = React.createElement("TextButton", {
+				Size = UDim2.new(0, 26, 0, 21),
+				Position = UDim2.new(1, -60, 0, 2),
+				BackgroundColor3 = UIConfig.HUD.TrainingUnitButtonBackground,
+				BorderSizePixel = 1,
+				BorderColor3 = UIConfig.HUD.TrainingUnitButtonBorder,
+				Text = "−",
+				Font = Enum.Font.GothamBold,
+				TextSize = 18,
+				TextColor3 = UIConfig.HUD.PanelTextColor,
+				[React.Event.Activated] = function()
+					if self.props.onRemoveWorker then
+						self.props.onRemoveWorker()
+					end
+				end,
+			}),
+
+			AddButton = React.createElement("TextButton", {
+				Size = UDim2.new(0, 26, 0, 21),
+				Position = UDim2.new(1, -30, 0, 2),
+				BackgroundColor3 = UIConfig.HUD.TrainingUnitButtonBackground,
+				BorderSizePixel = 1,
+				BorderColor3 = UIConfig.HUD.TrainingUnitButtonBorder,
+				Text = "+",
+				Font = Enum.Font.GothamBold,
+				TextSize = 18,
+				TextColor3 = UIConfig.HUD.PanelTextColor,
+				[React.Event.Activated] = function()
+					if self.props.onAddWorker then
+						self.props.onAddWorker()
+					end
+				end,
 			}),
 		}),
 

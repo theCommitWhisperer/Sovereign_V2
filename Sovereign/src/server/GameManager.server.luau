@@ -1070,23 +1070,11 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 					GameEvent:FireClient(player, "BuildingPlaced", {
 						buildingType = data.buildingName,
 					})
-					-- If it's a production building, auto-assign a worker
+					-- If it's a production building, auto-assign the NEAREST idle peasant
+					-- (manual add/remove is handled by the AssignWorker/UnassignWorker
+					-- actions below and the WorkerAssignmentPanel).
 					if buildingInfo.requires_worker then
-						-- Find a free peasant
-						for _, unit in playerData.Units do
-							if unit and unit.Parent then
-								local unitType = unit:GetAttribute("UnitType")
-								local isWorking = unit:GetAttribute("IsWorking")
-
-								-- CHECK: Don't assign Vikings as workers!
-								local owner = unit:GetAttribute("OwnerId")
-								if unitType == "Peasant" and not isWorking and owner == player.UserId then
-									WorkerManager.assignWorkerToBuilding(unit, building, player.UserId)
-
-									break
-								end
-							end
-						end
+						WorkerManager.assignNearestIdlePeasant(building, player.UserId)
 					end
 
 					-- Note: Haulers are automatically assigned by WorkerManager when buildings produce resources
@@ -1398,6 +1386,36 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 			for _, building in playerData.Buildings do
 				if building and building.Parent and building.Name == data.buildingId then
 					UpgradeManager.upgradeBuilding(player, building)
+					break
+				end
+			end
+		end
+	elseif action == "AssignWorker" then
+		-- Manual "add worker": staff the nearest idle peasant to a building
+		-- (respects worker_slots inside WorkerManager).
+		if typeof(data) == "table" and data.buildingId then
+			for _, building in playerData.Buildings do
+				if building and building.Parent and building.Name == data.buildingId then
+					if building:GetAttribute("OwnerId") == player.UserId then
+						local ok = WorkerManager.assignNearestIdlePeasant(building, player.UserId)
+						if not ok then
+							GameEvent:FireClient(player, "Error", {
+								message = "No idle peasant available, or the building is fully staffed.",
+							})
+						end
+					end
+					break
+				end
+			end
+		end
+	elseif action == "UnassignWorker" then
+		-- Manual "remove worker": release one worker back to idle.
+		if typeof(data) == "table" and data.buildingId then
+			for _, building in playerData.Buildings do
+				if building and building.Parent and building.Name == data.buildingId then
+					if building:GetAttribute("OwnerId") == player.UserId then
+						WorkerManager.unassignWorker(building, 1)
+					end
 					break
 				end
 			end
