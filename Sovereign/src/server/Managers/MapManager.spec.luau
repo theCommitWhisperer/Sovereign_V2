@@ -20,6 +20,10 @@ return function()
 	end)
 
 	describe("setMap and getCurrentMapName", function()
+		afterEach(function()
+			MapManager.unlockMatchMap()
+		end)
+
 		it("sets a valid map and getCurrentMapName reflects it", function()
 			local maps = MapManager.getAvailableMaps()
 			local firstName = maps[1]
@@ -35,6 +39,24 @@ return function()
 			local before = MapManager.getCurrentMapName()
 			MapManager.setMap("ThisMapDoesNotExist")
 			expect(MapManager.getCurrentMapName()).to.equal(before)
+		end)
+	end)
+
+	describe("match map locking", function()
+		afterEach(function()
+			MapManager.unlockMatchMap()
+		end)
+
+		it("keeps a match on its first locked map", function()
+			local maps = MapManager.getAvailableMaps()
+			local firstMap = maps[1]
+			local otherMap = maps[2] or firstMap
+
+			expect(MapManager.lockMatchMap(firstMap)).to.equal(true)
+			expect(MapManager.isMatchMapLocked()).to.equal(true)
+			expect(MapManager.lockMatchMap(firstMap)).to.equal(true)
+			expect(MapManager.setMap(otherMap)).to.equal(otherMap == firstMap)
+			expect(MapManager.getCurrentMapName()).to.equal(firstMap)
 		end)
 	end)
 

@@ -50,6 +50,8 @@ local Engine = CombatConfig.Engine
 local Positional = CombatConfig.Positional
 local MoraleCfg = CombatConfig.Morale
 
+local CONFIG_DEFAULT_SPEED = 16 -- fallback march speed (studs/sec) if none known
+
 local CombatService = {}
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -137,8 +139,15 @@ function CombatService.registerCombatUnit(unitModel: Model, combatUnit: any)
 	combatUnit.lastScanTime = 0
 	combatUnit.scanJitter = math.random() * CombatConfig.Targeting.SCAN_JITTER_MAX
 	combatUnit.slotAngle = math.random() * 2 * math.pi
+	combatUnit.guardPost = nil
+	combatUnit.retreatUntil = 0
+	-- Migrate any legacy stance value to the new vocabulary
+	if not CombatConfig.StanceBehavior[combatUnit.stance] then
+		combatUnit.stance = CombatConfig.DefaultStance
+	end
 
 	ActiveCombatUnits[unitModel] = combatUnit :: CombatUnit
+	unitModel:SetAttribute("Stance", combatUnit.stance) -- for client UI
 
 	local position = getPosition(unitModel)
 	if position then
@@ -190,7 +199,7 @@ function CombatService.initializeCombatUnit(unitModel: Model, owner: Player)
 		attackRange = getAttackRangeStuds(unitData),
 		armor = combat.armor,
 		morale = startingMorale,
-		stance = "Aggressive",
+		stance = CombatConfig.DefaultStance,
 		targetModel = nil,
 		formation = nil,
 		lastAttackTime = 0,
@@ -780,6 +789,14 @@ local function updateUnit(unitModel: Model, unit: CombatUnit, now: number)
 	-- Abilities (auras, fury, heals, etc.)
 	AbilitySystem.update(unit, now, abilityContext)
 
+	-- Stance behaviour drives targeting, chasing, charging and kiting
+	local behavior = CombatConfig.StanceBehavior[unit.stance] or CombatConfig.StanceBehavior.Attack
+
+	local unitPos = getPosition(unitModel)
+	if not unitPos then
+		return
+	end
+
 	-- Formation cohesion flag (cheap: allies close by)
 	unit.inFormationCohesion = countAlliesInRadius(unit, Positional.FORMATION_RADIUS)
 		>= Positional.FORMATION_MIN_ALLIES
@@ -792,6 +809,13 @@ local function updateUnit(unitModel: Model, unit: CombatUnit, now: number)
 		local valid = targetModel.Parent ~= nil
 			and ((targetUnit ~= nil and targetUnit.health > 0)
 				or (targetBuilding ~= nil and targetBuilding.health > 0))
+		-- Defend: abandon targets dragged beyond the guard-post leash
+		if valid and unit.stance == "Defend" and unit.guardPost then
+			local tp = getPosition(targetModel) or (targetBuilding and targetModel:GetPivot().Position)
+			if tp and (tp - unit.guardPost).Magnitude > behavior.leash then
+				valid = false
+			end
+		end
 		if not valid then
 			unit.targetModel = nil
 			targetModel = nil
@@ -799,24 +823,41 @@ local function updateUnit(unitModel: Model, unit: CombatUnit, now: number)
 	end
 
 	-- ── Acquire a new target (LOD-throttled, desynced per unit) ──────────
-	if not targetModel and unit.stance ~= "Hold" then
+	if not targetModel and behavior.autoEngage then
 		if now - unit.lastScanTime >= Engine.IDLE_SCAN_RATE + unit.scanJitter then
 			unit.lastScanTime = now
-			local searchRange = Engine.SEARCH_RANGE
-			if unit.stance == "Aggressive" then
-				searchRange *= Engine.AGGRESSIVE_SEARCH_MULT
-			end
-			targetModel = findBestEnemyTarget(unit, searchRange)
+			local searchRange = Engine.SEARCH_RANGE * math.max(behavior.searchMult, 1)
+			local candidate = findBestEnemyTarget(unit, searchRange)
 
-			-- No enemy units around: aggressive units siege enemy buildings
-			if not targetModel and unit.stance == "Aggressive" then
-				targetModel = findNearestEnemyBuilding(unit, Engine.BUILDING_SEARCH_RANGE)
+			-- Defend: ignore enemies outside the guard-post leash
+			if candidate and unit.stance == "Defend" and unit.guardPost then
+				local cp = getPosition(candidate)
+				if cp and (cp - unit.guardPost).Magnitude > behavior.leash then
+					candidate = nil
+				end
 			end
+
+			-- No enemy units around: only Attack stance sieges buildings
+			if not candidate and unit.stance == "Attack" then
+				candidate = findNearestEnemyBuilding(unit, Engine.BUILDING_SEARCH_RANGE)
+			end
+			targetModel = candidate
 			unit.targetModel = targetModel
 		end
 	end
 
 	if not targetModel then
+		-- Defend: drift back to the guard post if we've wandered off it
+		if unit.stance == "Defend" and unit.guardPost then
+			local flatBack = Vector3.new(unit.guardPost.X - unitPos.X, 0, unit.guardPost.Z - unitPos.Z)
+			if flatBack.Magnitude > 5 then
+				unitModel:SetAttribute("TargetPosition", unit.guardPost)
+				unitModel:SetAttribute("IsMoving", true)
+				unit.isCharging = false
+				return
+			end
+		end
+
 		local hasManualOrder = unitModel:GetAttribute("IsMoving") == true
 			and unitModel:GetAttribute("TargetPosition") ~= nil
 		if not hasManualOrder then
@@ -828,11 +869,6 @@ local function updateUnit(unitModel: Model, unit: CombatUnit, now: number)
 	-- ── Engage ───────────────────────────────────────────────────────────
 	local targetUnit = ActiveCombatUnits[targetModel]
 	local targetBuilding = if targetUnit then nil else ActiveBuildings[targetModel]
-
-	local unitPos = getPosition(unitModel)
-	if not unitPos then
-		return
-	end
 
 	local targetPos: Vector3
 	local effectiveRange = unit.attackRange
@@ -853,6 +889,32 @@ local function updateUnit(unitModel: Model, unit: CombatUnit, now: number)
 
 	local distance = (targetPos - unitPos).Magnitude
 
+	-- ── Skirmish kiting: back off, don't stand and trade ─────────────────
+	if behavior.kite and targetUnit then
+		local tooClose
+		if unit.attackType == "Ranged" then
+			tooClose = distance < unit.attackRange * CombatConfig.Skirmish.RANGED_KEEP_DISTANCE
+		else
+			tooClose = now < unit.retreatUntil -- melee hit-and-run window
+		end
+		if tooClose then
+			local away = Vector3.new(unitPos.X - targetPos.X, 0, unitPos.Z - targetPos.Z)
+			away = if away.Magnitude > 0.1
+				then away.Unit
+				else Vector3.new(math.cos(unit.slotAngle), 0, math.sin(unit.slotAngle))
+			unitModel:SetAttribute("TargetPosition", unitPos + away * CombatConfig.Skirmish.RETREAT_DISTANCE)
+			unitModel:SetAttribute("IsMoving", true)
+			unit.isCharging = false
+			-- Ranged skirmishers still loose a shot while backpedalling
+			if unit.attackType == "Ranged" and now - unit.lastAttackTime >= unit.attackSpeed then
+				unit.lastAttackTime = now
+				faceTarget(unitModel, targetPos)
+				executeAttackOnUnit(unit, targetUnit, now)
+			end
+			return
+		end
+	end
+
 	if distance <= effectiveRange then
 		unitModel:SetAttribute("IsMoving", false)
 		unitModel:SetAttribute("TargetPosition", nil)
@@ -865,6 +927,10 @@ local function updateUnit(unitModel: Model, unit: CombatUnit, now: number)
 			faceTarget(unitModel, targetPos)
 			if targetUnit then
 				executeAttackOnUnit(unit, targetUnit, now)
+				-- Melee skirmishers hit then peel away
+				if behavior.kite and unit.attackType == "Melee" then
+					unit.retreatUntil = now + CombatConfig.Skirmish.MELEE_RETREAT_TIME
+				end
 			elseif targetBuilding then
 				executeAttackOnBuilding(unit, targetBuilding)
 			end
@@ -875,10 +941,7 @@ local function updateUnit(unitModel: Model, unit: CombatUnit, now: number)
 		-- instead of tunnel-chasing across the whole battle.
 		if targetUnit and now - unit.lastScanTime >= Targeting.RETARGET_INTERVAL then
 			unit.lastScanTime = now
-			local searchRange = Engine.SEARCH_RANGE
-			if unit.stance == "Aggressive" then
-				searchRange *= Engine.AGGRESSIVE_SEARCH_MULT
-			end
+			local searchRange = Engine.SEARCH_RANGE * math.max(behavior.searchMult, 1)
 			local best, bestScore = findBestEnemyTarget(unit, searchRange)
 			if best and best ~= targetModel then
 				local currentScore = scoreEnemy(unit, targetUnit, distance)
@@ -909,11 +972,9 @@ local function updateUnit(unitModel: Model, unit: CombatUnit, now: number)
 		unitModel:SetAttribute("TargetPosition", moveDest)
 		unitModel:SetAttribute("IsMoving", true)
 
-		if unit.stance == "Aggressive" or unit.stance == "Charge" then
-			unit.isCharging = distance <= Positional.CHARGE_DISTANCE and distance > effectiveRange
-		else
-			unit.isCharging = false
-		end
+		unit.isCharging = behavior.canCharge
+			and distance <= Positional.CHARGE_DISTANCE
+			and distance > effectiveRange
 	end
 end
 
@@ -982,9 +1043,24 @@ function CombatService.setTarget(attackerModel: Model, targetModel: Model)
 	end
 
 	attacker.targetModel = targetModel
-	attacker.stance = "Aggressive"
+	attacker.stance = "Attack" -- a manual attack order is aggressive intent
+	attacker.guardPost = nil
+	attackerModel:SetAttribute("Stance", "Attack")
+	attackerModel:SetAttribute("Marching", nil)
 	attackerModel:SetAttribute("IsMoving", false)
 	attackerModel:SetAttribute("TargetPosition", nil)
+end
+
+-- Restore a unit's individual walk speed after a group march
+local function restoreMarchSpeed(unitModel: Model)
+	if unitModel:GetAttribute("Marching") then
+		local humanoid = unitModel:FindFirstChildOfClass("Humanoid")
+		local base = unitModel:GetAttribute("BaseWalkSpeed") :: number?
+		if humanoid and base then
+			humanoid.WalkSpeed = base
+		end
+		unitModel:SetAttribute("Marching", nil)
+	end
 end
 
 function CombatService.setStance(unitModel: Model, stance: Stance)
@@ -993,11 +1069,70 @@ function CombatService.setStance(unitModel: Model, stance: Stance)
 		CombatDebug:warn("Unit not in combat system for stance change")
 		return
 	end
+	if not CombatConfig.StanceBehavior[stance] then
+		CombatDebug:warn("Unknown stance", { stance = stance })
+		return
+	end
 	unit.stance = stance
-	if stance == "Hold" then
+	unitModel:SetAttribute("Stance", stance)
+
+	if stance == "March" then
+		-- Passive: stop fighting, hold no post
 		unit.targetModel = nil
-		unitModel:SetAttribute("IsMoving", false)
-		unitModel:SetAttribute("TargetPosition", nil)
+		unit.guardPost = nil
+		unit.isCharging = false
+	elseif stance == "Defend" then
+		-- Hold the current position as the guard post
+		unit.guardPost = getPosition(unitModel)
+		restoreMarchSpeed(unitModel)
+	else
+		-- Attack / Skirmish: mobile combat, no fixed post
+		unit.guardPost = nil
+		restoreMarchSpeed(unitModel)
+	end
+end
+
+-- Order a group to march to a shared destination: passive stance, everyone
+-- capped to the slowest member's speed so the formation travels as one body.
+-- (Movement itself is issued separately, e.g. via MovementSystem.moveGroup or
+-- the formation move handler.)
+function CombatService.applyGroupMarch(units: { Model })
+	local minSpeed = math.huge
+	for _, u in units do
+		if u and u.Parent then
+			local base = u:GetAttribute("BaseWalkSpeed") :: number?
+			if not base then
+				local h = u:FindFirstChildOfClass("Humanoid")
+				base = h and h.WalkSpeed or CONFIG_DEFAULT_SPEED
+			end
+			if base < minSpeed then
+				minSpeed = base
+			end
+		end
+	end
+	if minSpeed == math.huge then
+		minSpeed = CONFIG_DEFAULT_SPEED
+	end
+
+	for _, u in units do
+		if u and u.Parent then
+			local combatUnit = ActiveCombatUnits[u]
+			if combatUnit then
+				combatUnit.stance = "March"
+				combatUnit.targetModel = nil
+				combatUnit.guardPost = nil
+				combatUnit.isCharging = false
+				u:SetAttribute("Stance", "March")
+			end
+			local humanoid = u:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				if not u:GetAttribute("BaseWalkSpeed") then
+					u:SetAttribute("BaseWalkSpeed", humanoid.WalkSpeed)
+				end
+				humanoid.WalkSpeed = minSpeed
+			end
+			u:SetAttribute("Marching", true)
+		end
 	end
 end
 

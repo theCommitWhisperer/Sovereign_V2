@@ -23,7 +23,7 @@
     "StarterGui": {},
 
     "Workspace": {
-      "$properties": { "FilteringEnabled": true, "StreamingEnabled": false },
+      "$properties": { "FilteringEnabled": true, "StreamingEnabled": true },
       "Lighting": {
         "$className": "Lighting",
         "$properties": {

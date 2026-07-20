@@ -24,6 +24,13 @@ local CameraMode = {
 	King = "King",
 }
 
+-- Streaming is centered on the player's character by default, while an RTS
+-- camera can travel hundreds of studs away from that character. Request the
+-- current camera region at a measured rate so map panning never exposes an
+-- unloaded play area.
+local STREAM_REQUEST_INTERVAL = 1.0
+local STREAM_MOVE_THRESHOLD = 48
+
 local StudioCameraController = {}
 StudioCameraController.__index = StudioCameraController
 
@@ -43,6 +50,8 @@ function StudioCameraController.new()
 	self.currentMode = CameraMode.RTS
 	self.kingModel = nil
 	self.controlsModule = nil
+	self.lastStreamRequest = 0
+	self.lastStreamedFocus = nil
 
 	-- References
 	self.player = Players.LocalPlayer
@@ -122,6 +131,7 @@ function StudioCameraController:Update(deltaTime: number)
 
 		-- Update camera transform
 		self.cameraRig:UpdateCamera()
+		self:RequestStreamingAroundFocus()
 
 	elseif self.currentMode == CameraMode.King then
 		-- King Mode: First-person camera (handled by Roblox's built-in system)
@@ -131,6 +141,31 @@ function StudioCameraController:Update(deltaTime: number)
 			self:SwitchToRTS()
 		end
 	end
+end
+
+function StudioCameraController:RequestStreamingAroundFocus()
+	if not Workspace.StreamingEnabled then
+		return
+	end
+
+	local now = time()
+	if now - self.lastStreamRequest < STREAM_REQUEST_INTERVAL then
+		return
+	end
+
+	local focus = self.cameraRig:GetFocalPoint()
+	local flatFocus = Vector3.new(focus.X, 0, focus.Z)
+	if self.lastStreamedFocus and (flatFocus - self.lastStreamedFocus).Magnitude < STREAM_MOVE_THRESHOLD then
+		return
+	end
+
+	self.lastStreamRequest = now
+	self.lastStreamedFocus = flatFocus
+	task.spawn(function()
+		pcall(function()
+			Workspace:RequestStreamAroundAsync(focus, 0)
+		end)
+	end)
 end
 
 function StudioCameraController:HandleInputEvent(event)

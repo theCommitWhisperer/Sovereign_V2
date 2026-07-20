@@ -10,6 +10,7 @@ local StarterPlayer = game:GetService("StarterPlayer")
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local GameSettings = require(ReplicatedStorage.Shared.GameSettings)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
+local MapData = require(ReplicatedStorage.Shared.GameData.MapData)
 
 local GameManagerDebug = DebugManager.createChannel("GameManager", false)
 
@@ -155,6 +156,8 @@ GameManagerDebug:info("RemoteEvents created")
 -- the same painted resource patches and keep spawn zones.
 local studioCustomMapData: any? = nil
 local studioResourcePatchesSpawned = false
+local matchMapConfig: any? = nil
+local mapWorldInitialized = false
 local workerLoopStarted = false
 
 -- Initialize systems that depend on RemoteEvents
@@ -555,13 +558,42 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		end
 
 		GameManagerDebug:info(`{player.Name} starting game...`)
-		-- Get game settings from data
-		local settings = typeof(data) == "table" and data or {}
+
+		-- A multiplayer lobby sends a client notification for navigation, but the
+		-- settings that begin the match must come from the server-created payload.
+		-- A player still in a lobby cannot bypass the countdown with a handcrafted
+		-- StartGame RemoteEvent.
+		local wasInLobby = LobbyManager.isPlayerInLobby(player)
+		local lobbySettings = LobbyManager.consumePendingStartSettings(player)
+		if wasInLobby and not lobbySettings then
+			GameManagerDebug:warn(`Rejected premature StartGame request from {player.Name}`)
+			GameEvent:FireClient(player, "Error", { message = "Wait for the lobby countdown to finish." })
+			return
+		end
+
+		local settings = lobbySettings or (if typeof(data) == "table" then data else {})
 		local vikingRaidsEnabled = settings.vikingRaids or false
 		local peaceTimeStr = settings.peaceTime or "10 minutes"
-		local selectedMap = settings.map or "TheIslands"
+		local selectedMap = if typeof(settings.map) == "string" then settings.map else MapData.DefaultMap
 		local showTutorial = if settings.showTutorial ~= nil then settings.showTutorial else true
 		local factionFromSettings = settings.faction -- From multiplayer lobby
+
+		if not MapData.getMap(selectedMap) then
+			GameManagerDebug:warn(`Invalid map requested by {player.Name}: {selectedMap}; using default`)
+			selectedMap = MapData.DefaultMap
+		end
+
+		-- The Workspace is shared by every player in a Roblox server. Lock the
+		-- selected map before any terrain, pathfinding, or spawn state is created.
+		if not MapManager.lockMatchMap(selectedMap) then
+			local lockedMap = MapManager.getCurrentMapName()
+			GameManagerDebug:warn(`Rejected map {selectedMap} for {player.Name}; match is locked to {lockedMap}`)
+			GameEvent:FireClient(player, "Error", {
+				message = `This server is already running {MapManager.getCurrentMap().Name}.`,
+			})
+			return
+		end
+		selectedMap = MapManager.getCurrentMapName()
 
 		-- Battle Arena mode: no terrain, no Keep, no economy. ArenaMode handles
 		-- the whole session (arena build, army spawning, GameStarted event).
@@ -570,16 +602,10 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 			return
 		end
 
-		-- Set the active map and configure SpawnManager
-		if not MapManager.setMap(selectedMap) then
-			GameManagerDebug:warn(`Invalid map selected: {selectedMap}, using default`)
-			selectedMap = "TheIslands"
-			MapManager.setMap(selectedMap)
-		end
-
-		local mapConfig = MapManager.getCurrentMap()
+		-- The first player initializes shared map state. Later players consume the
+		-- cached configuration, avoiding terrain clears and pathfinding resets.
+		local mapConfig = matchMapConfig or MapManager.getCurrentMap()
 		SpawnManager.setMapConfig(mapConfig)
-		PathfindingIntegration.initialize(mapConfig.Size)
 		GameManagerDebug:info(`Map loaded: {mapConfig.Name} ({mapConfig.Size}x{mapConfig.Size})`)
 
 		-- Determine whether to use studio/editor terrain or generate procedurally.
@@ -609,8 +635,10 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		end
 
 		if not useStudioTerrain then
-			TerrainGenerator.generate(mapConfig)
-		else
+			if not mapWorldInitialized then
+				TerrainGenerator.generate(mapConfig)
+			end
+		elseif not mapWorldInitialized then
 			GameManagerDebug:info("Studio/custom terrain mode — skipping procedural terrain generation")
 
 			-- Load painted custom map data from DataStore if not already loaded from a builtin module.
@@ -623,11 +651,10 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				if studioCustomMapData and studioCustomMapData.Size then
 					mapConfig = {}
 					for k, v in pairs(MapManager.getCurrentMap()) do mapConfig[k] = v end
-					mapConfig.Size = studioCustomMapData.Size
-					mapConfig.Name = studioCustomMapData.Name or mapConfig.Name
-					SpawnManager.setMapConfig(mapConfig)
-					PathfindingIntegration.initialize(mapConfig.Size)
-				end
+				mapConfig.Size = studioCustomMapData.Size
+				mapConfig.Name = studioCustomMapData.Name or mapConfig.Name
+				SpawnManager.setMapConfig(mapConfig)
+			end
 				-- Replay sculpt strokes and placed features onto the terrain
 				if studioCustomMapData then
 					local terrain = workspace:FindFirstChildOfClass("Terrain")
@@ -673,6 +700,17 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 					end
 				end
 			end
+		end
+
+		if not mapWorldInitialized then
+			-- Configure pathfinding only after a custom map has applied its real
+			-- dimensions and keep zones. Reinitializing this per joining player
+			-- discards shared navigation state in an RTS match.
+			SpawnManager.setMapConfig(mapConfig)
+			PathfindingIntegration.initialize(mapConfig.Size)
+			matchMapConfig = mapConfig
+			mapWorldInitialized = true
+			GameManagerDebug:info(`Shared world initialized for {mapConfig.Name}`)
 		end
 
 		-- Parse peace time (format: "10 minutes")
@@ -1084,6 +1122,8 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				unitToMove:SetAttribute("IsMoving", true)
 				-- Clear pathfinding failure - player command overrides previous failures
 				unitToMove:SetAttribute("PathfindingFailed", nil)
+				-- A move order is a March: passive stance, don't auto-engage
+				CombatManager.applyGroupMarch({ unitToMove })
 				GameManagerDebug:info(`Unit {data.unitId} target set to {data.targetPosition}`)
 			end
 		end
@@ -1155,6 +1195,13 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 					-- Clear pathfinding failure - player command overrides previous failures
 					unit:SetAttribute("PathfindingFailed", nil)
 				end
+			end
+
+			-- A travel order (not an in-place formation change) is a March:
+			-- passive stance + everyone capped to the slowest member's speed so
+			-- the formation arrives together.
+			if data.isMove and #units >= 1 then
+				CombatManager.applyGroupMarch(units)
 			end
 		end
 	-- Removed MoveKing action - King movement is now handled by Roblox's built-in character controls
@@ -1439,6 +1486,10 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		if not anyoneInGame then
 			ResourceNodeManager.clearAllNodes()
 			studioResourcePatchesSpawned = false
+			studioCustomMapData = nil
+			matchMapConfig = nil
+			mapWorldInitialized = false
+			MapManager.unlockMatchMap()
 			GameManagerDebug:info("Last player left game — cleared resource nodes for next match")
 		end
 

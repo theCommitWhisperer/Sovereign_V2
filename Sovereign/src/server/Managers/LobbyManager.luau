@@ -5,6 +5,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
+local MapData = require(ReplicatedStorage.Shared.GameData.MapData)
 local LobbyDebug = DebugManager.createChannel("LobbyManager", false)
 
 local LobbyManager = {}
@@ -63,6 +64,9 @@ export type LobbySession = {
 local currentLobby: LobbySession? = nil
 local COUNTDOWN_DURATION = 5 -- seconds
 local countdownThread: thread? = nil
+-- The client receives a start notification for UI navigation, but the server
+-- remains the authority for the settings that actually start its match.
+local pendingStartSettings: { [number]: any } = {}
 
 -- Available factions
 local FACTIONS = { "Kingdom", "Empire", "Tribes", "IronLegion" }
@@ -89,8 +93,8 @@ local function getOrCreateLobby(): LobbySession
 			SessionId = tostring(os.time()),
 			Players = {},
 			SpawnSelections = {},
-			Settings = {
-				selectedMap = "LargeContinent",
+		Settings = {
+				selectedMap = MapData.DefaultMap,
 				startingTroops = "Standard",
 				startingGold = "Standard",
 				startingFood = "Standard",
@@ -151,7 +155,11 @@ end
 
 -- Remove a player from the lobby
 function LobbyManager.removePlayer(player: Player)
-	local lobby = getOrCreateLobby()
+	pendingStartSettings[player.UserId] = nil
+	local lobby = currentLobby
+	if not lobby then
+		return
+	end
 
 	if not lobby.Players[player.UserId] then
 		LobbyDebug:warn("Player not in lobby:", player.Name)
@@ -258,6 +266,13 @@ end
 -- Vote on a setting value
 function LobbyManager.voteSetting(player: Player, settingId: string, value: any)
 	local lobby = getOrCreateLobby()
+
+	if settingId == "selectedMap" then
+		if typeof(value) ~= "string" or (value ~= "__custom__" and not MapData.getMap(value)) then
+			LobbyDebug:warn("Rejected invalid map vote", { player = player.Name, value = value })
+			return
+		end
+	end
 
 	if not lobby.SettingsVotes[settingId] then
 		lobby.SettingsVotes[settingId] = {}
@@ -583,7 +598,11 @@ function LobbyManager.startGame()
 				end
 			end
 
-			-- Send to client - client will fire StartGame back to server
+			pendingStartSettings[lobbyPlayer.UserId] = playerSettings
+
+			-- The client still sends StartGame to acknowledge the transition, but
+			-- GameManager consumes the server-created settings above instead of
+			-- trusting that RemoteEvent payload.
 			LobbyEvent:FireClient(lobbyPlayer.Player, "LobbyGameStart", playerSettings)
 		end
 	end
@@ -642,6 +661,19 @@ end
 -- Get current lobby state (for initial sync)
 function LobbyManager.getLobbyState(): LobbySession?
 	return currentLobby
+end
+
+function LobbyManager.isPlayerInLobby(player: Player): boolean
+	return currentLobby ~= nil and currentLobby.Players[player.UserId] ~= nil
+end
+
+-- Returns one server-authored settings payload for a player starting from the
+-- lobby. The payload is deliberately consumed so it cannot start a second
+-- match or be reused after a player has left.
+function LobbyManager.consumePendingStartSettings(player: Player): any?
+	local settings = pendingStartSettings[player.UserId]
+	pendingStartSettings[player.UserId] = nil
+	return settings
 end
 
 -- Store AI players from last game start (for spawning)

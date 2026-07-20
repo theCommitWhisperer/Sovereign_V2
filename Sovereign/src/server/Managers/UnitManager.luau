@@ -255,6 +255,9 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 		local humanoid = unit:FindFirstChildOfClass("Humanoid")
 		if humanoid then
 			humanoid.WalkSpeed = unitInfo.movement.speed_meters_per_second * 16
+			-- Remember the unit's individual speed so group march can cap to the
+			-- slowest member and later restore each unit to its own pace
+			unit:SetAttribute("BaseWalkSpeed", humanoid.WalkSpeed)
 		end
 	end
 
@@ -317,7 +320,7 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 				attackRange = unitData.combat.attack_range * 3,
 				armor = unitData.combat.armor,
 				morale = 75,
-				stance = "Aggressive",
+				stance = "Attack",
 				targetModel = nil,
 				formation = nil,
 				lastAttackTime = 0,

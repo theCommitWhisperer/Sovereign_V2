@@ -127,6 +127,7 @@ function MovementManager.moveUnitsTo(units: { Model }, targetPosition: Vector3, 
 			unitIds = unitIds,
 			targetPosition = targetPosition,
 			formationType = formationType,
+			isMove = true, -- a real travel order (server applies March stance)
 		})
 
 		MovementDebug:info("Moving units in formation", {

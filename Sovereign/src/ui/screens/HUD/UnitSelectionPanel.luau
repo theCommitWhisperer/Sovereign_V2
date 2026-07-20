@@ -115,12 +115,15 @@ function UnitSelectionPanel:render()
 		})
 	end
 
-	-- Create stance control elements (moved from unit controls)
+	-- Stance controls (must match FormationManager / CombatConfig stance names)
 	local STANCES = {
-		{ name = "Aggressive", icon = "⚔️" },
-		{ name = "Defensive", icon = "🛡️" },
-		{ name = "HoldPosition", icon = "✋" },
+		{ name = "March", icon = "🚶", tooltip = "March — move together, don't fight (default)" },
+		{ name = "Attack", icon = "⚔️", tooltip = "Attack — seek out and charge enemies" },
+		{ name = "Defend", icon = "🛡️", tooltip = "Defend — hold ground, guard this spot" },
+		{ name = "Skirmish", icon = "🏹", tooltip = "Skirmish — harass and fall back" },
 	}
+
+	local selectedStance = self.props.selectedStance or "March"
 
 	local stanceControls = {}
 	stanceControls.Layout = React.createElement("UIListLayout", {
@@ -132,16 +135,22 @@ function UnitSelectionPanel:render()
 	})
 
 	for i, stance in ipairs(STANCES) do
+		local isSelected = selectedStance == stance.name
 		stanceControls[stance.name .. "Button"] = React.createElement("TextButton", {
 			Name = stance.name .. "StanceButton",
 			Size = UDim2.new(0, UIConfig.HUD.FormationButtonSize, 0, UIConfig.HUD.FormationButtonSize),
-			BackgroundColor3 = UIConfig.HUD.FormationButtonBackground,
+			BackgroundColor3 = isSelected and UIConfig.HUD.CategoryButtonSelected or UIConfig.HUD.FormationButtonBackground,
 			BorderSizePixel = 2,
-			BorderColor3 = UIConfig.HUD.FormationButtonBorder,
+			BorderColor3 = isSelected and Color3.fromRGB(255, 200, 100) or UIConfig.HUD.FormationButtonBorder,
 			Text = stance.icon,
 			Font = Enum.Font.GothamBold,
 			TextSize = 22,
 			LayoutOrder = i,
+			[React.Event.MouseButton1Click] = function()
+				if self.props.onStanceSelected then
+					self.props.onStanceSelected(stance.name)
+				end
+			end,
 		})
 	end
 

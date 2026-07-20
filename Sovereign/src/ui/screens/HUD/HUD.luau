@@ -75,6 +75,7 @@ function HUD:init()
 		economySnapshot = nil, -- Economy dashboard data
 		stats = nil, -- Stats for the stats modal
 		selectedFormation = "Line", -- Default formation type
+		selectedStance = "March", -- Current stance for selected units
 		-- Tutorial state
 		tutorialEnabled = false, -- Whether full tutorial (Storehouse + Granary) is enabled
 		showKeepModal = true, -- Always show Keep modal initially
@@ -408,7 +409,15 @@ function HUD:init()
 		self.selectionManager = SelectionManager
 
 		SelectionManager.SelectionChanged:Connect(function(selectedUnits)
-			self:setState({ selectedUnits = selectedUnits })
+			-- Reflect the actual stance of the selection in the highlight
+			local firstStance = nil
+			if selectedUnits[1] then
+				firstStance = selectedUnits[1]:GetAttribute("Stance")
+			end
+			self:setState({
+				selectedUnits = selectedUnits,
+				selectedStance = firstStance or "March",
+			})
 		end)
 	end)
 
@@ -1210,6 +1219,21 @@ function HUD:render()
 						and React.createElement(UnitSelectionPanel, {
 							selectedUnits = self.state.selectedUnits,
 							selectedFormation = self.state.selectedFormation,
+							selectedStance = self.state.selectedStance,
+							onStanceSelected = function(stanceName)
+								HUDDebug:info(`Stance selected: {stanceName}`)
+								self:setState({ selectedStance = stanceName })
+								local unitIds = {}
+								for _, unit in self.state.selectedUnits do
+									table.insert(unitIds, unit:GetAttribute("UnitId") or unit.Name)
+								end
+								if #unitIds > 0 then
+									self.gameEvent:FireServer("SetStance", {
+										UnitIDs = unitIds,
+										Stance = stanceName,
+									})
+								end
+							end,
 							onFormationSelected = function(formationType)
 								HUDDebug:info(`Formation selected: {formationType}`)
 								self:setState({ selectedFormation = formationType })

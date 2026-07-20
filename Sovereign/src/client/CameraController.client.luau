@@ -39,14 +39,19 @@ gameEvent.OnClientEvent:Connect(function(action, data)
 		local spawnPosition = humanoidRootPart.Position
 		cameraController:Initialize(spawnPosition)
 
+		-- A Studio-authored map can expose a simple invisible MapBounds part.
+		-- When present, it prevents RTS panning outside the streamed play space.
+		local mapBounds = workspace:FindFirstChild("MapBounds")
+		if mapBounds and mapBounds:IsA("BasePart") then
+			cameraController:SetBoundsFromPart(mapBounds, 12)
+		end
+
 		CameraDebug:info("Camera system initialized with StudioCameraController", {
 			spawnPos = spawnPosition,
 			isMobile = cameraController.inputHandler:IsMobile(),
 			isDesktop = cameraController.inputHandler:IsDesktop(),
 		})
 
-		-- Optional: Set up camera bounds (if you have a playable area defined)
-		-- Example: cameraController:SetBoundsFromPart(workspace.MapBounds)
 	end
 end)
 

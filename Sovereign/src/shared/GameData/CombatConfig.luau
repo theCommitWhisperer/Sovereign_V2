@@ -83,11 +83,36 @@ CombatConfig.CounterMatrix = {
 -- STANCES & POSITIONING
 -- ═══════════════════════════════════════════════════════════════════════════
 
+-- Player-facing stances. Each has combat modifiers (damage/defense, read by
+-- DamageResolver) plus behaviour flags read by CombatService.
+--   March    — the default when you issue a move. Passive: units travel
+--              together at the group's slowest speed and do NOT auto-engage.
+--   Attack   — seek out and charge enemies across a wide radius (attack-move).
+--   Defend   — hold ground; only engage enemies that come near the guard post,
+--              then return to it. Eligible for Shield Wall.
+--   Skirmish — engage but kite: ranged keep their distance, melee hit-and-run.
 CombatConfig.StanceModifiers = {
-	Aggressive = { damage = 1.25, defense = 0.85 },
-	Defensive = { damage = 0.75, defense = 1.40 },
-	Hold = { damage = 1.00, defense = 1.20 },
-	Charge = { damage = 1.50, defense = 0.70 },
+	March = { damage = 1.00, defense = 1.00 },
+	Attack = { damage = 1.25, defense = 0.85 },
+	Defend = { damage = 0.90, defense = 1.40 },
+	Skirmish = { damage = 1.10, defense = 0.80 },
+}
+
+CombatConfig.StanceBehavior = {
+	March = { autoEngage = false, searchMult = 0, canCharge = false, leash = 0, kite = false, groupSpeed = true },
+	Attack = { autoEngage = true, searchMult = 1.5, canCharge = true, leash = math.huge, kite = false, groupSpeed = false },
+	Defend = { autoEngage = true, searchMult = 0.9, canCharge = false, leash = 26, kite = false, groupSpeed = false },
+	Skirmish = { autoEngage = true, searchMult = 1.2, canCharge = true, leash = math.huge, kite = true, groupSpeed = false },
+}
+
+CombatConfig.DefaultStance = "Attack" -- newly spawned combat units
+CombatConfig.MoveStance = "March" -- applied when the player issues a move order
+
+CombatConfig.Skirmish = {
+	-- Kite when an enemy gets within this fraction of the unit's attack range
+	RANGED_KEEP_DISTANCE = 0.75,
+	MELEE_RETREAT_TIME = 0.6, -- seconds a melee skirmisher backs off after a hit
+	RETREAT_DISTANCE = 14, -- studs to fall back when kiting
 }
 
 CombatConfig.Positional = {

@@ -266,6 +266,17 @@ function MovementSystem.update()
 						unit:SetAttribute("TargetPosition", nil)
 						unit:SetAttribute("FlowFieldId", nil)
 
+						-- End of a group march: restore this unit's own walk speed
+						-- (it was capped to the slowest member for the journey)
+						if unit:GetAttribute("Marching") then
+							local marchHumanoid = unit:FindFirstChildOfClass("Humanoid")
+							local baseSpeed = unit:GetAttribute("BaseWalkSpeed")
+							if marchHumanoid and typeof(baseSpeed) == "number" then
+								marchHumanoid.WalkSpeed = baseSpeed
+							end
+							unit:SetAttribute("Marching", nil)
+						end
+
 						-- Formation slot: snap exactly onto it and face the way the
 						-- formation faces — this is what makes ranks read as clean
 						-- lines instead of a loose crowd pointing everywhere

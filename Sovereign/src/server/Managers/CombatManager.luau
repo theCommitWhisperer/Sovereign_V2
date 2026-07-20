@@ -57,6 +57,12 @@ function CombatManager.setStance(unitModel: Model, stance: Stance)
 	CombatService.setStance(unitModel, stance)
 end
 
+-- Group march: passive stance + shared slowest speed. Call when the player
+-- issues a plain move order to keep the group together.
+function CombatManager.applyGroupMarch(units: { Model })
+	CombatService.applyGroupMarch(units)
+end
+
 function CombatManager.clearTarget(unitModel: Model)
 	CombatService.clearTarget(unitModel)
 end

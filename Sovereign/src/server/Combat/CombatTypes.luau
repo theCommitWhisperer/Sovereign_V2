@@ -5,7 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local CombatConfig = require(ReplicatedStorage.Shared.GameData.CombatConfig)
 
-export type Stance = "Aggressive" | "Defensive" | "Hold" | "Charge"
+export type Stance = "March" | "Attack" | "Defend" | "Skirmish"
 
 export type CombatUnit = {
 	model: Model,
@@ -47,6 +47,8 @@ export type CombatUnit = {
 	lastScanTime: number, -- idle target-scan LOD throttle
 	scanJitter: number, -- per-unit scan desync so armies don't retarget in lockstep
 	slotAngle: number, -- stable ring-slot angle for surrounding targets
+	guardPost: Vector3?, -- Defend stance: position the unit holds/returns to
+	retreatUntil: number, -- Skirmish stance: melee hit-and-run backoff timer
 }
 
 export type CombatBuilding = {

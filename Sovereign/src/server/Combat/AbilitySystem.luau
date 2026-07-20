@@ -55,7 +55,10 @@ local function updateCelticFury(unit: CombatUnit, ctx: AbilityContext)
 		return
 	end
 	local cfg = Abilities.CelticFury
-	local shouldBeActive = unit.morale >= cfg.moraleThreshold
+	-- No fury speed boost while marching — it would break the group's shared
+	-- march speed. Only fires in mobile combat stances.
+	local stanceAllowsFury = unit.stance == "Attack" or unit.stance == "Skirmish"
+	local shouldBeActive = stanceAllowsFury and unit.morale >= cfg.moraleThreshold
 
 	if shouldBeActive and not unit.celticFuryActive then
 		unit.celticFuryActive = true
@@ -104,7 +107,7 @@ local function tryWarCry(unit: CombatUnit, now: number, ctx: AbilityContext)
 end
 
 local function updateShieldWall(unit: CombatUnit, ctx: AbilityContext)
-	if unit.stance ~= "Defensive" then
+	if unit.stance ~= "Defend" then
 		unit.inShieldWall = false
 		if #unit.shieldWallAllies > 0 then
 			table.clear(unit.shieldWallAllies)
@@ -114,7 +117,7 @@ local function updateShieldWall(unit: CombatUnit, ctx: AbilityContext)
 	local cfg = Abilities.ShieldWall
 	table.clear(unit.shieldWallAllies)
 	ctx.forEachAllyInRadius(unit, cfg.radius, function(ally)
-		if ally.stance == "Defensive" then
+		if ally.stance == "Defend" then
 			table.insert(unit.shieldWallAllies, ally.model)
 		end
 	end)

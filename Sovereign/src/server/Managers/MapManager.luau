@@ -9,8 +9,10 @@ local MapManagerDebug = DebugManager.createChannel("MapManager", false)
 
 local MapManager = {}
 
--- Current active map (can be changed between games)
+-- A Roblox server has one shared Workspace. Once a match starts, every player
+-- must therefore use the same map until the match has fully ended.
 local currentMap: string = MapData.DefaultMap
+local matchMapLocked = false
 
 -- Get the currently active map configuration
 function MapManager.getCurrentMap(): any
@@ -25,6 +27,11 @@ end
 
 -- Set the active map (call before starting a game)
 function MapManager.setMap(mapName: string): boolean
+	if matchMapLocked and mapName ~= currentMap then
+		MapManagerDebug:warn(`Attempted to change locked match map from "{currentMap}" to "{mapName}"`)
+		return false
+	end
+
 	local mapConfig = MapData.getMap(mapName)
 	if not mapConfig then
 		MapManagerDebug:warn(`Attempted to set invalid map: {mapName}`)
@@ -34,6 +41,34 @@ function MapManager.setMap(mapName: string): boolean
 	currentMap = mapName
 	MapManagerDebug:info(`Map set to: {mapName}`)
 	return true
+end
+
+-- Select the one map that this server will use for the active match.
+-- Subsequent calls are only accepted when they request the already locked map.
+function MapManager.lockMatchMap(mapName: string): boolean
+	if matchMapLocked then
+		return mapName == currentMap
+	end
+
+	if not MapManager.setMap(mapName) then
+		return false
+	end
+
+	matchMapLocked = true
+	MapManagerDebug:info(`Match map locked: {currentMap}`)
+	return true
+end
+
+function MapManager.isMatchMapLocked(): boolean
+	return matchMapLocked
+end
+
+-- Call only after the final player has left the match and all shared
+-- match-owned world objects have been cleaned up.
+function MapManager.unlockMatchMap()
+	matchMapLocked = false
+	currentMap = MapData.DefaultMap
+	MapManagerDebug:info(`Match map unlocked; restored default: {currentMap}`)
 end
 
 -- Get current map name
