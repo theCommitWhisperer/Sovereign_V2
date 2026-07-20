@@ -6,6 +6,7 @@ ClientDebug:info("Hello world, from client!")
 
 require(script.Selection.SelectionManager)
 require(script.Movement.MovementManager)
+require(script.UnitAnimator)
 require(script.Combat.HealthBarManager)
 require(script.Combat.DamageNumberManager)
 require(script.Combat.FogOfWarClient)
