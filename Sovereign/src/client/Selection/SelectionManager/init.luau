@@ -370,6 +370,108 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
+-- ============================================
+-- RIGHT-CLICK ORDERS (move) — civilians vs army
+-- ============================================
+
+local GameData = require(ReplicatedStorage.Shared.GameData)
+
+local function getGameEvent(): RemoteEvent?
+	local re = ReplicatedStorage:FindFirstChild("RemoteEvents")
+	local ev = re and re:FindFirstChild("GameEvent")
+	return (ev and ev:IsA("RemoteEvent")) and ev or nil
+end
+
+-- Civilians (peasants + worker-subtype job units) take different orders from army.
+local function isCivilian(unit: Model): boolean
+	local t = unit:GetAttribute("UnitType")
+	if t == "Peasant" then
+		return true
+	end
+	local data = t and GameData.Units[t]
+	return data ~= nil and data.subtype == "Worker"
+end
+
+local function groundPointAtMouse(mousePosition: Vector2): Vector3?
+	local ray = camera:ScreenPointToRay(mousePosition.X, mousePosition.Y)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local filter: { Instance } = {}
+	if player.Character then
+		table.insert(filter, player.Character)
+	end
+	local unitsFolder = workspace:FindFirstChild("Units")
+	if unitsFolder then
+		table.insert(filter, unitsFolder) -- don't land the order on a unit
+	end
+	params.FilterDescendantsInstances = filter
+	local result = workspace:Raycast(ray.Origin, ray.Direction * 2000, params)
+	return result and result.Position or nil
+end
+
+-- Expose so a command panel can order the current selection to the Keep / unassign.
+function SelectionManager.orderSelected(action: string, extra: { [string]: any }?)
+	local gameEvent = getGameEvent()
+	if not gameEvent or #selectedUnits == 0 then
+		return
+	end
+	local ids = {}
+	for _, unit in selectedUnits do
+		table.insert(ids, unit:GetAttribute("UnitId") or unit.Name)
+	end
+	local payload: { [string]: any } = { unitIds = ids }
+	if extra then
+		for k, v in pairs(extra) do
+			payload[k] = v
+		end
+	end
+	gameEvent:FireServer(action, payload)
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then
+		return
+	end
+	if input.UserInputType ~= Enum.UserInputType.MouseButton2 then
+		return
+	end
+	if #selectedUnits == 0 then
+		return
+	end
+
+	local dest = groundPointAtMouse(UserInputService:GetMouseLocation())
+	if not dest then
+		return
+	end
+	local gameEvent = getGameEvent()
+	if not gameEvent then
+		return
+	end
+
+	local civilianIds, militaryIds = {}, {}
+	for _, unit in selectedUnits do
+		local id = unit:GetAttribute("UnitId") or unit.Name
+		if isCivilian(unit) then
+			table.insert(civilianIds, id)
+		else
+			table.insert(militaryIds, id)
+		end
+	end
+
+	if #civilianIds > 0 then
+		gameEvent:FireServer("MoveWorkers", { unitIds = civilianIds, targetPosition = dest })
+	end
+	if #militaryIds > 0 then
+		gameEvent:FireServer("MoveUnitsInFormation", {
+			unitIds = militaryIds,
+			targetPosition = dest,
+			formationType = selectedFormationType,
+			isMove = true,
+		})
+	end
+	SelectionDebug:info(`Right-click order: {#civilianIds} civilian, {#militaryIds} military to {dest}`)
+end)
+
 SelectionDebug:info("Initialized")
 
 return SelectionManager

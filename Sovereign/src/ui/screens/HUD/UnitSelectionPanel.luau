@@ -1,7 +1,32 @@
 local React = require(game.ReplicatedStorage.Packages.react)
 local UIConfig = require(script.Parent.Parent.Parent.UIConfig)
+local GameData = require(game.ReplicatedStorage.Shared.GameData)
 
 local UnitSelectionPanel = React.Component:extend("UnitSelectionPanel")
+
+-- Peasants and worker-subtype job units are "civilians" and get their own orders.
+local function isCivilianUnit(unit: Instance): boolean
+	local t = unit:GetAttribute("UnitType")
+	if t == "Peasant" then
+		return true
+	end
+	local data = t and GameData.Units[t]
+	return data ~= nil and data.subtype == "Worker"
+end
+
+-- Fire a civilian order (ReturnToKeep / UnassignWorkers) for the selection.
+local function fireCivilianOrder(selectedUnits, action: string)
+	local remotes = game.ReplicatedStorage:FindFirstChild("RemoteEvents")
+	local gameEvent = remotes and remotes:FindFirstChild("GameEvent")
+	if not gameEvent then
+		return
+	end
+	local ids = {}
+	for _, unit in selectedUnits do
+		table.insert(ids, unit:GetAttribute("UnitId") or unit.Name)
+	end
+	gameEvent:FireServer(action, { unitIds = ids })
+end
 
 -- Formation types (must match FormationManager names)
 local FORMATIONS = {
@@ -23,6 +48,15 @@ function UnitSelectionPanel:render()
 
 	if unitCount == 0 then
 		return nil
+	end
+
+	-- Does the selection include any civilians (peasants / workers)?
+	local hasCivilians = false
+	for _, unit in selectedUnits do
+		if isCivilianUnit(unit) then
+			hasCivilians = true
+			break
+		end
 	end
 
 	-- Group units by type for display
@@ -226,6 +260,54 @@ function UnitSelectionPanel:render()
 				BackgroundTransparency = 1,
 			}, stanceControls),
 		}),
+
+		-- Civilian orders (only when peasants/workers are selected). Move is right-click.
+		CivilianSection = hasCivilians and React.createElement("Frame", {
+			Name = "CivilianSection",
+			Size = UDim2.new(1, 0, 0, 52),
+			Position = UDim2.new(0, 0, 0, 165),
+			BackgroundTransparency = 1,
+		}, {
+			Label = React.createElement("TextLabel", {
+				Size = UDim2.new(1, 0, 0, 18),
+				BackgroundTransparency = 1,
+				Text = "Workers  (right-click ground to move)",
+				Font = Enum.Font.GothamBold,
+				TextSize = 13,
+				TextColor3 = UIConfig.HUD.PanelHeaderColor,
+				TextXAlignment = Enum.TextXAlignment.Left,
+			}),
+
+			ToKeep = React.createElement("TextButton", {
+				Size = UDim2.new(0.5, -4, 0, 28),
+				Position = UDim2.new(0, 0, 0, 22),
+				BackgroundColor3 = UIConfig.HUD.FormationButtonBackground,
+				BorderSizePixel = 2,
+				BorderColor3 = UIConfig.HUD.FormationButtonBorder,
+				Text = "🏠 To Keep",
+				Font = Enum.Font.GothamBold,
+				TextSize = 14,
+				TextColor3 = UIConfig.HUD.PanelTextColor,
+				[React.Event.MouseButton1Click] = function()
+					fireCivilianOrder(selectedUnits, "ReturnToKeep")
+				end,
+			}),
+
+			Unassign = React.createElement("TextButton", {
+				Size = UDim2.new(0.5, -4, 0, 28),
+				Position = UDim2.new(0.5, 4, 0, 22),
+				BackgroundColor3 = UIConfig.HUD.FormationButtonBackground,
+				BorderSizePixel = 2,
+				BorderColor3 = UIConfig.HUD.FormationButtonBorder,
+				Text = "✋ Unassign",
+				Font = Enum.Font.GothamBold,
+				TextSize = 14,
+				TextColor3 = UIConfig.HUD.PanelTextColor,
+				[React.Event.MouseButton1Click] = function()
+					fireCivilianOrder(selectedUnits, "UnassignWorkers")
+				end,
+			}),
+		}) or nil,
 	})
 end
 

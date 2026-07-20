@@ -115,6 +115,23 @@ local function createHealthBar(unit: Model): BillboardGui?
 	healthGlow.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	healthGlow.Parent = healthFill
 
+	-- Role / state label above the bar (updated live in updateHealthBar). Renders
+	-- outside the billboard bounds (no clipping), so it sits just above the health
+	-- bar and re-appears correctly after a peasant transforms into a worker.
+	local roleLabel = Instance.new("TextLabel")
+	roleLabel.Name = "RoleLabel"
+	roleLabel.Size = UDim2.new(0, 140, 0, 14)
+	roleLabel.AnchorPoint = Vector2.new(0.5, 1)
+	roleLabel.Position = UDim2.new(0.5, 0, 0, -3)
+	roleLabel.BackgroundTransparency = 1
+	roleLabel.Font = Enum.Font.GothamBold
+	roleLabel.TextSize = 12
+	roleLabel.TextColor3 = Color3.fromRGB(235, 235, 240)
+	roleLabel.TextStrokeTransparency = 0.4
+	roleLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	roleLabel.Text = ""
+	roleLabel.Parent = billboard
+
 	return billboard
 end
 
@@ -137,6 +154,20 @@ local function updateHealthBar(unit: Model, billboard: BillboardGui)
 	if not shouldShow then
 		billboard.Enabled = false
 		return
+	end
+	billboard.Enabled = true
+
+	-- Live role / state label. Own workers show their job + what they're doing
+	-- (Farmer · Working); everyone else just shows the unit type.
+	local roleLabel = billboard:FindFirstChild("RoleLabel")
+	if roleLabel and roleLabel:IsA("TextLabel") then
+		local unitType = unit:GetAttribute("UnitType") or "Unit"
+		local workerState = unit:GetAttribute("WorkerState")
+		if owner == player.UserId and workerState then
+			roleLabel.Text = `{unitType} · {workerState}`
+		else
+			roleLabel.Text = tostring(unitType)
+		end
 	end
 
 	local currentHealth = unit:GetAttribute("CurrentHealth") or 100
