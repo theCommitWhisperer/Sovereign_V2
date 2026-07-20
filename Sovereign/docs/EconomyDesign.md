@@ -27,20 +27,44 @@ independent faults compounded:
 Peasant (idle, roaming near Keep)
         │  assigned (auto on placement, or + in the panel)
         ▼
-Walk to BuildingEntrance ──► ON ARRIVAL: transform into job unit ──► Working
+Walk to building APPROACH POSITION ─► ON ARRIVAL: transform into job unit ─► Working
         │                                                              │
-        │ (arrival is unified with MovementSystem; a stuck-timeout      │
-        │  snap guarantees the worker always reaches the entrance)      │
+        │ (approach position = guaranteed-walkable cell next to the     │
+        │  building; arrival unified with MovementSystem; stuck-timeout  │
+        │  snap is a rare last resort)                                   │
         ▼                                                              ▼
    PASSIVE building                                         GATHER building
-   walk to ProductionStation,                     walk to nearest ResourceNode,
-   building produces on a timer                   harvest, walk back, DEPOSIT
-   into its own storage                           (stored count rises on return)
+   stand at the building,                        walk to nearest ResourceNode,
+   building produces on a timer                  harvest, walk back, DEPOSIT
+   into its own storage                          (stored count rises on return)
         │                                                              │
         └──────────────► Haulers relay building storage ◄──────────────┘
                          → central storage (Keep / Storehouse / Granary)
                          and supply inputs → hungry processors
 ```
+
+### Navigation — approach positions, not worker-point parts
+
+Workers and haulers navigate to a building's **approach position**: the nearest
+walkable, graph-connected grid cell to the building, computed from geometry + the
+live pathfinding grid at placement and cached on the building
+(`PathfindingIntegration.getApproachPosition` → `ApproachPosition` attribute).
+
+This replaced the old dependence on authored/generated point parts
+(`BuildingEntrance`, `ProductionStation`). Those parts could be generated inside
+the obstacle, be missing (the code then fell back to the building *centre*, which
+is unreachable), or — for clustered buildings — get **buried** when a neighbour's
+obstacle re-marked their carved walkable cells, isolating them from the graph so
+every path solve failed. Symptom: peasants stuck for ~50 s, arriving only via the
+emergency snap, with a flood of `Failed to find path` warnings. Fixes:
+
+- Navigation targets the approach position (reachable by construction). Authored
+  points are now an optional refinement, never a requirement.
+- `addObstacle` re-carves **all** buildings' worker points after each change so
+  neighbours can't bury an entrance.
+- Recoverable pathfinding/movement conditions are gated `info`, genuine failures
+  are throttled, and `WorkerPointSystem.hasPoint` no longer warns for optional
+  points — cutting the log spam at the source.
 
 ### Assignment (auto + manual)
 
@@ -142,11 +166,21 @@ the loser's economy collapses as buildings go unstaffed and supply chains break.
 | Assignment, transform, production, hauling | `src/server/Managers/WorkerManager.luau` |
 | Idle peasant behaviour | `src/server/Managers/IdlePeasantManager.luau` |
 | Locomotion / pathfinding | `src/server/Systems/MovementSystem.luau` |
-| Worker navigation points | `src/server/Systems/WorkerPointSystem.luau`, `BuildingManager.ensureWorkerPoints` |
+| Approach positions + obstacle carving | `src/server/Systems/PathfindingIntegration.luau` (`getApproachPosition`) |
 | Building + economy data / balance | `src/shared/GameData/BuildingsData.luau` (`RESOURCE_TIERS`) |
 | Production-chain inputs | `src/server/Managers/ProductionChainManager.luau` |
 | Building classification | `src/shared/BuildingTypeHelper.luau` |
 | Assignment UI | `src/ui/screens/HUD/WorkerAssignmentPanel.luau`, `HUD.luau` |
+
+### Observability (replicated attributes)
+
+Server state the client reads live, no extra remotes:
+
+- `ApproachPosition` (Vector3) — where workers/haulers walk to.
+- `Storage_<Resource>` (number) — building stock, mirrored on every add/take so
+  the panel's storage bar and `~/s` estimate update in real time.
+- Per-worker `AssignedBuildingId`, `WorkerState` (Walking / Working / Gathering /
+  Returning), `ResourcesCarrying` — drive the live worker list in the panel.
 
 ## 6. Tuning knobs
 
