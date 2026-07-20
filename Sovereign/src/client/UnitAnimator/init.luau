@@ -82,15 +82,41 @@ local function setupUnit(model: Model)
 	local rig = if humanoid.RigType == Enum.HumanoidRigType.R15 then "R15" else "R6"
 	local ids = DEFAULTS[rig]
 
+	-- Diagnose animatability: a rig needs Motor6D joints for the animation to
+	-- have anything to move. Warn loudly (once) if a model can't possibly walk,
+	-- so it's obvious why a Creator Store model just slides.
+	local motorCount = 0
+	local jointNames = {}
+	for _, d in model:GetDescendants() do
+		if d:IsA("Motor6D") then
+			motorCount += 1
+			table.insert(jointNames, d.Name)
+		end
+	end
+	if motorCount == 0 then
+		warn(
+			`[UnitAnimator] "{model.Name}" has NO Motor6D joints — it's a static/welded model, `
+				.. `not an animatable rig, so it can't walk. Use a real R6/R15 rig (Studio → Avatar → `
+				.. `Rig Builder, or re-skin the default Dummy).`
+		)
+	else
+		AnimDebug:info(`Animating {model.Name} ({rig}, {motorCount} joints: {table.concat(jointNames, ", ")})`)
+	end
+
+	local walkTrack = loadTrack(animator, ids.walk)
+	local idleTrack = loadTrack(animator, ids.idle)
+	if not walkTrack then
+		warn(`[UnitAnimator] Failed to load the {rig} walk animation for "{model.Name}".`)
+	end
+
 	tracked[model] = {
 		humanoid = humanoid,
 		root = root,
-		idle = loadTrack(animator, ids.idle),
-		walk = loadTrack(animator, ids.walk),
+		idle = idleTrack,
+		walk = walkTrack,
 		lastPos = root.Position,
 		moving = nil,
 	}
-	AnimDebug:info(`Animating {model.Name} ({rig})`)
 end
 
 local function cleanup(model: Model)
