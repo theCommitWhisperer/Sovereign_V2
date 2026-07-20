@@ -284,15 +284,27 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 		explicitFaction = explicitFaction,
 	})
 
-	-- Get dummy model
-	local dummyModel = getDummyModel()
-	if not dummyModel then
-		UnitManagerDebug:warn("Failed to get dummy model")
+	-- Prefer a custom model from Assets/Units (yours); fall back to the Dummy rig.
+	local customTemplate = getUnitModel(unitType, unitInfo)
+	local template = customTemplate or getDummyModel()
+	if not template then
+		UnitManagerDebug:warn("Failed to get a unit model")
 		return nil
 	end
 
-	-- Clone the dummy
-	local unit = dummyModel:Clone()
+	-- Clone the template
+	local unit = template:Clone()
+
+	-- Custom models may lack PrimaryPart / Humanoid — make them usable, and if a
+	-- custom model is malformed, fall back to the Dummy so spawning never fails.
+	if customTemplate then
+		if normalizeUnitModel(unit) then
+			UnitManagerDebug:info(`Using custom model for {unitType}`)
+		else
+			unit:Destroy()
+			unit = getDummyModel():Clone()
+		end
+	end
 
 	-- Generate unique ID
 	local uniqueId = tostring(math.random(1000, 9999))

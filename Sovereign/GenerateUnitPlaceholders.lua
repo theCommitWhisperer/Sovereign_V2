@@ -158,25 +158,43 @@ end
 local assets = ensureFolder(PLACE_INTO_SERVICE, "Assets")
 local unitsFolder = ensureFolder(assets, "Units")
 
+-- Remove leftover placeholders from an earlier run (loose Models or ones already
+-- inside folders). Only OUR tagged placeholders are touched — never your models.
+local function purgeOldPlaceholders(root: Instance)
+	for _, child in root:GetChildren() do
+		if child:IsA("Model") and child:GetAttribute("IsPlaceholder") then
+			child:Destroy()
+		elseif child:IsA("Folder") then
+			purgeOldPlaceholders(child)
+		end
+	end
+end
+purgeOldPlaceholders(unitsFolder)
+
 local unitTypes = resolveUnitTypes()
 local created, skipped = {}, {}
 
+-- One FOLDER per unit type (Assets/Units/Peasant/), with a placeholder rig inside.
+-- The game picks a random Model child of the folder, so drop your variants right
+-- in here (any names) and delete the placeholder.
 for _, unitType in ipairs(unitTypes) do
 	if hasModelFor(unitsFolder, unitType) then
 		table.insert(skipped, unitType)
 	else
-		local placeholder = makePlaceholder(unitType)
-		placeholder.Parent = unitsFolder
+		local folder = ensureFolder(unitsFolder, unitType) -- Assets/Units/<Type>/
+		local placeholder = makePlaceholder(unitType) -- a valid rig, named <Type>
+		placeholder.Parent = folder
 		table.insert(created, unitType)
 	end
 end
 
 print(("=== Unit placeholders: %d types ==="):format(#unitTypes))
-print(("Created %d placeholder(s) in %s/Assets/Units:"):format(#created, PLACE_INTO_SERVICE.Name))
+print(("Created %d folder(s) with a placeholder in %s/Assets/Units:"):format(#created, PLACE_INTO_SERVICE.Name))
 print("  " .. (next(created) and table.concat(created, ", ") or "(none — all already had models)"))
 if next(skipped) then
 	print(("Skipped %d type(s) that already have a model:"):format(#skipped))
 	print("  " .. table.concat(skipped, ", "))
 end
-print("Replace a magenta placeholder with your own rig (keep the name), or add")
-print('"<Type>_A", "<Type>_B", ... / a "<Type>" folder for random variants.')
+print("Each type is a FOLDER (Assets/Units/<Type>/). Drop your own rig Models")
+print("inside — any names — and delete the magenta placeholder. Multiple models")
+print("in a folder = a random variant is chosen each spawn.")
