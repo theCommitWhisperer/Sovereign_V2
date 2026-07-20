@@ -190,7 +190,26 @@ local function getUnitModel(unitType: string, unitInfo: any): Model?
 	return candidates[math.random(1, #candidates)]
 end
 
--- Make sure a cloned model can actually be used as a unit (PrimaryPart + Humanoid).
+-- Is a part already held to something by a joint (so it won't fall off)?
+local function isJointed(part: BasePart, model: Model): boolean
+	for _, d in model:GetDescendants() do
+		if d:IsA("Weld") or d:IsA("WeldConstraint") or d:IsA("Motor6D") or d:IsA("Snap") then
+			local joint = d :: any
+			if joint.Part0 == part or joint.Part1 == part then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+-- Make sure a cloned model can actually be used as a unit (PrimaryPart + Humanoid)
+-- AND that it holds together. createUnit only unanchors the PrimaryPart, so any
+-- custom part that isn't welded/jointed to the rig falls off once physics starts
+-- (head, arms, legs dropping away). We unanchor everything and weld loose parts
+-- to the root so ANY model — welded rig or plain prop — stays intact and moves
+-- as one. Parts already driven by a joint (Motor6D animation, existing welds)
+-- are left alone.
 local function normalizeUnitModel(unit: Model): boolean
 	if not unit.PrimaryPart then
 		local hrp = unit:FindFirstChild("HumanoidRootPart")
@@ -203,10 +222,25 @@ local function normalizeUnitModel(unit: Model): boolean
 		UnitManagerDebug:warn(`Custom model for {unit.Name} has no usable PrimaryPart`)
 		return false
 	end
+
 	if not unit:FindFirstChildOfClass("Humanoid") then
 		local h = Instance.new("Humanoid")
 		h.Parent = unit
 	end
+
+	local primary = unit.PrimaryPart
+	for _, part in unit:GetDescendants() do
+		if part:IsA("BasePart") then
+			part.Anchored = false
+			if part ~= primary and not isJointed(part, unit) then
+				local weld = Instance.new("WeldConstraint")
+				weld.Part0 = primary
+				weld.Part1 = part
+				weld.Parent = primary
+			end
+		end
+	end
+
 	return true
 end
 
