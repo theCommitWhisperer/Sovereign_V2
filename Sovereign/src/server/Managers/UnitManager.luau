@@ -139,6 +139,53 @@ local function getDummyModel(): Model
 	return model
 end
 
+-- Look up a custom model for a unit type so you can supply your own rigs.
+-- Drop a Model into ReplicatedStorage/Assets/Units (or ServerStorage/Assets/Units)
+-- named after the unit type ("Peasant", "Spearman", ...) — or set `model_name`
+-- on the unit in UnitsData to point at a differently-named model. The model must
+-- be a proper rig: a Humanoid + a PrimaryPart (HumanoidRootPart), unanchored and
+-- welded, exactly like a Roblox character. Returns the TEMPLATE (caller clones).
+local function getUnitModel(unitType: string, unitInfo: any): Model?
+	local modelName = (unitInfo and unitInfo.model_name) or unitType
+
+	local roots: { Instance? } = {}
+	local repAssets = ReplicatedStorage:FindFirstChild("Assets")
+	table.insert(roots, repAssets and repAssets:FindFirstChild("Units"))
+	local ssAssets = ServerStorage:FindFirstChild("Assets")
+	table.insert(roots, ssAssets and ssAssets:FindFirstChild("Units"))
+
+	for _, root in roots do
+		if root then
+			local found = root:FindFirstChild(modelName)
+			if found and found:IsA("Model") then
+				return found
+			end
+		end
+	end
+
+	return nil
+end
+
+-- Make sure a cloned model can actually be used as a unit (PrimaryPart + Humanoid).
+local function normalizeUnitModel(unit: Model): boolean
+	if not unit.PrimaryPart then
+		local hrp = unit:FindFirstChild("HumanoidRootPart")
+			or unit:FindFirstChildWhichIsA("BasePart", true)
+		if hrp and hrp:IsA("BasePart") then
+			unit.PrimaryPart = hrp
+		end
+	end
+	if not unit.PrimaryPart then
+		UnitManagerDebug:warn(`Custom model for {unit.Name} has no usable PrimaryPart`)
+		return false
+	end
+	if not unit:FindFirstChildOfClass("Humanoid") then
+		local h = Instance.new("Humanoid")
+		h.Parent = unit
+	end
+	return true
+end
+
 -- NEW: Ground finding logic (portable version of UnitSpawnManager's logic)
 local function findGroundPosition(initialPoint: Vector3): Vector3
 	local rayOrigin = initialPoint + Vector3.new(0, 50, 0)
