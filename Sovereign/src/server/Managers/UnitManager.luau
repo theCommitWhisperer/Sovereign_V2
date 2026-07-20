@@ -324,13 +324,22 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 	unit:SetAttribute("OwnerId", ownerId)
 	unit:SetAttribute("UnitId", unit.Name)
 
-	-- Set initial position (use PivotTo for unanchored models)
+	-- Set initial position. Snap the model's FEET onto the ground so any rig
+	-- spawns on the surface regardless of its pivot / HipHeight / size — the old
+	-- code pivoted the model origin to the raw spawn Y, which was tuned for the
+	-- Dummy and buried differently-shaped custom models.
 	local spawnPos = position or Vector3.new(math.random(-20, 20), 10, math.random(-20, 20))
 
-	-- Temporarily anchor to position, then unanchor for physics
 	if unit.PrimaryPart then
 		unit.PrimaryPart.Anchored = true
-		unit:PivotTo(CFrame.new(spawnPos))
+		local ground = findGroundPosition(spawnPos)
+		-- Place well above ground, measure the model's bottom, then drop it so the
+		-- lowest point rests just on the surface.
+		unit:PivotTo(CFrame.new(ground.X, ground.Y + 50, ground.Z))
+		local bbCFrame, bbSize = unit:GetBoundingBox()
+		local modelBottom = bbCFrame.Position.Y - bbSize.Y / 2
+		local lift = (ground.Y + 0.5) - modelBottom
+		unit:PivotTo(unit:GetPivot() + Vector3.new(0, lift, 0))
 	end
 
 	-- Update humanoid speed if specified
