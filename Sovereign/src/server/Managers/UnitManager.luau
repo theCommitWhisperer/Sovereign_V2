@@ -140,30 +140,54 @@ local function getDummyModel(): Model
 end
 
 -- Look up a custom model for a unit type so you can supply your own rigs.
--- Drop a Model into ReplicatedStorage/Assets/Units (or ServerStorage/Assets/Units)
--- named after the unit type ("Peasant", "Spearman", ...) — or set `model_name`
--- on the unit in UnitsData to point at a differently-named model. The model must
--- be a proper rig: a Humanoid + a PrimaryPart (HumanoidRootPart), unanchored and
--- welded, exactly like a Roblox character. Returns the TEMPLATE (caller clones).
+-- In ReplicatedStorage/Assets/Units (or ServerStorage/Assets/Units), the unit
+-- type name is the key. You can provide:
+--   • a single Model named "Peasant"                         → always used
+--   • several Models "Peasant", "Peasant_A", "Peasant_2", …  → random variant
+--   • a Folder "Peasant" holding any-named Model children     → random variant
+-- (i.e. all you need is the name to start with the type; "_suffix" = a variant.)
+-- Set `model_name` on the unit in UnitsData to key off a different name.
+-- Each model must be a proper rig: a Humanoid + a PrimaryPart (HumanoidRootPart),
+-- unanchored and welded, like a Roblox character. Returns a random matching
+-- TEMPLATE (the caller clones it), or nil if none exist.
 local function getUnitModel(unitType: string, unitInfo: any): Model?
 	local modelName = (unitInfo and unitInfo.model_name) or unitType
+	local prefix = modelName .. "_"
 
-	local roots: { Instance? } = {}
-	local repAssets = ReplicatedStorage:FindFirstChild("Assets")
-	table.insert(roots, repAssets and repAssets:FindFirstChild("Units"))
-	local ssAssets = ServerStorage:FindFirstChild("Assets")
-	table.insert(roots, ssAssets and ssAssets:FindFirstChild("Units"))
+	local candidates: { Model } = {}
 
-	for _, root in roots do
-		if root then
-			local found = root:FindFirstChild(modelName)
-			if found and found:IsA("Model") then
-				return found
+	local function collectFrom(root: Instance?)
+		if not root then
+			return
+		end
+
+		-- A Folder named exactly after the type is a variant pool.
+		local exact = root:FindFirstChild(modelName)
+		if exact and exact:IsA("Folder") then
+			for _, child in exact:GetChildren() do
+				if child:IsA("Model") then
+					table.insert(candidates, child)
+				end
+			end
+		end
+
+		-- Loose models named "<type>" or "<type>_<variant>".
+		for _, child in root:GetChildren() do
+			if child:IsA("Model") and (child.Name == modelName or child.Name:sub(1, #prefix) == prefix) then
+				table.insert(candidates, child)
 			end
 		end
 	end
 
-	return nil
+	local repAssets = ReplicatedStorage:FindFirstChild("Assets")
+	collectFrom(repAssets and repAssets:FindFirstChild("Units"))
+	local ssAssets = ServerStorage:FindFirstChild("Assets")
+	collectFrom(ssAssets and ssAssets:FindFirstChild("Units"))
+
+	if #candidates == 0 then
+		return nil
+	end
+	return candidates[math.random(1, #candidates)]
 end
 
 -- Make sure a cloned model can actually be used as a unit (PrimaryPart + Humanoid).
