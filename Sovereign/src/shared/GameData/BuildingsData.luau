@@ -54,6 +54,12 @@ export type BuildingData = {
 	attack_damage: number?,
 	worker_points: WorkerPointConfig?, -- NEW: Configuration for worker navigation points
 	storage_points: StoragePointConfig?, -- NEW: Configuration for storage area points
+	-- Economy-rework-v2 fields:
+	production_time: number?, -- explicit seconds between production ticks (else derived from production_rate)
+	production_output: number?, -- units produced per tick / harvested per node visit
+	worker_slots: number?, -- how many workers this building can employ (default 1)
+	worker_gathers_from_nodes: boolean?, -- true = active gatherer (walks to world ResourceNodes)
+	worker_type: string?, -- legacy alias for worker_job_type
 }
 
 -- ========================================
@@ -1050,7 +1056,43 @@ BuildingsData["Celtic Cross"] = {
 -- Automatically add worker_points to all production buildings that don't have them explicitly set
 -- This ensures backward compatibility while allowing custom configurations
 
+-- Buildings whose workers physically walk out to world ResourceNodes to harvest.
+-- Everything else that produces is a passive processor/producer.
+local GATHERER_BUILDINGS: { [string]: boolean } = {
+	["Lumberjack"] = true,
+	["Stone Quarry"] = true,
+	["Iron Mine"] = true,
+	["Coal Mine"] = true,
+}
+
 for buildingName, buildingData in BuildingsData do
+	-- Economy defaults (economy-rework-v2): make every worker building assignable
+	-- and every producer tick with sane numbers, without hand-editing 25 entries.
+	if buildingData.requires_worker then
+		if buildingData.worker_slots == nil then
+			-- Producers get multiple slots (scales output); service buildings get one.
+			buildingData.worker_slots = buildingData.produces_resource ~= nil and 2 or 1
+		end
+
+		if buildingData.produces_resource then
+			if buildingData.production_output == nil then
+				buildingData.production_output = 1
+			end
+			if buildingData.production_rate == nil then
+				buildingData.production_rate = 1
+			end
+
+			if GATHERER_BUILDINGS[buildingName] then
+				buildingData.worker_gathers_from_nodes = true
+				buildingData.worker_slots = math.max(buildingData.worker_slots or 1, 3)
+				-- Gatherers haul a chunk back per node visit.
+				if (buildingData.production_output or 1) < 2 then
+					buildingData.production_output = 2
+				end
+			end
+		end
+	end
+
 	-- Add standard worker points to all buildings that require workers but don't have explicit worker_points
 	if buildingData.requires_worker and not buildingData.worker_points then
 		buildingData.worker_points = WorkerPointsConfig.STANDARD_PRODUCTION

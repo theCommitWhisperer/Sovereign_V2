@@ -1,14 +1,42 @@
 --!strict
--- WorkerManager: Simplified approach - workers walk to BuildingEntrance (placed OUTSIDE building)
--- No teleporting, no edge calculations - just direct pathfinding to points
+-- WorkerManager: assignment, transformation and the hybrid production loop.
+--
+-- Design (economy-rework-v2):
+--   • A peasant is ASSIGNED to a building (auto on placement or manually via the
+--     WorkerAssignmentPanel). It walks to the building's BuildingEntrance and,
+--     ON ARRIVAL, transforms into its job unit (Farmer, Woodcutter, ...). This
+--     is the single moment the old code could never reach — see the arrival
+--     unification below.
+--   • Buildings produce in one of two modes:
+--       - PASSIVE (processors / farms): once staffed, the BUILDING produces its
+--         output on a timer straight into its own storage, consuming inputs for
+--         production-chain buildings. Output scales with the number of staffed
+--         workers (capped at worker_slots).
+--       - GATHER (lumberjack / quarry / mine): the worker physically walks out
+--         to the nearest matching ResourceNode, harvests, walks back and deposits
+--         into the building's storage — the stored count rises on return. If a
+--         map has no matching nodes the gatherer falls back to passive output so
+--         the economy never stalls.
+--   • HAULERS relay resources: production output from a building to central
+--     storage, and (new) input supply from central storage to hungry processors.
+--
+-- Arrival unification (root-cause fix):
+--   MovementSystem owns locomotion and clears IsMoving/TargetPosition once a unit
+--   is within its own ~5-stud tolerance (or when it gives up pressed against
+--   geometry near the goal). The old WorkerManager waited for a TIGHTER 3-stud
+--   tolerance that MovementSystem never delivered, so workers parked a few studs
+--   short forever and never transformed. `pathfindToPosition` below now (a) clamps
+--   its arrival radius to sit OUTSIDE MovementSystem's, and (b) accepts a stopped
+--   unit that is close as "arrived". A per-state stuck-timeout snap guarantees the
+--   transform can always happen.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ServerStorage = game:GetService("ServerStorage")
+local Workspace = game:GetService("Workspace")
 
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local BuildingManager = require(script.Parent.BuildingManager)
 local ProductionChainManager = require(script.Parent.ProductionChainManager)
-local WeatherManager = require(script.Parent.WeatherManager)
+local BuildingTypeHelper = require(ReplicatedStorage.Shared.BuildingTypeHelper)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local WorkerPointSystem = require(script.Parent.Parent.Systems.WorkerPointSystem)
 local IdlePeasantManager = require(script.Parent.IdlePeasantManager)
@@ -20,6 +48,30 @@ local WorkerManager = {}
 local WorkerDebug = DebugManager.createChannel("Worker", false)
 local HaulerDebug = DebugManager.createChannel("Hauler", false)
 
+-- ============================================
+-- TUNING
+-- ============================================
+
+local CONFIG = {
+	-- Arrival: MUST exceed MovementSystem.CONFIG.ARRIVAL_DISTANCE (5) so a unit
+	-- that MovementSystem parks is recognised here as arrived.
+	MIN_ARRIVAL = 6,
+	-- If MovementSystem stopped a unit (IsMoving cleared) within this radius of
+	-- the goal, accept it — MovementSystem won't get any closer.
+	GIVEUP_RADIUS = 12,
+	-- Seconds a worker may spend trying to reach a point before we snap it there.
+	-- Guarantees transformation / deposits can always complete.
+	WALK_STUCK_TIMEOUT = 12,
+	-- Gather loop
+	GATHER_ARRIVAL = 6,
+	-- Hauler cadence
+	HAULER_ASSIGNMENT_INTERVAL = 5,
+	HAULER_PICKUP_AMOUNT = 15,
+	HAULER_OUTPUT_THRESHOLD = 5, -- building output before an output-hauler is called
+	HAULER_SUPPLY_MIN = 5, -- deliver this much input to a starving processor
+	HAULER_UNLOAD_SECONDS = 3,
+}
+
 -- Active tasks
 local WorkerTasks: { WorkerTask } = {}
 local HaulerTasks: { HaulerTask } = {}
@@ -27,36 +79,43 @@ local BuildingProduction: { [Instance]: BuildingProductionState } = {}
 
 -- Hauler assignment timer
 local lastHaulerAssignmentTime = 0
-local HAULER_ASSIGNMENT_INTERVAL = 5 -- Check every 5 seconds
 
 -- Per-owner production modifier (set by HappinessManager / RevoltManager)
 -- 1.0 = full production, 0.5 = half, 0 = halted
 local productionModifiers: { [number]: number } = {}
 
--- Worker states - simple and clean
+-- ============================================
+-- TYPES
+-- ============================================
+
 export type WorkerTask = {
 	worker: Model,
 	workplace: Instance,
 	workplaceType: string,
-	resourceType: string,
+	resourceType: string?,
 	jobType: string,
+	isGatherer: boolean,
 	state: "WalkingToEntrance" | "Working" | "GatheringResources" | "ReturningToDropoff",
 	resourcesCarrying: number,
 	targetNode: any?,
 	ownerId: number,
 	hasTransformed: boolean,
+	atStation: boolean,
+	walkStartTime: number,
+	fallbackProductionTime: number, -- gatherer passive-fallback timer
 }
 
 export type HaulerTask = {
 	hauler: Model,
+	role: "Output" | "Supply",
 	state: "Idle" | "WalkingToPickup" | "WalkingToStorage" | "UnloadingInside",
 	resourcesCarrying: number,
 	resourceType: string?,
 	sourceBuilding: Instance?,
 	targetStorage: Instance?,
 	ownerId: number,
-	unloadStartTime: number?, -- Timestamp when unloading started
-	storageEntrancePos: Vector3?, -- Position to respawn at after unloading
+	unloadStartTime: number?,
+	storageEntrancePos: Vector3?,
 }
 
 export type BuildingProductionState = {
@@ -66,102 +125,116 @@ export type BuildingProductionState = {
 }
 
 -- ============================================
--- PATHFINDING HELPERS
+-- SMALL HELPERS
 -- ============================================
 
--- Find an appropriate storage building for a resource type
-local function findStorageBuildingForResource(resourceType: string, ownerId: number): Instance?
-	local BuildingsFolder = Workspace:FindFirstChild("Buildings")
-	if not BuildingsFolder then
-		return nil
-	end
-
-	-- Determine which storage building type to look for based on resource
-	local targetBuildingType: string?
-	if resourceType == "Food" or resourceType == "Flour" or resourceType == "Bread" or resourceType == "Ale" then
-		targetBuildingType = "Granary"
-	elseif resourceType == "Wood" or resourceType == "Stone" or resourceType == "Iron_Bars"
-		or resourceType == "Weapons" or resourceType == "Siege_Equipment" or resourceType == "Iron_Ore"
-		or resourceType == "Leather" or resourceType == "Furniture" or resourceType == "Coal"
-		or resourceType == "Manuscripts" then
-		targetBuildingType = "Storehouse"
-	else
-		-- Unknown resource type, try Storehouse as default
-		targetBuildingType = "Storehouse"
-	end
-
-	-- Find the first available storage building of the correct type owned by the player
-	local bestStorage: Instance? = nil
-	local bestSpaceAvailable = 0
-
-	for _, building in ipairs(BuildingsFolder:GetChildren()) do
-		if building:IsA("Model") then
-			local buildingType = building:GetAttribute("BuildingType")
-			local buildingOwnerId = building:GetAttribute("OwnerId")
-
-			-- Check if it's the right type and owned by the same player
-			if buildingType == targetBuildingType and buildingOwnerId == ownerId then
-				-- Check if it can store this resource and has space
-				local buildingInfo = GameData.Buildings[buildingType]
-				if buildingInfo and buildingInfo.storage_capacity and buildingInfo.storage_capacity[resourceType] then
-					local currentAmount = BuildingManager.getStorageAmount(building, resourceType)
-					local maxCapacity = buildingInfo.storage_capacity[resourceType]
-					local spaceAvailable = maxCapacity - currentAmount
-
-					-- Choose the storage with most available space
-					if spaceAvailable > bestSpaceAvailable then
-						bestStorage = building
-						bestSpaceAvailable = spaceAvailable
-					end
-				end
-			end
-		end
-	end
-
-	return bestStorage
+local function horizontalDistance(a: Vector3, b: Vector3): number
+	local d = a - b
+	return Vector3.new(d.X, 0, d.Z).Magnitude
 end
 
--- Pathfind to a specific position (for resource nodes)
+local function getModifier(ownerId: number?): number
+	if not ownerId then
+		return 1.0
+	end
+	return productionModifiers[ownerId] or 1.0
+end
+
+-- Seconds between production ticks. Prefer an explicit production_time; else
+-- derive from production_rate (units/second).
+local function getProductionInterval(buildingInfo: any): number
+	if buildingInfo.production_time and buildingInfo.production_time > 0 then
+		return buildingInfo.production_time
+	end
+	local rate = buildingInfo.production_rate or 1
+	if rate <= 0 then
+		rate = 1
+	end
+	return 1 / rate
+end
+
+local function getProductionOutput(buildingInfo: any): number
+	return buildingInfo.production_output or 1
+end
+
+local function getWorkerCapacity(buildingInfo: any): number
+	return buildingInfo.worker_slots or 1
+end
+
+local function isGathererBuilding(buildingInfo: any): boolean
+	return buildingInfo.worker_gathers_from_nodes == true
+end
+
+-- ============================================
+-- MOVEMENT (unified arrival with MovementSystem)
+-- ============================================
+
+-- Issue / refresh a move order toward targetPos. Returns true once arrived.
+-- The arrival radius is clamped so it always sits OUTSIDE MovementSystem's own
+-- tolerance, and a unit MovementSystem has already stopped near the goal counts
+-- as arrived — this is the fix for peasants parking short and never transforming.
 local function pathfindToPosition(unit: Model, targetPos: Vector3, arrivalThreshold: number): boolean
-	if not unit.PrimaryPart then
+	local pp = unit.PrimaryPart
+	if not pp then
 		return true
 	end
 
-	local currentPos = unit.PrimaryPart.Position
-	local distance2D = (Vector3.new(targetPos.X, 0, targetPos.Z) - Vector3.new(currentPos.X, 0, currentPos.Z)).Magnitude
+	local distance2D = horizontalDistance(pp.Position, targetPos)
+	local threshold = math.max(arrivalThreshold, CONFIG.MIN_ARRIVAL)
 
-	-- Check if arrived
-	if distance2D <= arrivalThreshold then
+	if distance2D <= threshold then
 		unit:SetAttribute("IsMoving", false)
 		unit:SetAttribute("TargetPosition", nil)
 		return true
 	end
 
-	-- Set pathfinding target
-	local currentTarget = unit:GetAttribute("TargetPosition")
-	if not currentTarget or (currentTarget - targetPos).Magnitude > 1 then
-		unit:SetAttribute("TargetPosition", targetPos)
-		unit:SetAttribute("IsMoving", true)
+	-- MovementSystem cleared IsMoving (reached its own tolerance, or gave up
+	-- against geometry near the goal). If we're close, treat as arrived so the
+	-- worker loop never stalls waiting for a tolerance MovementSystem won't hit.
+	if not unit:GetAttribute("IsMoving") and distance2D <= CONFIG.GIVEUP_RADIUS then
+		unit:SetAttribute("TargetPosition", nil)
+		return true
 	end
 
+	-- (Re)issue the move order toward this point.
+	local currentTarget = unit:GetAttribute("TargetPosition")
+	if typeof(currentTarget) ~= "Vector3" or (currentTarget - targetPos).Magnitude > 1 then
+		unit:SetAttribute("TargetPosition", targetPos)
+		unit:SetAttribute("IsMoving", true)
+		unit:SetAttribute("PathfindingFailed", nil)
+	end
 	return false
 end
 
--- Pathfind to a worker point (BuildingEntrance, ProductionStation, ResourceDropoff)
+-- Pathfind to a named worker point (BuildingEntrance, ProductionStation, ...)
 local function pathfindToPoint(unit: Model, building: Instance, pointType: string, arrivalThreshold: number): boolean
 	if not unit.PrimaryPart then
 		return true
 	end
 
-	-- Get the point position from WorkerPointSystem
-	local targetPos = WorkerPointSystem.getPointPosition(building, pointType)
+	local targetPos = WorkerPointSystem.getPointPosition(building :: any, pointType :: any)
 	if not targetPos then
 		WorkerDebug:warn(`Point {pointType} not found in {building.Name}`)
 		return false
 	end
 
-	-- Use standard pathfinding
 	return pathfindToPosition(unit, targetPos, arrivalThreshold)
+end
+
+-- If a worker has been trying to reach a point for too long, snap it there so
+-- the state machine can always make progress (transform / deposit / etc.).
+local function snapIfStuck(task: WorkerTask, pointType: string): boolean
+	if tick() - task.walkStartTime < CONFIG.WALK_STUCK_TIMEOUT then
+		return false
+	end
+	local pos = WorkerPointSystem.getPointPosition(task.workplace :: any, pointType :: any)
+	if pos and task.worker.PrimaryPart then
+		task.worker:PivotTo(CFrame.new(pos))
+	end
+	task.worker:SetAttribute("IsMoving", false)
+	task.worker:SetAttribute("TargetPosition", nil)
+	WorkerDebug:warn(`Worker snapped to {pointType} of {task.workplace.Name} after stuck timeout`)
+	return true
 end
 
 -- ============================================
@@ -171,15 +244,18 @@ end
 local function transformWorker(peasant: Model, jobType: string): Model
 	local unitData = GameData.Units[jobType]
 	if not unitData then
+		WorkerDebug:warn(`No unit data for job type "{jobType}", leaving peasant as-is`)
 		return peasant
 	end
 
 	peasant:SetAttribute("UnitType", jobType)
 
 	local modelName = unitData.model_name or jobType
-	local newModel = ReplicatedStorage.Assets.Units:FindFirstChild(modelName)
+	local assets = ReplicatedStorage:FindFirstChild("Assets")
+	local unitsFolder = assets and assets:FindFirstChild("Units")
+	local newModel = unitsFolder and unitsFolder:FindFirstChild(modelName)
 
-	if newModel then
+	if newModel and newModel:IsA("Model") then
 		local position = peasant:GetPivot()
 		local attributes = {}
 		for key, value in pairs(peasant:GetAttributes()) do
@@ -197,32 +273,61 @@ local function transformWorker(peasant: Model, jobType: string): Model
 		clone.Parent = peasant.Parent
 		peasant:Destroy()
 
-		WorkerDebug:info(`Transformed peasant to {jobType}`)
+		WorkerDebug:info(`Transformed peasant into {jobType}`)
 		return clone
 	end
 
+	-- No dedicated model — keep the peasant model but tag it with the job type so
+	-- production still works (visual only differs).
+	WorkerDebug:info(`No model "{modelName}" for {jobType}; keeping peasant model, tagged as {jobType}`)
 	return peasant
 end
 
 -- ============================================
--- WORKER ASSIGNMENT
+-- ASSIGNMENT API
 -- ============================================
 
-function WorkerManager.assignWorkerToBuilding(peasant: Model, building: Instance, ownerId: number)
+-- How many workers are currently assigned to a building.
+function WorkerManager.getAssignedCount(building: Instance): number
+	local count = 0
+	for _, task in ipairs(WorkerTasks) do
+		if task.workplace == building and task.worker and task.worker.Parent then
+			count += 1
+		end
+	end
+	return count
+end
+
+-- Worker slots for a building (data-driven).
+function WorkerManager.getWorkerCapacity(building: Instance): number
+	local buildingType = building:GetAttribute("BuildingType")
+	local buildingInfo = buildingType and GameData.Buildings[buildingType]
+	if not buildingInfo then
+		return 0
+	end
+	return getWorkerCapacity(buildingInfo)
+end
+
+function WorkerManager.assignWorkerToBuilding(peasant: Model?, building: Instance?, ownerId: number)
 	if not peasant or not building then
 		return
 	end
 
 	local buildingType = building:GetAttribute("BuildingType")
-	local buildingInfo = GameData.Buildings[buildingType]
+	local buildingInfo = buildingType and GameData.Buildings[buildingType]
 
 	if not buildingInfo or not buildingInfo.requires_worker then
 		return
 	end
 
-	local jobType = buildingInfo.worker_type or "Worker"
+	-- FIELD FIX: data uses worker_job_type; the old code read worker_type and so
+	-- every worker silently defaulted to "Worker".
+	local jobType = buildingInfo.worker_job_type or buildingInfo.worker_type or "Peasant"
+	local gatherer = isGathererBuilding(buildingInfo)
 
-	WorkerDebug:info(`Assigning peasant to {buildingType} as {jobType}`)
+	WorkerDebug:info(`Assigning peasant to {buildingType} as {jobType} (gatherer={gatherer})`)
+
+	IdlePeasantManager.removeIdlePeasant(peasant)
 
 	local task: WorkerTask = {
 		worker = peasant,
@@ -230,23 +335,137 @@ function WorkerManager.assignWorkerToBuilding(peasant: Model, building: Instance
 		workplaceType = buildingType,
 		resourceType = buildingInfo.produces_resource,
 		jobType = jobType,
+		isGatherer = gatherer,
 		state = "WalkingToEntrance",
 		resourcesCarrying = 0,
 		targetNode = nil,
 		ownerId = ownerId,
 		hasTransformed = false,
+		atStation = false,
+		walkStartTime = tick(),
+		fallbackProductionTime = tick(),
 	}
 
 	table.insert(WorkerTasks, task)
 	peasant:SetAttribute("IsWorking", true)
 	peasant:SetAttribute("AssignedTo", buildingType)
+	peasant:SetAttribute("ResourceType", buildingInfo.produces_resource)
+end
+
+-- Claim the nearest idle peasant for a building (used by auto-assign on
+-- placement and by manual "add worker"). Respects worker_slots. Returns true if
+-- a worker was assigned.
+function WorkerManager.assignNearestIdlePeasant(building: Instance, ownerId: number): boolean
+	local buildingType = building:GetAttribute("BuildingType")
+	local buildingInfo = buildingType and GameData.Buildings[buildingType]
+	if not buildingInfo or not buildingInfo.requires_worker then
+		return false
+	end
+
+	if WorkerManager.getAssignedCount(building) >= getWorkerCapacity(buildingInfo) then
+		WorkerDebug:info(`{buildingType} is already fully staffed`)
+		return false
+	end
+
+	local entrance = WorkerPointSystem.getPointPosition(building :: any, "BuildingEntrance" :: any)
+		or (building.PrimaryPart and building.PrimaryPart.Position)
+	if not entrance then
+		return false
+	end
+
+	local idlePeasants = IdlePeasantManager.getIdlePeasantsForOwner(ownerId)
+	local nearest: Model? = nil
+	local nearestDist = math.huge
+	for _, unit in ipairs(idlePeasants) do
+		if unit and unit.Parent and unit.PrimaryPart and unit:GetAttribute("UnitType") == "Peasant" then
+			local d = (unit.PrimaryPart.Position - entrance).Magnitude
+			if d < nearestDist then
+				nearestDist = d
+				nearest = unit
+			end
+		end
+	end
+
+	if not nearest then
+		WorkerDebug:warn(`No idle peasant available to staff {buildingType}`)
+		return false
+	end
+
+	WorkerManager.assignWorkerToBuilding(nearest, building, ownerId)
+	return true
+end
+
+-- Pull up to `count` workers off a building and return them to idle behaviour.
+-- Returns the number actually released.
+function WorkerManager.unassignWorker(building: Instance, count: number?): number
+	local toRemove = count or 1
+	local released = 0
+
+	for i = #WorkerTasks, 1, -1 do
+		if released >= toRemove then
+			break
+		end
+		local task = WorkerTasks[i]
+		if task.workplace == building then
+			local worker = task.worker
+			table.remove(WorkerTasks, i)
+			released += 1
+
+			if worker and worker.Parent then
+				worker:SetAttribute("IsWorking", false)
+				worker:SetAttribute("AssignedTo", nil)
+				worker:SetAttribute("ResourcesCarrying", 0)
+				worker:SetAttribute("IsMoving", false)
+				worker:SetAttribute("TargetPosition", nil)
+				-- Un-hide in case it was teleported inside a building.
+				for _, part in ipairs(worker:GetDescendants()) do
+					if part:IsA("BasePart") then
+						part.Transparency = 0
+						part.CanCollide = false
+					end
+				end
+				IdlePeasantManager.addIdlePeasant(worker, task.ownerId)
+			end
+		end
+	end
+
+	WorkerDebug:info(`Released {released} worker(s) from {building.Name}`)
+	return released
 end
 
 -- ============================================
--- WORKER UPDATE LOOP
+-- WORKER UPDATE LOOP (movement + gather states)
 -- ============================================
 
-local function updateWorkerTasks(dt: number)
+local function findNearestNode(worker: Model, resourceType: string): Model?
+	if not worker.PrimaryPart then
+		return nil
+	end
+	-- Prefer the manager's index; fall back to a workspace scan.
+	local node = ResourceNodeManager.findNearestNode(worker.PrimaryPart.Position, resourceType)
+	if node then
+		return (node :: any).model or (node :: any)
+	end
+
+	local nodesFolder = Workspace:FindFirstChild("ResourceNodes")
+	if not nodesFolder then
+		return nil
+	end
+	local nearest: Model? = nil
+	local nearestDist = math.huge
+	for _, candidate in ipairs(nodesFolder:GetChildren()) do
+		if candidate:IsA("Model") and candidate.PrimaryPart and candidate:GetAttribute("ResourceType") == resourceType then
+			local d = (candidate.PrimaryPart.Position - worker.PrimaryPart.Position).Magnitude
+			if d < nearestDist then
+				nearestDist = d
+				nearest = candidate
+			end
+		end
+	end
+	return nearest
+end
+
+local function updateWorkerTasks(_dt: number)
 	for i = #WorkerTasks, 1, -1 do
 		local task = WorkerTasks[i]
 
@@ -265,274 +484,202 @@ local function updateWorkerTasks(dt: number)
 		end
 
 		local unitInfo = GameData.Units[task.jobType]
-		local carryCapacity = unitInfo and unitInfo.carry_capacity or 10
+		local carryCapacity = (unitInfo and unitInfo.carry_capacity) or 10
 
-		-- ============================================
-		-- STATE: WALKING TO ENTRANCE
-		-- ============================================
+		-- ── WALKING TO ENTRANCE ────────────────────────────────────────────
 		if task.state == "WalkingToEntrance" then
-			-- Walk directly to BuildingEntrance point (should be OUTSIDE building, in walkable space)
-			local arrivedAtEntrance = pathfindToPoint(task.worker, task.workplace, "BuildingEntrance", 3)
+			local arrived = pathfindToPoint(task.worker, task.workplace, "BuildingEntrance", 3)
+				or snapIfStuck(task, "BuildingEntrance")
 
-			if arrivedAtEntrance then
-				WorkerDebug:info(`Worker arrived at BuildingEntrance`)
-
-				-- Transform peasant to worker type
+			if arrived then
 				if not task.hasTransformed then
-					local oldWorker = task.worker
 					task.worker = transformWorker(task.worker, task.jobType)
 					task.hasTransformed = true
-
-					-- Validate worker model still exists after transformation
 					if not task.worker or not task.worker.Parent then
-						WorkerDebug:warn(`Worker model invalid after transformation for {task.jobType}`)
 						table.remove(WorkerTasks, i)
 						continue
 					end
-
-					WorkerDebug:info(`Worker transformation successful: {task.jobType}`)
 				end
 
-				-- Double-check worker is still valid
-				if not task.worker or not task.worker.Parent then
-					WorkerDebug:warn("Worker disappeared during entrance processing")
-					table.remove(WorkerTasks, i)
-					continue
-				end
-
-				-- Clear movement first
 				task.worker:SetAttribute("TargetPosition", nil)
 				task.worker:SetAttribute("IsMoving", false)
 
-				-- Check if building has TeleportIntoBuilding point (use hasPoint to avoid fallback)
-				local hasTeleportPoint = WorkerPointSystem.hasPoint(task.workplace, "TeleportIntoBuilding")
-
-				if hasTeleportPoint then
-					WorkerDebug:info(`Building has TeleportIntoBuilding - hiding worker`)
-
-					local teleportPoint = WorkerPointSystem.getPointPosition(task.workplace, "TeleportIntoBuilding")
-
-					-- Worker enters building and becomes invisible
+				-- Optional: hide the worker inside the building if authored.
+				if WorkerPointSystem.hasPoint(task.workplace :: any, "TeleportIntoBuilding" :: any) then
+					local teleportPoint =
+						WorkerPointSystem.getPointPosition(task.workplace :: any, "TeleportIntoBuilding" :: any)
 					if teleportPoint and task.worker.PrimaryPart then
 						task.worker:PivotTo(CFrame.new(teleportPoint))
-					else
-						WorkerDebug:warn("Worker has no PrimaryPart or no teleport position, cannot teleport")
-					end
-
-					-- Hide worker completely (inside building)
-					for _, part in ipairs(task.worker:GetDescendants()) do
-						if part:IsA("BasePart") then
-							part.Transparency = 1
-							part.CanCollide = false
-						elseif part:IsA("Decal") or part:IsA("Texture") then
-							part.Transparency = 1
-						end
-					end
-
-					WorkerDebug:info(`Worker entered building and is now hidden`)
-				else
-					-- No teleport point - worker stays visible at entrance
-					WorkerDebug:info(`No TeleportIntoBuilding point - worker staying visible at entrance`)
-				end
-
-				-- Move to working state
-				task.state = "Working"
-
-				-- Initialize production state for auto-production buildings
-				local isAutoProduction = buildingInfo.production_time and buildingInfo.production_time > 0
-				if isAutoProduction and not BuildingProduction[task.workplace] then
-					BuildingProduction[task.workplace] = {
-						building = task.workplace,
-						buildingType = task.workplaceType,
-						lastProductionTime = tick(),
-					}
-				end
-			end
-
-		-- ============================================
-		-- STATE: WORKING (at building)
-		-- ============================================
-		elseif task.state == "Working" then
-			-- Debug: Log once when entering Working state
-			if not task.worker:GetAttribute("_LoggedWorkingState") then
-				WorkerDebug:info(`Worker entered Working state at {task.workplace.Name}`)
-				task.worker:SetAttribute("_LoggedWorkingState", true)
-			end
-
-			-- Check building type to determine work behavior
-			local isAutoProduction = buildingInfo.production_time and buildingInfo.production_time > 0
-
-			if isAutoProduction then
-				-- AUTO-PRODUCTION (Farm, Smelter, Bakery)
-				-- Worker stays at ProductionStation (or BuildingEntrance if no ProductionStation) and produces over time
-
-				-- Pathfind to ProductionStation if not already there
-				local arrivedAtStation = pathfindToPoint(task.worker, task.workplace, "ProductionStation", 3)
-				if not arrivedAtStation then
-					-- Still walking to station, wait
-					if not task.worker:GetAttribute("_LoggedWalkingToStation") then
-						WorkerDebug:info(`Worker walking to ProductionStation (will only log once)`)
-						task.worker:SetAttribute("_LoggedWalkingToStation", true)
-					end
-					continue
-				end
-
-				-- Clear the debug flag when arrived
-				if task.worker:GetAttribute("_LoggedWalkingToStation") then
-					WorkerDebug:info(`Worker arrived at ProductionStation, starting production`)
-					task.worker:SetAttribute("_LoggedWalkingToStation", nil)
-				end
-
-				local productionState = BuildingProduction[task.workplace]
-				if not productionState then
-					productionState = {
-						building = task.workplace,
-						buildingType = task.workplaceType,
-						lastProductionTime = tick(),
-					}
-					BuildingProduction[task.workplace] = productionState
-				end
-
-				-- Check if enough time has passed
-				local timeSinceLastProduction = tick() - productionState.lastProductionTime
-
-				if timeSinceLastProduction >= buildingInfo.production_time then
-					-- Check if worker can carry more
-					if task.resourcesCarrying < carryCapacity then
-						-- Apply per-owner production modifier (set by HappinessManager / RevoltManager)
-						local modifier = productionModifiers[task.ownerId] or 1.0
-						local produceAmount = math.floor((buildingInfo.production_output or 1) * modifier)
-
-						productionState.lastProductionTime = tick()
-
-						-- Skip this tick when production is fully halted (modifier = 0)
-						if produceAmount <= 0 then
-							continue
-						end
-
-						task.resourcesCarrying = task.resourcesCarrying + produceAmount
-						task.worker:SetAttribute("ResourcesCarrying", task.resourcesCarrying)
-
-						WorkerDebug:info(`Worker produced {produceAmount} {task.resourceType} (modifier: {modifier})`, {
-							carrying = task.resourcesCarrying,
-							capacity = carryCapacity,
-						})
-
-						-- If full, go to dropoff
-						if task.resourcesCarrying >= carryCapacity then
-							task.state = "ReturningToDropoff"
-						end
-					else
-						-- Full, go to dropoff
-						task.state = "ReturningToDropoff"
-					end
-				end
-
-			else
-				-- RESOURCE GATHERING (Lumberjack, Miner, Quarry)
-				-- Worker goes out to find resource nodes in the world
-
-				-- Find nearest resource node
-				local nearestNode = nil
-				local shortestDistance = math.huge
-
-				if workspace:FindFirstChild("ResourceNodes") then
-					for _, node in ipairs(workspace.ResourceNodes:GetChildren()) do
-						if node:GetAttribute("ResourceType") == task.resourceType and node.PrimaryPart then
-							local nodePos = node.PrimaryPart.Position
-							local distance = (nodePos - task.worker.PrimaryPart.Position).Magnitude
-
-							if distance < shortestDistance then
-								shortestDistance = distance
-								nearestNode = node
+						for _, part in ipairs(task.worker:GetDescendants()) do
+							if part:IsA("BasePart") then
+								part.Transparency = 1
+								part.CanCollide = false
 							end
 						end
 					end
 				end
 
-				if nearestNode then
-					task.targetNode = nearestNode
-					task.state = "GatheringResources"
-					WorkerDebug:info(`Worker going to gather {task.resourceType} from resource node`)
-				else
-					WorkerDebug:warn(`No {task.resourceType} nodes found in workspace`)
-				end
+				task.state = "Working"
+				task.walkStartTime = tick()
 			end
 
-		-- ============================================
-		-- STATE: GATHERING RESOURCES (from world)
-		-- ============================================
+		-- ── WORKING ────────────────────────────────────────────────────────
+		elseif task.state == "Working" then
+			if task.isGatherer then
+				-- Active gatherer: walk out to a resource node.
+				local node = findNearestNode(task.worker, task.resourceType or "Wood")
+				if node then
+					task.targetNode = node
+					task.state = "GatheringResources"
+					task.walkStartTime = tick()
+					task.atStation = false
+				else
+					-- No nodes on this map — fall back to passive output so the
+					-- building still functions. Stay near the station.
+					pathfindToPoint(task.worker, task.workplace, "ProductionStation", 3)
+					local interval = getProductionInterval(buildingInfo)
+					if tick() - task.fallbackProductionTime >= interval then
+						task.fallbackProductionTime = tick()
+						local amount = math.floor(getProductionOutput(buildingInfo) * getModifier(task.ownerId))
+						if amount > 0 and task.resourceType then
+							BuildingManager.addToStorage(task.workplace, task.resourceType, amount)
+						end
+					end
+				end
+			else
+				-- Passive operator: reach the station, then flag presence so the
+				-- per-building production pass counts this worker.
+				local atStation = pathfindToPoint(task.worker, task.workplace, "ProductionStation", 3)
+					or snapIfStuck(task, "ProductionStation")
+				task.atStation = atStation
+			end
+
+		-- ── GATHERING RESOURCES (from the world) ───────────────────────────
 		elseif task.state == "GatheringResources" then
-			if task.targetNode and task.targetNode.Parent and task.targetNode.PrimaryPart then
-				local nodePos = task.targetNode.PrimaryPart.Position
-				local arrivedAtNode = pathfindToPosition(task.worker, nodePos, 5)
-
-				if arrivedAtNode then
-					-- Gather from node, depleting it (nodes shrink/fade and are
-					-- destroyed by ResourceNodeManager when exhausted)
-					local wantAmount = math.min(carryCapacity - task.resourcesCarrying, 1)
-					local gatherAmount = ResourceNodeManager.gatherFromInstance(task.targetNode, wantAmount)
-
-					if gatherAmount <= 0 then
-						-- Node just ran dry (or isn't tracked); find another one
+			local node = task.targetNode
+			if node and node.Parent and node.PrimaryPart then
+				local arrived = pathfindToPosition(task.worker, node.PrimaryPart.Position, CONFIG.GATHER_ARRIVAL)
+				if arrived then
+					local want = math.min(carryCapacity - task.resourcesCarrying, math.max(1, getProductionOutput(buildingInfo)))
+					local gathered = ResourceNodeManager.gatherFromInstance(node, want)
+					if gathered <= 0 then
 						task.targetNode = nil
 						task.state = "Working"
 						continue
 					end
-
-					task.resourcesCarrying = task.resourcesCarrying + gatherAmount
+					task.resourcesCarrying += gathered
 					task.worker:SetAttribute("ResourcesCarrying", task.resourcesCarrying)
 
-					WorkerDebug:info(`Gathered {gatherAmount} {task.resourceType}`, {
-						carrying = task.resourcesCarrying,
-						capacity = carryCapacity,
-					})
-
-					-- If full, return to building
 					if task.resourcesCarrying >= carryCapacity then
 						task.state = "ReturningToDropoff"
 						task.targetNode = nil
+						task.walkStartTime = tick()
 					else
-						-- Keep gathering (find another node next frame)
 						task.targetNode = nil
 						task.state = "Working"
 					end
 				end
 			else
-				-- Node disappeared
 				task.targetNode = nil
 				task.state = "Working"
 			end
 
-		-- ============================================
-		-- STATE: RETURNING TO DROPOFF
-		-- ============================================
+		-- ── RETURNING TO DROPOFF ───────────────────────────────────────────
 		elseif task.state == "ReturningToDropoff" then
-			-- Try ResourceDropoff first, fallback to BuildingEntrance if it doesn't exist
-			local dropoffPointType = "ResourceDropoff"
-			if not WorkerPointSystem.hasPoint(task.workplace, "ResourceDropoff") then
-				dropoffPointType = "BuildingEntrance"
-				WorkerDebug:info(`No ResourceDropoff point, using BuildingEntrance for deposit`)
-			end
+			local dropoffPoint = WorkerPointSystem.hasPoint(task.workplace :: any, "ResourceDropoff" :: any)
+					and "ResourceDropoff"
+				or "BuildingEntrance"
 
-			local arrivedAtDropoff = pathfindToPoint(task.worker, task.workplace, dropoffPointType, 3)
+			local arrived = pathfindToPoint(task.worker, task.workplace, dropoffPoint, 3)
+				or snapIfStuck(task, dropoffPoint)
 
-			if arrivedAtDropoff then
-				-- Deposit resources to building storage
-				local deposited = BuildingManager.addToStorage(
-					task.workplace,
-					task.resourceType,
-					task.resourcesCarrying
-				)
-
-				WorkerDebug:info(`Worker deposited {deposited} {task.resourceType} at {dropoffPointType} (attempted: {task.resourcesCarrying})`)
-
+			if arrived and task.resourceType then
+				-- Deposit into the building — the stored count rises on return.
+				local modifier = getModifier(task.ownerId)
+				local depositAmount = math.floor(task.resourcesCarrying * modifier)
+				if depositAmount > 0 then
+					BuildingManager.addToStorage(task.workplace, task.resourceType, depositAmount)
+				end
 				task.resourcesCarrying = 0
 				task.worker:SetAttribute("ResourcesCarrying", 0)
-
-				-- Go back to working (will pathfind back to ProductionStation or enter building)
 				task.state = "Working"
+				task.walkStartTime = tick()
 			end
+		end
+	end
+end
+
+-- ============================================
+-- PASSIVE PRODUCTION (per building)
+-- ============================================
+
+-- Count staffed passive workers per building this tick.
+local function countPassiveStaff(): { [Instance]: number }
+	local staff: { [Instance]: number } = {}
+	for _, task in ipairs(WorkerTasks) do
+		if not task.isGatherer and task.atStation and task.hasTransformed and task.worker and task.worker.Parent then
+			staff[task.workplace] = (staff[task.workplace] or 0) + 1
+		end
+	end
+	return staff
+end
+
+local function updateProductionBuildings(_dt: number)
+	local staff = countPassiveStaff()
+
+	for building, workerCount in pairs(staff) do
+		if not building.Parent then
+			continue
+		end
+		local buildingType = building:GetAttribute("BuildingType")
+		local buildingInfo = buildingType and GameData.Buildings[buildingType]
+		if not buildingInfo or not buildingInfo.produces_resource then
+			continue
+		end
+
+		local state = BuildingProduction[building]
+		if not state then
+			state = {
+				building = building,
+				buildingType = buildingType,
+				lastProductionTime = tick(),
+			}
+			BuildingProduction[building] = state
+		end
+
+		local interval = getProductionInterval(buildingInfo)
+		if tick() - state.lastProductionTime < interval then
+			continue
+		end
+
+		-- Production-chain buildings must have inputs available.
+		if BuildingTypeHelper.isProductionChain(buildingType) then
+			if not ProductionChainManager.canProduce(building) then
+				continue
+			end
+			ProductionChainManager.consumeInputs(building)
+		end
+
+		state.lastProductionTime = tick()
+
+		local ownerId = building:GetAttribute("OwnerId")
+		local modifier = getModifier(ownerId)
+		local slots = getWorkerCapacity(buildingInfo)
+		local effectiveWorkers = math.min(workerCount, slots)
+		local amount = math.floor(getProductionOutput(buildingInfo) * effectiveWorkers * modifier)
+
+		if amount > 0 then
+			BuildingManager.addToStorage(building, buildingInfo.produces_resource, amount)
+			WorkerDebug:info(
+				`{buildingType} produced {amount} {buildingInfo.produces_resource} ({effectiveWorkers} worker(s), x{modifier})`
+			)
+		end
+	end
+
+	-- Clean up production state for buildings that are gone.
+	for building in pairs(BuildingProduction) do
+		if not building.Parent then
+			BuildingProduction[building] = nil
 		end
 	end
 end
@@ -541,12 +688,85 @@ end
 -- HAULER SYSTEM
 -- ============================================
 
-function WorkerManager.createHaulerTask(hauler: Model, sourceBuilding: Instance, resourceType: string, ownerId: number)
-	-- Remove from idle peasants if they were there
+-- Find a storage building that can RECEIVE a resource (for output hauling).
+local function findStorageBuildingForResource(resourceType: string, ownerId: number): Instance?
+	local BuildingsFolder = Workspace:FindFirstChild("Buildings")
+	if not BuildingsFolder then
+		return nil
+	end
+
+	local bestStorage: Instance? = nil
+	local bestSpaceAvailable = 0
+
+	for _, building in ipairs(BuildingsFolder:GetChildren()) do
+		if building:IsA("Model") then
+			local buildingType = building:GetAttribute("BuildingType")
+			local buildingOwnerId = building:GetAttribute("OwnerId")
+			local buildingInfo = buildingType and GameData.Buildings[buildingType]
+
+			if
+				buildingInfo
+				and buildingOwnerId == ownerId
+				and buildingInfo.storage_capacity
+				and buildingInfo.storage_capacity[resourceType]
+				-- Don't haul a producer's output back into itself.
+				and buildingInfo.produces_resource ~= resourceType
+			then
+				local currentAmount = BuildingManager.getStorageAmount(building, resourceType)
+				local spaceAvailable = buildingInfo.storage_capacity[resourceType] - currentAmount
+				if spaceAvailable > bestSpaceAvailable then
+					bestStorage = building
+					bestSpaceAvailable = spaceAvailable
+				end
+			end
+		end
+	end
+
+	return bestStorage
+end
+
+-- Find a storage building that HAS a resource in stock (for input supply).
+local function findStorageWithResource(resourceType: string, ownerId: number, minAmount: number): Instance?
+	local BuildingsFolder = Workspace:FindFirstChild("Buildings")
+	if not BuildingsFolder then
+		return nil
+	end
+
+	for _, building in ipairs(BuildingsFolder:GetChildren()) do
+		if building:IsA("Model") then
+			local buildingType = building:GetAttribute("BuildingType")
+			local buildingOwnerId = building:GetAttribute("OwnerId")
+			local buildingInfo = buildingType and GameData.Buildings[buildingType]
+			-- Only pull from dedicated storage / the Keep, never from another
+			-- producer that needs its own stock.
+			if
+				buildingInfo
+				and buildingOwnerId == ownerId
+				and buildingInfo.storage_capacity
+				and buildingInfo.storage_capacity[resourceType]
+				and not buildingInfo.requires_worker
+				and BuildingManager.getStorageAmount(building, resourceType) >= minAmount
+			then
+				return building
+			end
+		end
+	end
+
+	return nil
+end
+
+function WorkerManager.createHaulerTask(
+	hauler: Model,
+	sourceBuilding: Instance,
+	resourceType: string,
+	ownerId: number,
+	role: ("Output" | "Supply")?
+)
 	IdlePeasantManager.removeIdlePeasant(hauler)
 
 	local task: HaulerTask = {
 		hauler = hauler,
+		role = role or "Output",
 		state = "WalkingToPickup",
 		resourcesCarrying = 0,
 		resourceType = resourceType,
@@ -559,10 +779,19 @@ function WorkerManager.createHaulerTask(hauler: Model, sourceBuilding: Instance,
 
 	table.insert(HaulerTasks, task)
 	hauler:SetAttribute("IsHauling", true)
-	HaulerDebug:info(`Created hauler task for {hauler.Name} (ownerId: {ownerId}, task.ownerId: {task.ownerId})`)
+	HaulerDebug:info(`Created {task.role} hauler task for {hauler.Name} (owner {ownerId})`)
 end
 
-local function updateHaulerTasks(dt: number)
+local function returnHaulerToIdle(task: HaulerTask, index: number)
+	task.hauler:SetAttribute("IsHauling", false)
+	local ownerId = task.ownerId or task.hauler:GetAttribute("OwnerId")
+	if ownerId then
+		IdlePeasantManager.addIdlePeasant(task.hauler, ownerId)
+	end
+	table.remove(HaulerTasks, index)
+end
+
+local function updateHaulerTasks(_dt: number)
 	for i = #HaulerTasks, 1, -1 do
 		local task = HaulerTasks[i]
 
@@ -573,248 +802,189 @@ local function updateHaulerTasks(dt: number)
 
 		if task.state == "WalkingToPickup" then
 			if task.sourceBuilding and task.sourceBuilding.Parent and task.resourceType then
-				-- Walk to ResourceDropoff point (where workers deposit resources)
-				local pickupPos = WorkerPointSystem.getPickupPosition(task.sourceBuilding)
+				local pickupPos = WorkerPointSystem.getPickupPosition(task.sourceBuilding :: any)
 				if not pickupPos then
-					HaulerDebug:warn(`No pickup point found for {task.sourceBuilding.Name}`)
-					task.state = "Idle"
+					returnHaulerToIdle(task, i)
 					continue
 				end
 
-				local arrivedAtPickup = pathfindToPosition(task.hauler, pickupPos, 3)
-
-				if arrivedAtPickup then
-					-- Pick up resources
-					local pickupAmount = 10
+				if pathfindToPosition(task.hauler, pickupPos, 3) then
 					local actualPickup = BuildingManager.takeFromStorage(
 						task.sourceBuilding,
 						task.resourceType,
-						pickupAmount
+						CONFIG.HAULER_PICKUP_AMOUNT
 					)
 
 					if actualPickup > 0 then
 						task.resourcesCarrying = actualPickup
 						task.hauler:SetAttribute("ResourcesCarrying", actualPickup)
 
-						HaulerDebug:info(`Hauler picked up {actualPickup} {task.resourceType}`)
+						-- Supply runs already know their destination (the processor).
+						-- Output runs look up a storage building now.
+						if task.role ~= "Supply" then
+							task.targetStorage = findStorageBuildingForResource(task.resourceType, task.ownerId)
+						end
 
-						-- Find appropriate storage building
-						local storageBuilding = findStorageBuildingForResource(task.resourceType, task.ownerId)
-						if storageBuilding then
-							task.targetStorage = storageBuilding
+						if task.targetStorage and task.targetStorage.Parent then
 							task.state = "WalkingToStorage"
-							HaulerDebug:info(`Hauler going to {storageBuilding.Name} to deposit {task.resourceType}`)
 						else
-							HaulerDebug:warn(`No storage building found for {task.resourceType}`)
-							-- Return resources to source building
-							BuildingManager.addToStorage(
-								task.sourceBuilding,
-								task.resourceType,
-								task.resourcesCarrying
-							)
+							-- Nowhere to put it — give it back and stand down.
+							BuildingManager.addToStorage(task.sourceBuilding, task.resourceType, task.resourcesCarrying)
 							task.resourcesCarrying = 0
 							task.hauler:SetAttribute("ResourcesCarrying", 0)
-							task.state = "Idle"
+							returnHaulerToIdle(task, i)
 						end
 					else
-						HaulerDebug:warn(`No resources available to pick up`)
-						task.state = "Idle"
+						returnHaulerToIdle(task, i)
 					end
 				end
+			else
+				returnHaulerToIdle(task, i)
 			end
 
 		elseif task.state == "WalkingToStorage" then
 			if task.targetStorage and task.targetStorage.Parent and task.resourceType then
-				-- Walk to storage BuildingEntrance
-				local entrancePos = WorkerPointSystem.getPointPosition(task.targetStorage, "BuildingEntrance")
+				local entrancePos =
+					WorkerPointSystem.getPointPosition(task.targetStorage :: any, "BuildingEntrance" :: any)
 				if not entrancePos then
-					HaulerDebug:warn(`No BuildingEntrance found on storage building`)
-					task.state = "Idle"
+					returnHaulerToIdle(task, i)
 					continue
 				end
 
-				local arrivedAtStorage = pathfindToPosition(task.hauler, entrancePos, 3)
-
-				if arrivedAtStorage then
-					HaulerDebug:info(`Hauler arrived at storage entrance, teleporting inside`)
-
-					-- Store entrance position for respawning
+				if pathfindToPosition(task.hauler, entrancePos, 3) then
 					task.storageEntrancePos = entrancePos
-
-					-- Make hauler invisible (teleport inside)
-					if task.hauler.PrimaryPart then
-						for _, part in ipairs(task.hauler:GetDescendants()) do
-							if part:IsA("BasePart") then
-								part.Transparency = 1
-							end
+					for _, part in ipairs(task.hauler:GetDescendants()) do
+						if part:IsA("BasePart") then
+							part.Transparency = 1
 						end
 					end
-
-					-- Start unloading timer
 					task.unloadStartTime = tick()
 					task.state = "UnloadingInside"
 				end
+			else
+				returnHaulerToIdle(task, i)
 			end
 
 		elseif task.state == "UnloadingInside" then
 			if task.targetStorage and task.resourceType and task.unloadStartTime then
-				-- Wait 5 seconds before unloading completes
-				local elapsedTime = tick() - task.unloadStartTime
-
-				if elapsedTime >= 5 then
-					-- Deposit resources
-					local deposited = BuildingManager.addToStorage(
-						task.targetStorage,
-						task.resourceType,
-						task.resourcesCarrying
-					)
-
-					HaulerDebug:info(`Hauler deposited {deposited} {task.resourceType} to storage`)
-
+				if tick() - task.unloadStartTime >= CONFIG.HAULER_UNLOAD_SECONDS then
+					BuildingManager.addToStorage(task.targetStorage, task.resourceType, task.resourcesCarrying)
 					task.resourcesCarrying = 0
 					task.hauler:SetAttribute("ResourcesCarrying", 0)
 
-					-- Respawn hauler at entrance
 					if task.storageEntrancePos and task.hauler.PrimaryPart then
 						task.hauler:PivotTo(CFrame.new(task.storageEntrancePos))
-
-						-- Make hauler visible again
-						for _, part in ipairs(task.hauler:GetDescendants()) do
-							if part:IsA("BasePart") then
-								part.Transparency = 0
-							end
+					end
+					for _, part in ipairs(task.hauler:GetDescendants()) do
+						if part:IsA("BasePart") then
+							part.Transparency = 0
 						end
-
-						HaulerDebug:info(`Hauler respawned at storage entrance`)
 					end
 
-					-- Return hauler to idle behavior
-					task.hauler:SetAttribute("IsHauling", false)
-
-					-- Get ownerId from task or hauler attribute as fallback
-					local ownerId = task.ownerId
-					if not ownerId then
-						ownerId = task.hauler:GetAttribute("OwnerId")
-						HaulerDebug:warn(`Task ownerId was nil, using hauler OwnerId attribute: {ownerId}`)
-					end
-
-					if ownerId then
-						HaulerDebug:info(`Adding hauler back to idle with ownerId: {ownerId}`)
-						IdlePeasantManager.addIdlePeasant(task.hauler, ownerId)
-					else
-						HaulerDebug:warn(`Cannot add hauler to idle - no ownerId found`)
-					end
-
-					table.remove(HaulerTasks, i)
-					HaulerDebug:info(`Hauler task completed, returning to idle behavior`)
+					returnHaulerToIdle(task, i)
 				end
+			else
+				returnHaulerToIdle(task, i)
 			end
 		end
 	end
 end
 
--- Automatically assign haulers to buildings that need hauling
+-- Is this unit already committed to a worker or hauler task?
+local function isUnitBusy(unit: Model): boolean
+	for _, t in ipairs(WorkerTasks) do
+		if t.worker == unit then
+			return true
+		end
+	end
+	for _, t in ipairs(HaulerTasks) do
+		if t.hauler == unit then
+			return true
+		end
+	end
+	return false
+end
+
+-- Assign idle peasants to relay resources: producers' output → storage, and
+-- (new) storage → starving processors' inputs.
 local function assignHaulersToBuildings()
 	local BuildingsFolder = Workspace:FindFirstChild("Buildings")
 	if not BuildingsFolder then
-		HaulerDebug:warn("Buildings folder not found in Workspace!")
 		return
 	end
 
-
-	-- Find all production buildings with resources to haul
-	local buildingsNeedingHauling: { { building: Instance, resourceType: string, ownerId: number } } = {}
+	type Job = { building: Instance, resourceType: string, ownerId: number, role: "Output" | "Supply" }
+	local jobs: { Job } = {}
 
 	for _, building in ipairs(BuildingsFolder:GetChildren()) do
-		if building:IsA("Model") then
-			local buildingType = building:GetAttribute("BuildingType")
-			local buildingInfo = GameData.Buildings[buildingType]
-			local ownerId = building:GetAttribute("OwnerId")
+		if not building:IsA("Model") then
+			continue
+		end
+		local buildingType = building:GetAttribute("BuildingType")
+		local buildingInfo = buildingType and GameData.Buildings[buildingType]
+		local ownerId = building:GetAttribute("OwnerId")
+		if not buildingInfo or not ownerId then
+			continue
+		end
 
-			if not ownerId then
-				HaulerDebug:warn(`Building {building.Name} has no OwnerId attribute!`)
+		-- OUTPUT: producer has stock to move to storage.
+		if buildingInfo.produces_resource and buildingInfo.storage_capacity then
+			local resourceType = buildingInfo.produces_resource
+			local currentAmount = BuildingManager.getStorageAmount(building, resourceType)
+			if currentAmount >= CONFIG.HAULER_OUTPUT_THRESHOLD then
+				local alreadyAssigned = false
+				for _, t in ipairs(HaulerTasks) do
+					if t.sourceBuilding == building and t.role == "Output" and t.state ~= "Idle" then
+						alreadyAssigned = true
+						break
+					end
+				end
+				if not alreadyAssigned then
+					table.insert(
+						jobs,
+						{ building = building, resourceType = resourceType, ownerId = ownerId, role = "Output" }
+					)
+				end
 			end
+		end
 
-			-- Check if building produces resources and has storage
-			if buildingInfo and buildingInfo.produces_resource and buildingInfo.storage_capacity then
-				local resourceType = buildingInfo.produces_resource
-				local currentAmount = BuildingManager.getStorageAmount(building, resourceType)
-
-				-- Debug: Log storage amounts for all production buildings
-				HaulerDebug:info(`{building.Name} storage: {currentAmount or 0} {resourceType}`)
-
-				-- If building has resources to haul (more than 5 units)
-				if currentAmount >= 5 then
-					HaulerDebug:info(`{building.Name} has {currentAmount} {resourceType} - checking for hauler`)
-					-- Check if there's already a hauler assigned to this building
-					local alreadyAssigned = false
-					for _, haulerTask in ipairs(HaulerTasks) do
-						if haulerTask.sourceBuilding == building and haulerTask.state ~= "Idle" then
-							alreadyAssigned = true
-							break
-						end
+		-- SUPPLY: production-chain building is short of its input.
+		if buildingType and BuildingTypeHelper.isProductionChain(buildingType) and buildingInfo.consumes_resource then
+			local input = buildingInfo.consumes_resource
+			local have = BuildingManager.getStorageAmount(building, input)
+			local need = (buildingInfo.consumption_rate or 1) * 3
+			if have < need then
+				local alreadySupplying = false
+				for _, t in ipairs(HaulerTasks) do
+					if t.sourceBuilding ~= building and t.targetStorage == building and t.role == "Supply" then
+						alreadySupplying = true
+						break
 					end
-
-					if not alreadyAssigned then
-						table.insert(buildingsNeedingHauling, {
-							building = building,
-							resourceType = resourceType,
-							ownerId = ownerId,
-						})
-					end
+				end
+				-- Only queue a supply run if a storage building actually has the input.
+				if not alreadySupplying and findStorageWithResource(input, ownerId, CONFIG.HAULER_SUPPLY_MIN) then
+					table.insert(jobs, { building = building, resourceType = input, ownerId = ownerId, role = "Supply" })
 				end
 			end
 		end
 	end
 
-	if #buildingsNeedingHauling == 0 then return end
-
-	HaulerDebug:info(`Found {#buildingsNeedingHauling} buildings needing hauling, searching for idle peasants...`)
-
-	for _, buildingNeedingHauling in ipairs(buildingsNeedingHauling) do
-		local building = buildingNeedingHauling.building
-		local resourceType = buildingNeedingHauling.resourceType
-		local ownerId = buildingNeedingHauling.ownerId
-
-		HaulerDebug:info(`Looking for idle peasant for {building.Name} (ownerId: {ownerId})`)
-
-		-- Use IdlePeasantManager to find peasants by owner (avoids OwnerId attribute issues)
-		local idlePeasants = IdlePeasantManager.getIdlePeasantsForOwner(ownerId)
-		HaulerDebug:info(`IdlePeasantManager found {#idlePeasants} idle peasants for ownerId {ownerId}`)
-
-		if #idlePeasants == 0 then
-			HaulerDebug:warn(`No idle peasants tracked for ownerId {ownerId} for {building.Name}`)
-		end
-
+	for _, job in ipairs(jobs) do
+		local idlePeasants = IdlePeasantManager.getIdlePeasantsForOwner(job.ownerId)
 		for _, unit in ipairs(idlePeasants) do
-			if not unit or not unit.Parent then continue end
-
-			local isAssigned = false
-
-			-- Check if assigned as worker
-			for _, workerTask in ipairs(WorkerTasks) do
-				if workerTask.worker == unit then
-					isAssigned = true
-					break
-				end
-			end
-
-			-- Check if assigned as hauler
-			if not isAssigned then
-				for _, haulerTask in ipairs(HaulerTasks) do
-					if haulerTask.hauler == unit then
-						isAssigned = true
-						break
+			if unit and unit.Parent and not isUnitBusy(unit) then
+				if job.role == "Supply" then
+					-- Supply run: pick up from a storage building, deliver to the processor.
+					local source = findStorageWithResource(job.resourceType, job.ownerId, CONFIG.HAULER_SUPPLY_MIN)
+					if source then
+						WorkerManager.createHaulerTask(unit, source, job.resourceType, job.ownerId, "Supply")
+						-- Redirect the delivery target to the processor.
+						HaulerTasks[#HaulerTasks].targetStorage = job.building
 					end
+				else
+					WorkerManager.createHaulerTask(unit, job.building, job.resourceType, job.ownerId, "Output")
 				end
-			end
-
-			-- If not already assigned to a task, use as hauler
-			if not isAssigned then
-				HaulerDebug:info(`Found idle peasant {unit.Name} for hauling`)
-				WorkerManager.createHaulerTask(unit, building, resourceType, ownerId)
-				HaulerDebug:info(`Assigned hauler to {building.Name} for {resourceType} (ownerId: {ownerId})`)
-				break -- Move to next building needing hauling
+				break
 			end
 		end
 	end
@@ -826,18 +996,17 @@ end
 
 function WorkerManager.update(dt: number)
 	updateWorkerTasks(dt)
+	updateProductionBuildings(dt)
 	updateHaulerTasks(dt)
 	IdlePeasantManager.update(dt)
 
-	-- Periodically assign haulers to buildings
 	local currentTime = tick()
-	if currentTime - lastHaulerAssignmentTime >= HAULER_ASSIGNMENT_INTERVAL then
+	if currentTime - lastHaulerAssignmentTime >= CONFIG.HAULER_ASSIGNMENT_INTERVAL then
 		assignHaulersToBuildings()
 		lastHaulerAssignmentTime = currentTime
 	end
 end
 
--- Called by GameManager when a game actually starts
 function WorkerManager.startLoop()
 	local RunService = game:GetService("RunService")
 	RunService.Heartbeat:Connect(function(dt)
@@ -847,12 +1016,9 @@ function WorkerManager.startLoop()
 end
 
 -- Called by HappinessManager and RevoltManager to scale worker output.
--- modifier: 1.0 = full production, 0.5 = half, 0 = fully halted.
 function WorkerManager.setProductionModifier(player: Player, modifier: number)
-	local ownerId = player.UserId
-	productionModifiers[ownerId] = math.clamp(modifier, 0, 1)
-	WorkerDebug:info(`Production modifier for owner {ownerId} set to {productionModifiers[ownerId]}`)
+	productionModifiers[player.UserId] = math.clamp(modifier, 0, 1)
+	WorkerDebug:info(`Production modifier for owner {player.UserId} set to {productionModifiers[player.UserId]}`)
 end
 
 return WorkerManager
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
