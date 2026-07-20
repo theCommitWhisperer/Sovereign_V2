@@ -81,7 +81,10 @@ function WorkerAssignmentPanel:render()
 
 	local assignedWorkers = self.state.assignedWorkers or {}
 	local resourceType = buildingInfo.produces_resource or "Resources"
-	local capacity = buildingInfo.worker_slots or 1
+	local capacity = selectedBuilding:GetAttribute("WorkerSlots") or buildingInfo.worker_slots or 1
+	-- Total employed = physical operator + virtual workers (server-published).
+	-- Falls back to the visible list length before the attribute is set.
+	local workerCount = selectedBuilding:GetAttribute("WorkerCount") or #assignedWorkers
 
 	-- Create worker list items
 	local workerItems = {}
@@ -171,11 +174,11 @@ function WorkerAssignmentPanel:render()
 	local producesResource = buildingInfo.produces_resource ~= nil
 	local outputPer = buildingInfo.production_output or 1
 	local interval = buildingInfo.production_time or (1 / (buildingInfo.production_rate or 1))
-	local effectiveWorkers = math.min(#assignedWorkers, capacity)
+	local effectiveWorkers = math.min(workerCount, capacity)
 	local ratePerSec = (interval > 0) and (outputPer * effectiveWorkers / interval) or 0
 	local storageText = producesResource
 			and `Storage: {storedAmount}/{maxStorage} {resourceType}  ·  ~{string.format("%.1f", ratePerSec)}/s`
-		or `Workers: {#assignedWorkers}/{capacity}`
+		or `Workers: {workerCount}/{capacity}`
 
 	return React.createElement("Frame", {
 		Name = "WorkerAssignmentPanel",
@@ -241,7 +244,7 @@ function WorkerAssignmentPanel:render()
 				Size = UDim2.new(1, -70, 1, 0),
 				Position = UDim2.new(0, 5, 0, 0),
 				BackgroundTransparency = 1,
-				Text = `👥 Workers ({#assignedWorkers}/{capacity})`,
+				Text = `👥 Workers ({workerCount}/{capacity})`,
 				Font = Enum.Font.GothamBold,
 				TextSize = 12,
 				TextColor3 = UIConfig.HUD.PanelHeaderColor,

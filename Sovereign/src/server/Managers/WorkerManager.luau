@@ -80,6 +80,24 @@ local WorkerTasks: { WorkerTask } = {}
 local HaulerTasks: { HaulerTask } = {}
 local BuildingProduction: { [Instance]: BuildingProductionState } = {}
 
+-- Virtual workers: to save memory we keep only ONE physical NPC (the operator)
+-- per building. Additional assigned workers consume a peasant from the pool and
+-- are despawned, but still count toward production. virtualWorkers[building] is
+-- that extra headcount.
+local virtualWorkers: { [Instance]: number } = {}
+
+local function getVirtual(building: Instance): number
+	return virtualWorkers[building] or 0
+end
+
+-- Publish worker headcount to replicated attributes so the UI reflects BOTH the
+-- physical operator and virtual workers (which have no model to scan).
+local function syncBuildingWorkerAttrs(building: Instance)
+	local physical = WorkerManager.getAssignedCount(building)
+	building:SetAttribute("WorkerCount", physical + getVirtual(building))
+	building:SetAttribute("WorkerSlots", WorkerManager.getWorkerCapacity(building))
+end
+
 -- Hauler assignment timer
 local lastHaulerAssignmentTime = 0
 
@@ -391,6 +409,12 @@ function WorkerManager.assignWorkerToBuilding(peasant: Model?, building: Instanc
 	peasant:SetAttribute("AssignedBuildingId", building.Name)
 	peasant:SetAttribute("WorkerState", "Walking")
 	peasant:SetAttribute("ResourceType", buildingInfo.produces_resource)
+	syncBuildingWorkerAttrs(building)
+end
+
+-- Total employed at a building = physical operator + virtual workers.
+function WorkerManager.getTotalWorkers(building: Instance): number
+	return WorkerManager.getAssignedCount(building) + getVirtual(building)
 end
 
 -- Claim the nearest idle peasant for a building (used by auto-assign on
@@ -403,7 +427,8 @@ function WorkerManager.assignNearestIdlePeasant(building: Instance, ownerId: num
 		return false
 	end
 
-	if WorkerManager.getAssignedCount(building) >= getWorkerCapacity(buildingInfo) then
+	local slots = getWorkerCapacity(buildingInfo)
+	if WorkerManager.getTotalWorkers(building) >= slots then
 		WorkerDebug:info(`{buildingType} is already fully staffed`)
 		return false
 	end
@@ -431,7 +456,18 @@ function WorkerManager.assignNearestIdlePeasant(building: Instance, ownerId: num
 		return false
 	end
 
-	WorkerManager.assignWorkerToBuilding(nearest, building, ownerId)
+	if WorkerManager.getAssignedCount(building) == 0 then
+		-- No physical operator yet — this peasant becomes the visible operator.
+		WorkerManager.assignWorkerToBuilding(nearest, building, ownerId)
+	else
+		-- Operator already present — virtualize this one (consume + despawn the
+		-- model for memory, keep the headcount for production).
+		IdlePeasantManager.removeIdlePeasant(nearest)
+		nearest:Destroy()
+		virtualWorkers[building] = getVirtual(building) + 1
+		syncBuildingWorkerAttrs(building)
+		WorkerDebug:info(`Virtualized a worker at {buildingType} (virtual now {getVirtual(building)})`)
+	end
 	return true
 end
 
@@ -704,7 +740,8 @@ local function updateProductionBuildings(_dt: number)
 		local ownerId = building:GetAttribute("OwnerId")
 		local modifier = getModifier(ownerId)
 		local slots = getWorkerCapacity(buildingInfo)
-		local effectiveWorkers = math.min(workerCount, slots)
+		-- Physical operator present (workerCount, 0/1) + virtual workers, capped.
+		local effectiveWorkers = math.min(workerCount + getVirtual(building), slots)
 		local amount = math.floor(getProductionOutput(buildingInfo) * effectiveWorkers * modifier)
 
 		if amount > 0 then
@@ -715,10 +752,15 @@ local function updateProductionBuildings(_dt: number)
 		end
 	end
 
-	-- Clean up production state for buildings that are gone.
+	-- Clean up state for buildings that are gone.
 	for building in pairs(BuildingProduction) do
 		if not building.Parent then
 			BuildingProduction[building] = nil
+		end
+	end
+	for building in pairs(virtualWorkers) do
+		if not building.Parent then
+			virtualWorkers[building] = nil
 		end
 	end
 end

@@ -1104,6 +1104,9 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 			local unitToMove = findUnit(data.unitId)
 
 			if unitToMove and unitToMove:GetAttribute("OwnerId") == player.UserId then
+				-- A manual move order releases a working peasant/worker so it obeys
+				-- the player instead of being re-tasked to its building each frame.
+				WorkerManager.releaseFromWork(unitToMove)
 				-- Clear combat target and delegate movement to MovementSystem
 				unitToMove:SetAttribute("CombatTarget", nil)
 				unitToMove:SetAttribute("TargetPosition", data.targetPosition)
@@ -1125,6 +1128,8 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 			for _, unitId in ipairs(data.unitIds) do
 				local unit = findUnit(unitId)
 				if unit and unit:GetAttribute("OwnerId") == player.UserId then
+					-- Manual formation move also releases any working civilians.
+					WorkerManager.releaseFromWork(unit)
 					table.insert(units, unit)
 				end
 			end
@@ -1190,6 +1195,55 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 			-- the formation arrives together.
 			if data.isMove and #units >= 1 then
 				CombatManager.applyGroupMarch(units)
+			end
+		end
+	elseif action == "MoveWorkers" then
+		-- Loose group move for selected peasants/workers (distinct from military
+		-- formations). Releases them from work so they obey the player.
+		if typeof(data) == "table" and data.unitIds and data.targetPosition then
+			local units = {}
+			for _, unitId in ipairs(data.unitIds) do
+				local unit = findUnit(unitId)
+				if unit and unit:GetAttribute("OwnerId") == player.UserId then
+					WorkerManager.releaseFromWork(unit)
+					table.insert(units, unit)
+				end
+			end
+			if #units > 0 then
+				MovementSystem.moveGroup(units, data.targetPosition)
+			end
+		end
+	elseif action == "ReturnToKeep" then
+		-- Send selected peasants/workers back to the Keep (releases from work).
+		if typeof(data) == "table" and data.unitIds then
+			local keep = playerData.Keep
+			if keep and keep.Parent then
+				local dest = PathfindingIntegration.getApproachPosition(keep)
+					or (keep.PrimaryPart and keep.PrimaryPart.Position)
+				if dest then
+					local units = {}
+					for _, unitId in ipairs(data.unitIds) do
+						local unit = findUnit(unitId)
+						if unit and unit:GetAttribute("OwnerId") == player.UserId then
+							WorkerManager.releaseFromWork(unit)
+							table.insert(units, unit)
+						end
+					end
+					if #units > 0 then
+						MovementSystem.moveGroup(units, dest)
+					end
+				end
+			end
+		end
+	elseif action == "UnassignWorkers" then
+		-- Pull selected workers off their jobs and return them to the idle pool.
+		if typeof(data) == "table" and data.unitIds then
+			for _, unitId in ipairs(data.unitIds) do
+				local unit = findUnit(unitId)
+				if unit and unit:GetAttribute("OwnerId") == player.UserId then
+					WorkerManager.releaseFromWork(unit)
+					IdlePeasantManager.addIdlePeasant(unit, player.UserId)
+				end
 			end
 		end
 	-- Removed MoveKing action - King movement is now handled by Roblox's built-in character controls
