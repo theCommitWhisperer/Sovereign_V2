@@ -64,18 +64,38 @@ return function()
 			end).never.to.throw()
 		end)
 
-		it("adds gold to player resources based on unit count and tax rate", function()
-			-- Give the player 10 units (population) and a 10% tax rate
+		it("adds gold based on population, tax rate and popularity gate", function()
+			-- Give the player 10 peasants (population) and a 10% tax rate.
+			-- Peasants must be parented + tagged to count as population.
 			local playerData = PlayerManager.get(fakePlayer)
 			for _ = 1, 10 do
-				local fakeUnit = Instance.new("Part") -- Minimal fake unit
+				local fakeUnit = Instance.new("Model")
+				fakeUnit:SetAttribute("UnitType", "Peasant")
+				fakeUnit.Parent = workspace
 				table.insert(playerData.Units, fakeUnit)
 			end
+			playerData.Happiness = 50 -- popularity gate multiplier 1.0
 			TaxManager.setTaxRate(fakePlayer, 0.1)
 			TaxManager.collectTaxes(fakePlayer)
-			-- 10 units * 0.1 = 1 gold (floor)
+			-- 10 population * 0.1 rate * 1.0 popularity = 1 gold (floor)
 			expect(playerData.Resources.Gold).to.equal(1)
 			-- Clean up
+			for _, u in playerData.Units do u:Destroy() end
+			playerData.Units = {}
+		end)
+
+		it("collects nothing when popularity is at revolt levels", function()
+			local playerData = PlayerManager.get(fakePlayer)
+			for _ = 1, 10 do
+				local fakeUnit = Instance.new("Model")
+				fakeUnit:SetAttribute("UnitType", "Peasant")
+				fakeUnit.Parent = workspace
+				table.insert(playerData.Units, fakeUnit)
+			end
+			playerData.Happiness = 5 -- below the lowest gate tier -> 0x income
+			TaxManager.setTaxRate(fakePlayer, 0.5)
+			TaxManager.collectTaxes(fakePlayer)
+			expect(playerData.Resources.Gold).to.equal(0)
 			for _, u in playerData.Units do u:Destroy() end
 			playerData.Units = {}
 		end)

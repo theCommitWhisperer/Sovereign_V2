@@ -22,6 +22,7 @@ local TutorialModal = require(script.Parent.Parent.Parent.components.TutorialMod
 local HeroAbilitiesPanel = require(script.Parent.HeroAbilitiesPanel)
 local UpgradePanel = require(script.Parent.UpgradePanel)
 local TechTree = require(script.Parent.TechTree)
+local AbilityTreePanel = require(script.Parent.AbilityTreePanel)
 local QuestTracker = require(script.Parent.QuestTracker)
 local AchievementNotification = require(script.Parent.AchievementNotification)
 local ConfirmDeleteModal = require(script.Parent.ConfirmDeleteModal)
@@ -59,12 +60,14 @@ function HUD:init()
 		showPoliciesModal = false,
 		showTechTreeModal = false,
 		showHeroAbilities = false,
+		showAbilityTree = false, -- Hero ability upgrade tree (Glory progression)
 		achievementData = nil,
 		buildingUpgradeInfo = nil,
 		selectedCategory = "Defense", -- Defense, Military, Industry, Food, Housing
 		armySize = 0,
 		honor = 0,
-		glory = 0,
+		glory = 0, -- spendable Glory balance (GloryUpdate)
+		gloryLifetime = 0, -- lifetime Glory earned (prestige building unlocks)
 		population = 0,
 		happiness = 50, -- 0-100, affects revolt meter
 		weather = "Clear", -- Current weather condition
@@ -105,6 +108,10 @@ function HUD:init()
 		peaceTimeRemaining = 0,
 		-- Active victory condition mode from lobby settings
 		victoryCondition = "Score",
+		-- Keep capture banner ({ fraction, secondsRemaining, attacker, keepOwnerName, receivedAt } | false)
+		keepCapture = false,
+		-- Estate capture progress bar ({ estateId, fraction, attacker, receivedAt } | false)
+		estateCapture = false,
 	})
 
 	-- Get game event reference with timeout to prevent infinite hang
@@ -202,9 +209,28 @@ function HUD:init()
 		})
 	end)
 
-	-- Request initial quest data
+	-- Request initial quest data + Glory balance (server also pushes GloryUpdate
+	-- batches, but the HUD may mount after the initial flush)
 	task.delay(0.5, function()
 		self.gameEvent:FireServer("GetQuests")
+		self.gameEvent:FireServer("GetGlory")
+	end)
+
+	-- Capture banners auto-expire if the server stops sending updates (the
+	-- progress events only flow while a capture is actively running)
+	task.spawn(function()
+		while true do
+			task.wait(2)
+			local now = tick()
+			local keepCapture = self.state.keepCapture
+			if keepCapture and now - (keepCapture.receivedAt or 0) > 4 then
+				self:setState({ keepCapture = false })
+			end
+			local estateCapture = self.state.estateCapture
+			if estateCapture and now - (estateCapture.receivedAt or 0) > 4 then
+				self:setState({ estateCapture = false })
+			end
+		end
 	end)
 
 	-- Initialize from gameStartData prop if available
@@ -342,61 +368,107 @@ function HUD:init()
 
 				-- TODO: Show notification UI
 				-- For now, just log it
-			elseif action == "AchievementUnlocked" then
-				-- Achievement notification
-				HUDDebug:info("Achievement Unlocked!", data)
-				self:setState({ achievementData = data })
-				-- Auto-clear after component handles it
-				task.delay(6, function()
-					self:setState({ achievementData = nil })
-				end)
-			elseif action == "BuildingUpgraded" then
-				-- Building was upgraded
-				HUDDebug:info("Building Upgraded", data)
-			elseif action == "ResearchStarted" then
-				-- Research started
-				HUDDebug:info("Research Started", data)
-			elseif action == "ResearchCompleted" then
-				-- Research completed
-				HUDDebug:info("Research Completed", data)
-			elseif action == "QuestCompleted" then
-				-- Quest completed
-				HUDDebug:info("Quest Completed", data)
-				-- Refresh quest list
-				self.gameEvent:FireServer("GetQuests")
-			elseif action == "QuestProgress" then
-				-- Quest progress updated
-				HUDDebug:info("Quest Progress", data)
-				-- Refresh quest list
-				self.gameEvent:FireServer("GetQuests")
-			elseif action == "QuestsData" then
-				-- Quest data received
-				HUDDebug:info("Received quests data", data)
-				self:setState({ activeQuests = data.activeQuests or {} })
-			elseif action == "AbilitiesData" then
-				-- Hero abilities data received
-				HUDDebug:info("Received abilities data", data)
-				self:setState({ heroAbilities = data.abilities or {} })
-			elseif action == "AbilityCooldownUpdate" then
-				-- Ability cooldown updated
-				HUDDebug:info("Ability cooldown update", data)
-				-- Update specific ability cooldown
-				if self.state.heroAbilities and data.abilityId then
-					local abilities = table.clone(self.state.heroAbilities)
-					for _, ability in abilities do
-						if ability.id == data.abilityId then
-							ability.remainingCooldown = data.remainingCooldown
-							ability.isOnCooldown = data.isOnCooldown
-							break
-						end
-					end
-					self:setState({ heroAbilities = abilities })
-				end
-			elseif action == "KingRespawned" then
-				-- King respawned
-				HUDDebug:info("King Respawned", data)
-				HUDDebug:warn(`VIKING RAID #${data.raidNumber}! {data.vikingCount} Vikings are attacking!`)
 			end
+		elseif action == "GloryUpdate" then
+			-- Batched Glory push from GloryManager: { glory (spendable), lifetime }
+			if typeof(data) == "table" then
+				self:setState({
+					glory = data.glory or 0,
+					gloryLifetime = data.lifetime or self.state.gloryLifetime,
+				})
+			end
+		elseif action == "KeepCaptureProgress" then
+			-- Keep capture countdown (EliminationManager, 1 Hz while contested).
+			-- Sent to BOTH sides: attacker=true when we're the ones seizing it.
+			if typeof(data) == "table" then
+				local fraction = data.fraction or (data.percent or 0) / 100
+				if fraction <= 0 then
+					self:setState({ keepCapture = false })
+				else
+					self:setState({
+						keepCapture = {
+							fraction = fraction,
+							secondsRemaining = data.secondsRemaining or 0,
+							attacker = data.attacker == true,
+							keepOwnerName = data.keepOwnerName,
+							receivedAt = tick(),
+						},
+					})
+				end
+			end
+		elseif action == "EstateCaptureProgress" then
+			-- Estate flag capture progress (EstateManager, 1 Hz while contested)
+			if typeof(data) == "table" then
+				if data.capturing and (data.fraction or 0) > 0 then
+					self:setState({
+						estateCapture = {
+							estateId = data.estateId,
+							fraction = data.fraction,
+							attacker = data.attacker == true,
+							receivedAt = tick(),
+						},
+					})
+				else
+					self:setState({ estateCapture = false })
+				end
+			end
+		elseif action == "EstateCaptured" or action == "EstateLost" then
+			-- Terminal estate events clear any in-flight capture bar
+			HUDDebug:info(action, data)
+			self:setState({ estateCapture = false })
+		elseif action == "AchievementUnlocked" then
+			-- Achievement notification
+			HUDDebug:info("Achievement Unlocked!", data)
+			self:setState({ achievementData = data })
+			-- Auto-clear after component handles it
+			task.delay(6, function()
+				self:setState({ achievementData = nil })
+			end)
+		elseif action == "BuildingUpgraded" then
+			-- Building was upgraded
+			HUDDebug:info("Building Upgraded", data)
+		elseif action == "ResearchStarted" then
+			-- Research started
+			HUDDebug:info("Research Started", data)
+		elseif action == "ResearchCompleted" then
+			-- Research completed
+			HUDDebug:info("Research Completed", data)
+		elseif action == "QuestCompleted" then
+			-- Quest completed
+			HUDDebug:info("Quest Completed", data)
+			-- Refresh quest list
+			self.gameEvent:FireServer("GetQuests")
+		elseif action == "QuestProgress" then
+			-- Quest progress updated
+			HUDDebug:info("Quest Progress", data)
+			-- Refresh quest list
+			self.gameEvent:FireServer("GetQuests")
+		elseif action == "QuestsData" then
+			-- Quest data received
+			HUDDebug:info("Received quests data", data)
+			self:setState({ activeQuests = data.activeQuests or {} })
+		elseif action == "AbilitiesData" then
+			-- Hero abilities data received
+			HUDDebug:info("Received abilities data", data)
+			self:setState({ heroAbilities = data.abilities or {} })
+		elseif action == "AbilityCooldownUpdate" then
+			-- Ability cooldown updated
+			HUDDebug:info("Ability cooldown update", data)
+			-- Update specific ability cooldown
+			if self.state.heroAbilities and data.abilityId then
+				local abilities = table.clone(self.state.heroAbilities)
+				for _, ability in abilities do
+					if ability.id == data.abilityId then
+						ability.remainingCooldown = data.remainingCooldown
+						ability.isOnCooldown = data.isOnCooldown
+						break
+					end
+				end
+				self:setState({ heroAbilities = abilities })
+			end
+		elseif action == "KingRespawned" then
+			-- King respawned
+			HUDDebug:info("King Respawned", data)
 		end
 	end)
 
@@ -1042,6 +1114,178 @@ function HUD:render()
 			victoryCondition = self.state.victoryCondition,
 		}) or nil,
 
+		-- ===== LORD HEALTH BAR ===== (persistent; fed by "KingHealthUpdate")
+		LordHealthBar = (function()
+			local health = self.state.kingHealth or 0
+			local maxHealth = math.max(self.state.kingMaxHealth or 1, 1)
+			local fraction = math.clamp(health / maxHealth, 0, 1)
+			local barColor = if fraction > 0.5
+				then Color3.fromRGB(90, 170, 80)
+				elseif fraction > 0.25 then Color3.fromRGB(210, 160, 60)
+				else Color3.fromRGB(190, 60, 50)
+			return React.createElement("Frame", {
+				Name = "LordHealthBar",
+				Size = UDim2.fromOffset(210, 34),
+				Position = UDim2.fromOffset(12, 12),
+				BackgroundColor3 = UIConfig.HUD.MeterBackground,
+				BackgroundTransparency = 0.2,
+				BorderSizePixel = 2,
+				BorderColor3 = UIConfig.HUD.MeterBorder,
+				ZIndex = 12,
+			}, {
+				CrownIcon = React.createElement("TextLabel", {
+					Size = UDim2.fromOffset(28, 34),
+					BackgroundTransparency = 1,
+					Text = "👑",
+					TextSize = 18,
+					Font = Enum.Font.GothamBold,
+					ZIndex = 13,
+				}),
+				BarContainer = React.createElement("Frame", {
+					Size = UDim2.new(1, -90, 0, 16),
+					Position = UDim2.fromOffset(32, 9),
+					BackgroundColor3 = Color3.fromRGB(40, 40, 40),
+					BorderSizePixel = 1,
+					BorderColor3 = UIConfig.HUD.MeterBorder,
+					ZIndex = 13,
+				}, {
+					Fill = React.createElement("Frame", {
+						Size = UDim2.fromScale(fraction, 1),
+						BackgroundColor3 = barColor,
+						BorderSizePixel = 0,
+						ZIndex = 14,
+					}),
+				}),
+				HealthText = React.createElement("TextLabel", {
+					Size = UDim2.fromOffset(52, 34),
+					Position = UDim2.new(1, -56, 0, 0),
+					BackgroundTransparency = 1,
+					Text = string.format("%d/%d", math.floor(health), math.floor(maxHealth)),
+					TextSize = 12,
+					Font = Enum.Font.GothamBold,
+					TextColor3 = UIConfig.HUD.PanelTextColor,
+					TextXAlignment = Enum.TextXAlignment.Right,
+					ZIndex = 13,
+				}),
+			})
+		end)(),
+
+		-- ===== KEEP CAPTURE BANNER ===== (urgent countdown, both sides)
+		KeepCaptureBanner = self.state.keepCapture and (function()
+			local capture = self.state.keepCapture
+			local isAttacker = capture.attacker
+			local title = if isAttacker
+				then string.format("⚔️ Seizing %s's Keep!", capture.keepOwnerName or "the enemy")
+				else "🔥 YOUR KEEP IS BEING CAPTURED!"
+			local accent = if isAttacker then Color3.fromRGB(214, 178, 94) else Color3.fromRGB(190, 60, 50)
+			return React.createElement("Frame", {
+				Name = "KeepCaptureBanner",
+				Size = UDim2.fromOffset(440, 70),
+				Position = UDim2.new(0.5, 0, 0, 108),
+				AnchorPoint = Vector2.new(0.5, 0),
+				BackgroundColor3 = Color3.fromRGB(30, 20, 18),
+				BackgroundTransparency = 0.15,
+				BorderSizePixel = 2,
+				BorderColor3 = accent,
+				ZIndex = 30,
+			}, {
+				Title = React.createElement("TextLabel", {
+					Size = UDim2.new(1, -100, 0, 26),
+					Position = UDim2.fromOffset(12, 6),
+					BackgroundTransparency = 1,
+					Text = title,
+					Font = Enum.Font.GothamBold,
+					TextSize = 18,
+					TextColor3 = accent,
+					TextXAlignment = Enum.TextXAlignment.Left,
+					ZIndex = 31,
+				}),
+				Countdown = React.createElement("TextLabel", {
+					Size = UDim2.fromOffset(88, 40),
+					Position = UDim2.new(1, -96, 0, 4),
+					BackgroundTransparency = 1,
+					Text = string.format("%ds", capture.secondsRemaining or 0),
+					Font = Enum.Font.GothamBold,
+					TextSize = 30,
+					TextColor3 = Color3.fromRGB(255, 255, 255),
+					TextXAlignment = Enum.TextXAlignment.Right,
+					ZIndex = 31,
+				}),
+				BarContainer = React.createElement("Frame", {
+					Size = UDim2.new(1, -24, 0, 12),
+					Position = UDim2.new(0, 12, 1, -20),
+					BackgroundColor3 = Color3.fromRGB(40, 40, 40),
+					BorderSizePixel = 1,
+					BorderColor3 = UIConfig.HUD.MeterBorder,
+					ZIndex = 31,
+				}, {
+					Fill = React.createElement("Frame", {
+						Size = UDim2.fromScale(math.clamp(capture.fraction or 0, 0, 1), 1),
+						BackgroundColor3 = accent,
+						BorderSizePixel = 0,
+						ZIndex = 32,
+					}),
+				}),
+			})
+		end)() or nil,
+
+		-- ===== ESTATE CAPTURE PROGRESS ===== (small bar while contesting a flag)
+		EstateCaptureBar = self.state.estateCapture and (function()
+			local capture = self.state.estateCapture
+			local isAttacker = capture.attacker
+			local label = if isAttacker then "🚩 Capturing estate..." else "🚩 Estate under attack!"
+			local accent = if isAttacker then Color3.fromRGB(120, 200, 120) else Color3.fromRGB(210, 140, 60)
+			return React.createElement("Frame", {
+				Name = "EstateCaptureBar",
+				Size = UDim2.fromOffset(280, 48),
+				Position = UDim2.new(0.5, 0, 0, 186),
+				AnchorPoint = Vector2.new(0.5, 0),
+				BackgroundColor3 = Color3.fromRGB(30, 25, 20),
+				BackgroundTransparency = 0.25,
+				BorderSizePixel = 2,
+				BorderColor3 = UIConfig.HUD.MeterBorder,
+				ZIndex = 30,
+			}, {
+				Label = React.createElement("TextLabel", {
+					Size = UDim2.new(1, -70, 0, 20),
+					Position = UDim2.fromOffset(10, 4),
+					BackgroundTransparency = 1,
+					Text = label,
+					Font = Enum.Font.GothamBold,
+					TextSize = 15,
+					TextColor3 = accent,
+					TextXAlignment = Enum.TextXAlignment.Left,
+					ZIndex = 31,
+				}),
+				Percent = React.createElement("TextLabel", {
+					Size = UDim2.fromOffset(56, 20),
+					Position = UDim2.new(1, -62, 0, 4),
+					BackgroundTransparency = 1,
+					Text = string.format("%d%%", math.floor((capture.fraction or 0) * 100)),
+					Font = Enum.Font.GothamBold,
+					TextSize = 15,
+					TextColor3 = Color3.fromRGB(255, 255, 255),
+					TextXAlignment = Enum.TextXAlignment.Right,
+					ZIndex = 31,
+				}),
+				BarContainer = React.createElement("Frame", {
+					Size = UDim2.new(1, -20, 0, 10),
+					Position = UDim2.new(0, 10, 1, -16),
+					BackgroundColor3 = Color3.fromRGB(40, 40, 40),
+					BorderSizePixel = 1,
+					BorderColor3 = UIConfig.HUD.MeterBorder,
+					ZIndex = 31,
+				}, {
+					Fill = React.createElement("Frame", {
+						Size = UDim2.fromScale(math.clamp(capture.fraction or 0, 0, 1), 1),
+						BackgroundColor3 = accent,
+						BorderSizePixel = 0,
+						ZIndex = 32,
+					}),
+				}),
+			})
+		end)() or nil,
+
 		-- ===== BOTTOM BAR ===== (Delete/Policies | Minimap | 5 Categories | Content Area)
 		BottomBar = React.createElement("Frame", {
 			Name = "BottomBar",
@@ -1123,6 +1367,20 @@ function HUD:render()
 						self:setState({ showPoliciesModal = not self.state.showPoliciesModal })
 					end,
 				}),
+
+				AbilityTreeButton = React.createElement(IconButton, {
+					Name = "AbilityTreeButton",
+					Size = UDim2.new(1, 0, 0, UIConfig.HUD.UtilityButtonHeight),
+					Icon = "⚜️",
+					IconSize = 20,
+					IconColor = UIConfig.HUD.PanelTextColor,
+					ImageColor3 = self.state.showAbilityTree and UIConfig.HUD.CategoryButtonSelected
+						or UIConfig.HUD.UtilityButtonBackground,
+					LayoutOrder = 3,
+					OnClick = function()
+						self:setState({ showAbilityTree = not self.state.showAbilityTree })
+					end,
+				}),
 			}),
 
 			-- Minimap (next to utility buttons)
@@ -1145,12 +1403,28 @@ function HUD:render()
 			-- Fog of War indicator
 			FogOfWarIndicator = React.createElement(FogOverlay),
 
+			-- RTS <-> Hero view switch, and first/third person once in hero view.
+			-- Mounted unconditionally: it is the only way to reach hero view
+			-- without a keyboard, so it must not be gated behind any panel state.
+			-- Required inline rather than at the top of the file: an external
+			-- process (Rojo two-way sync / Studio) kept reverting this file's
+			-- header, silently dropping the import and leaving a nil global here.
+			-- `require` is cached, so this costs nothing after the first render.
+			ViewToggle = React.createElement(require(script.Parent.ViewToggleButton)),
+
+			-- Hero combat buttons for touch devices. Renders nil unless the device
+			-- reports TouchEnabled AND the player is in hero view, so this costs a
+			-- desktop player exactly one nil render. Required inline for the same
+			-- header-revert reason as the view toggle above.
+			HeroTouchControls = React.createElement(require(script.Parent.HeroTouchControls)),
+
 			-- Category buttons (individually positioned)
 			DefenseButton = self:createCategoryButton("Defense", "🛡️"),
 			MilitaryButton = self:createCategoryButton("Military", "⚔️"),
 			IndustryButton = self:createCategoryButton("Industry", "💰"),
 			HousingButton = self:createCategoryButton("Housing", "🏠"),
 			FoodButton = self:createCategoryButton("Food", "🌾"),
+			PrestigeButton = self:createCategoryButton("Prestige", "👑"),
 
 			-- Content Area (shows buildings OR selected units)
 			ContentArea = React.createElement("Frame", {
@@ -1294,6 +1568,7 @@ function HUD:render()
 					or React.createElement(BuildingMenu, {
 						tooltip = self.props.tooltip, -- Pass tooltip API down
 						resources = self.state.resources,
+						gloryLifetime = self.state.gloryLifetime, -- Prestige (Glory-gated) unlock state
 						selectedCategory = self.state.selectedCategory,
 						currentWallPiece = self.state.currentWallPiece,
 						isPlacingWall = self.state.isPlacingWall,
@@ -1466,8 +1741,18 @@ function HUD:render()
 		-- Policies Modal (conditionally rendered)
 		PoliciesModal = self.state.showPoliciesModal and React.createElement(Policies, {
 			visible = self.state.showPoliciesModal,
+			happiness = self.state.happiness, -- current tax popularity tier readout
 			onClose = function()
 				self:setState({ showPoliciesModal = false })
+			end,
+		}) or nil,
+
+		-- Hero Ability Tree Modal (Glory progression; conditionally rendered)
+		AbilityTreeModal = self.state.showAbilityTree and React.createElement(AbilityTreePanel, {
+			visible = self.state.showAbilityTree,
+			tooltip = self.props.tooltip,
+			onClose = function()
+				self:setState({ showAbilityTree = false })
 			end,
 		}) or nil,
 

@@ -104,6 +104,17 @@ function TechTree:render()
 
 	-- Tech nodes for selected category
 	local techNodes = {}
+	techNodes.Layout = React.createElement("UIGridLayout", {
+		CellSize = UDim2.fromOffset(180, 140),
+		CellPadding = UDim2.fromOffset(15, 15),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	})
+	techNodes.Padding = React.createElement("UIPadding", {
+		PaddingLeft = UDim.new(0, 10),
+		PaddingRight = UDim.new(0, 10),
+		PaddingTop = UDim.new(0, 10),
+		PaddingBottom = UDim.new(0, 10),
+	})
 	local techs = techsByCategory[selectedCategory] or {}
 
 	for index, techEntry in ipairs(techs) do
@@ -271,19 +282,7 @@ function TechTree:render()
 			ScrollBarThickness = 8,
 			AutomaticCanvasSize = Enum.AutomaticSize.Y,
 			CanvasSize = UDim2.fromScale(0, 0),
-		}, React.assign({
-			Layout = React.createElement("UIGridLayout", {
-				CellSize = UDim2.fromOffset(180, 140),
-				CellPadding = UDim2.fromOffset(15, 15),
-				SortOrder = Enum.SortOrder.LayoutOrder,
-			}),
-			Padding = React.createElement("UIPadding", {
-				PaddingLeft = UDim.new(0, 10),
-				PaddingRight = UDim.new(0, 10),
-				PaddingTop = UDim.new(0, 10),
-				PaddingBottom = UDim.new(0, 10),
-			}),
-		}, techNodes)),
+		}, techNodes),
 
 		HelpText = React.createElement("TextLabel", {
 			Size = UDim2.new(1, -20, 0, 20),

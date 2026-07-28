@@ -4,8 +4,14 @@
 local GameData = {}
 
 -- Import data modules from subfolders
+local UnitsData = require(script.UnitsData)
 GameData.Buildings = require(script.BuildingsData)
-GameData.Units = require(script.UnitsData)
+GameData.Units = UnitsData
+-- Animation asset ids per rig, keyed by each model's `AnimSet` attribute.
+GameData.UnitAnimations = require(script.UnitAnimationsData)
+
+-- Re-export the flat unit schema so consumers can write GameData.UnitData
+export type UnitData = UnitsData.UnitData
 
 export type FactionData = {
 	Name: string,
@@ -25,10 +31,13 @@ export type FactionData = {
 	},
 }
 
+-- Playable factions. Table KEYS ("Kingdom", "Empire", "Tribes", "IronLegion")
+-- are stable internal IDs used by FactionManager, SpawnManager and PlayerData —
+-- never rename them. Name/Description are the player-facing historical flavor.
 GameData.Factions = {
 	Empire = {
-		Name = "The Empire",
-		Description = "A disciplined and technologically advanced faction.",
+		Name = "The Norman Lords",
+		Description = "Armored Norman conquerors — disciplined knights and castle-builders carving out new fiefs in Ireland.",
 		PrimaryColor = Color3.fromRGB(218, 165, 32),
 		SecondaryColor = Color3.fromRGB(128, 0, 0),
 		SpawnPoint = CFrame.new(-100, 10, 0),
@@ -45,8 +54,8 @@ GameData.Factions = {
 	} :: FactionData,
 
 	Kingdom = {
-		Name = "The Kingdom",
-		Description = "A noble and chivalrous kingdom.",
+		Name = "The High Kings of Tara",
+		Description = "Heirs of Brian Boru — Irish High Kings ruling from the Hill of Tara with clansmen and gallowglass.",
 		PrimaryColor = Color3.fromRGB(0, 0, 255),
 		SecondaryColor = Color3.fromRGB(192, 192, 192),
 		SpawnPoint = CFrame.new(0, 10, 100),
@@ -63,8 +72,8 @@ GameData.Factions = {
 	} :: FactionData,
 
 	Tribes = {
-		Name = "The Tribes",
-		Description = "Hardy and resourceful tribes.",
+		Name = "The Highland Clans",
+		Description = "Hardy Scottish highlanders — proud clansmen of the glens, fierce in the charge.",
 		PrimaryColor = Color3.fromRGB(0, 128, 0),
 		SecondaryColor = Color3.fromRGB(139, 69, 19),
 		SpawnPoint = CFrame.new(100, 10, 0),
@@ -81,8 +90,8 @@ GameData.Factions = {
 	} :: FactionData,
 
 	IronLegion = {
-		Name = "The Iron Legion",
-		Description = "Masters of smithing and defense.",
+		Name = "The Norse of Dublin",
+		Description = "Viking sea-kings settled at Dublin — master smiths, raiders and traders of the northern seas.",
 		PrimaryColor = Color3.fromRGB(80, 80, 85),
 		SecondaryColor = Color3.fromRGB(100, 100, 20),
 		SpawnPoint = CFrame.new(0, 10, -200),

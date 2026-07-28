@@ -13,6 +13,9 @@ local camera = Workspace.CurrentCamera
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local WallGridConfig = require(ReplicatedStorage.Shared.WallGridConfig)
 local BuildingScaleConfig = require(ReplicatedStorage.Shared.GameData.BuildingScaleConfig)
+-- Single source of truth for which view the player is in. Do not "clean this up"
+-- as unused — it is read by the hero-view placement cancel below.
+local ViewMode = require(ReplicatedStorage.Shared.ViewMode)
 local PlacementDebug = DebugManager.createChannel("Placement", true)
 
 -- Events
@@ -593,12 +596,32 @@ local function updateGhostPosition()
 end
 
 -- Input & Cleanup
+
+-- The ONE writer of `isPlacing`. It mirrors the flag onto ViewMode so the RTS
+-- input handlers can see it.
+--
+-- WHY: right-click was bound twice. This controller cancels the ghost on
+-- MouseButton2, and MovementManager's consolidated order dispatcher issues a
+-- move/attack on MouseButton2. Both are independent InputBegan listeners, so a
+-- single right-click during placement did both — the ghost disappeared AND the
+-- selected army walked to the cursor. ViewMode.shouldBlockRTSInput() now reports
+-- true while placing, which MovementManager and SelectionManager already honour,
+-- so the cancel wins and nothing else fires.
+--
+-- Every set of isPlacing goes through here precisely so no exit path can forget
+-- to clear the shared flag: a stuck-true value disables ALL RTS selection and
+-- orders game-wide, which is a much worse bug than the one being fixed.
+local function setPlacing(value: boolean)
+	isPlacing = value
+	ViewMode.setPlacementActive(value)
+end
+
 local function cleanup()
 	if ghostBuilding then
 		ghostBuilding:Destroy()
 	end
 	ghostBuilding = nil
-	isPlacing = false
+	setPlacing(false)
 	currentBuildingName = nil
 	lastGridTargetPos = nil
 	debugFolder:ClearAllChildren()
@@ -613,7 +636,12 @@ local function startPlacement(buildingName: string)
 		return
 	end
 
-	isPlacing = true
+	-- NOTE: `isPlacing` is armed at the BOTTOM of this function, once a ghost
+	-- actually exists. It used to be set here, which meant any error while
+	-- resolving the model asset left the flag true with no ghost to cancel — and
+	-- now that the flag also gates RTS input, that would have wedged selection and
+	-- move orders for the rest of the session. Failing this direction leaves an
+	-- orphan ghost at worst.
 	currentBuildingName = buildingName
 	manualRotation = 0
 
@@ -625,9 +653,23 @@ local function startPlacement(buildingName: string)
 	local template
 
 	if assets and assetName then
-		-- Use recursive find (true) to search the whole folder,
-		-- which supports asset names that are nested (e.g., "Houses/House_01").
-		template = assets:FindFirstChild(assetName, true)
+		if string.find(assetName, "/") then
+			-- Slash-path asset names (e.g. "Siege_Camps/Red_Siege_Camp"): walk the
+			-- folder segments, then fall back to a recursive leaf-name search.
+			local current: Instance? = assets
+			for segment in string.gmatch(assetName, "[^/]+") do
+				current = current and current:FindFirstChild(segment)
+			end
+			template = current
+			if not template then
+				local leaf = string.match(assetName, "([^/]+)$")
+				template = if leaf then assets:FindFirstChild(leaf, true) else nil
+			end
+		else
+			-- Use recursive find (true) to search the whole folder,
+			-- which supports asset names that are nested (e.g., "Houses/House_01").
+			template = assets:FindFirstChild(assetName, true)
+		end
 	end
 
 	-- Fallback for legacy buildings that might use their dictionary key as the model name.
@@ -667,7 +709,52 @@ local function startPlacement(buildingName: string)
 		ghostBuilding.Transparency = 0.5
 		ghostBuilding.Parent = Workspace
 	end
+
+	-- Ghost exists — now it is safe to claim the mouse.
+	setPlacing(true)
 end
+
+-- Entering hero view (V toggle) hands the mouse to combat — cancel any active
+-- placement so a stray click can't drop a building mid-fight.
+--
+-- Previously this watched `player.CameraMode`. Hero view is third person now and
+-- never changes CameraMode, so that signal stopped firing entirely and a
+-- half-placed building would survive into combat, eating the first attack click.
+ViewMode.Changed:connect(function(newMode: string)
+	if newMode == ViewMode.Modes.Hero and isPlacing then
+		PlacementDebug:info("Entered hero view - cancelling active placement")
+		cleanup()
+	end
+end)
+
+-- Dying or respawning mid-placement is an exit path too. Nothing else cancels
+-- here: updateGhostPosition filters against `player.Character`, so after a
+-- respawn the ghost would keep tracking a destroyed model, and — now that
+-- placement gates RTS input — the stuck flag would leave the player unable to
+-- select or order anything with no visible cause. Belt and braces on top of
+-- setPlacing() being the single writer.
+local function cancelOnCharacterLoss(character: Model)
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		humanoid.Died:Connect(function()
+			if isPlacing then
+				PlacementDebug:info("Character died - cancelling active placement")
+				cleanup()
+			end
+		end)
+	end
+end
+
+if player.Character then
+	cancelOnCharacterLoss(player.Character)
+end
+player.CharacterRemoving:Connect(function()
+	if isPlacing then
+		PlacementDebug:info("Character removing - cancelling active placement")
+		cleanup()
+	end
+end)
+player.CharacterAdded:Connect(cancelOnCharacterLoss)
 
 local function resetWallPieceSelection()
 	wallPieceIndex = 1
@@ -737,9 +824,12 @@ gameEvent.OnClientEvent:Connect(function(act, data)
 			-- Start regular building placement
 			startPlacement(data)
 		else
-			-- Cancel regular placement before starting wall placement
+			-- Cancel regular placement before starting wall placement.
+			-- Must go through setPlacing: WallBuilderController takes the mouse from
+			-- here, and leaving the shared placement flag true would freeze RTS
+			-- selection and orders for the rest of the session.
 			if isPlacing then
-				isPlacing = false
+				setPlacing(false)
 				if ghostBuilding then
 					ghostBuilding:Destroy()
 					ghostBuilding = nil

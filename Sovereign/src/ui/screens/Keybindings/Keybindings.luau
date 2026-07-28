@@ -176,6 +176,26 @@ function Keybindings:render()
 			Title = "Placement",
 			Actions = { "RotatePlacement", "CyclePlacementType", "CyclePivot" },
 		},
+		{
+			-- Hero view (third-person combat). These only do anything while the
+			-- player is in hero view, which is why they are a separate group and
+			-- why KeybindingsManager scopes conflict detection by context — R and
+			-- Q intentionally overlap with RotatePlacement / RotateLeft, which
+			-- live in contexts that can never be active at the same time.
+			--
+			-- This list is hardcoded rather than derived from GetAllActions(), so
+			-- any action added to KeybindingsManager and NOT added here silently
+			-- becomes unrebindable. That is exactly what had happened to all five
+			-- of these.
+			Title = "Hero View",
+			Actions = {
+				"HeroFreeLook",
+				"HeroFirstPerson",
+				"HeroDodge",
+				"HeroHeavyAttack",
+				"HeroRangedAttack",
+			},
+		},
 	}
 
 	local keybindingElements = {}

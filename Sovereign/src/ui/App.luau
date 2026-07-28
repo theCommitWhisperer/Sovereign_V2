@@ -26,6 +26,7 @@ function App:init()
 	self:setState({
 		route = "mainMenu", -- Default screen
 		gameStartData = nil, -- Store GameStarted data to pass to HUD
+		postGameData = nil, -- Victory/Defeat payload for the PostGame screens
 	})
 
 	self.tooltipRef = React.createRef()
@@ -58,6 +59,19 @@ function App:init()
 				route = "mainMenu",
 				gameStartData = nil
 			})
+		elseif action == "Victory" then
+			-- Fired by EliminationManager (Conquest) or VictoryConditionManager (Score)
+			AppDebug:info("Victory! Showing victory screen.", data)
+			self:setState({
+				route = "victory",
+				postGameData = data,
+			})
+		elseif action == "Defeat" then
+			AppDebug:info("Defeat! Showing defeat screen.", data)
+			self:setState({
+				route = "defeat",
+				postGameData = data,
+			})
 		end
 	end)
 
@@ -89,6 +103,7 @@ function App:render()
 					navigate = self.navigate,
 					tooltip = tooltipApi, -- Pass tooltip API to all routes
 					gameStartData = self.state.gameStartData, -- Pass game start data to HUD
+					postGameData = self.state.postGameData, -- Victory/Defeat details for PostGame screens
 				},
 			}),
 		}),

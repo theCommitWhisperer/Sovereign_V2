@@ -26,11 +26,17 @@ function MiniMap:init()
 		buildingIcons = {},
 	})
 
-	-- Update minimap every 0.5 seconds
+	-- Update minimap every 0.5 seconds. Wrapped in pcall so one bad frame
+	-- (e.g. a unit destroyed mid-InvokeServer) can't silently kill the loop.
 	task.spawn(function()
 		while true do
 			task.wait(0.5)
-			self:updateMinimapIndicators()
+			local ok, err = pcall(function()
+				self:updateMinimapIndicators()
+			end)
+			if not ok then
+				warn(`[MiniMap] updateMinimapIndicators failed: {tostring(err)}`)
+			end
 		end
 	end)
 end
@@ -45,8 +51,10 @@ function MiniMap:updateMinimapIndicators()
 		for _, unit in unitsFolder:GetChildren() do
 			if unit:IsA("Model") and unit.PrimaryPart then
 				-- Check if unit is visible (fog of war)
-				local isVisible = CheckVisibility:InvokeServer("Unit", unit)
-				if isVisible then
+				-- NOTE: InvokeServer yields — the unit can be destroyed by the
+				-- time it returns, so re-validate before touching PrimaryPart.
+				local ok, isVisible = pcall(CheckVisibility.InvokeServer, CheckVisibility, "Unit", unit)
+				if ok and isVisible and unit.Parent and unit.PrimaryPart then
 					local owner = unit:GetAttribute("OwnerId")
 					local pos = unit.PrimaryPart.Position
 
@@ -75,8 +83,10 @@ function MiniMap:updateMinimapIndicators()
 		for _, building in buildingsFolder:GetChildren() do
 			if building:IsA("Model") and building.PrimaryPart then
 				-- Check if building is visible (fog of war)
-				local isVisible = CheckVisibility:InvokeServer("Building", building)
-				if isVisible then
+				-- NOTE: InvokeServer yields — the building can be destroyed by
+				-- the time it returns, so re-validate before touching PrimaryPart.
+				local ok, isVisible = pcall(CheckVisibility.InvokeServer, CheckVisibility, "Building", building)
+				if ok and isVisible and building.Parent and building.PrimaryPart then
 					local owner = building:GetAttribute("OwnerId")
 					local pos = building.PrimaryPart.Position
 

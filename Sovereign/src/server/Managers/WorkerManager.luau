@@ -86,6 +86,24 @@ local BuildingProduction: { [Instance]: BuildingProductionState } = {}
 -- that extra headcount.
 local virtualWorkers: { [Instance]: number } = {}
 
+-- Set a worker's replicated state, and the animation pose that follows from it.
+--
+-- `WorkerState` already existed for the UI; `Pose` is what UnitAnimator reads.
+-- They're written together through one helper so they cannot drift apart —
+-- there are six places that change worker state, and a worker whose state says
+-- "Working" while its Pose was left on "sit" would stand at its bench seated.
+--
+-- Only "Working" earns the pose. Walking, Gathering and Returning all involve
+-- movement, and the animator gives walking priority over any pose anyway, so
+-- writing one would be a replication that changes nothing.
+local function setWorkerState(unit: Model?, state: string?)
+	if not unit or not unit.Parent then
+		return
+	end
+	unit:SetAttribute("WorkerState", state)
+	unit:SetAttribute(GameData.UnitAnimations.POSE_ATTRIBUTE, state == "Working" and "work" or nil)
+end
+
 local function getVirtual(building: Instance): number
 	return virtualWorkers[building] or 0
 end
@@ -306,48 +324,160 @@ local function setUnitDisplayName(model: Model, displayName: string)
 	end
 end
 
-local function transformWorker(peasant: Model, jobType: string): Model
-	local unitData = GameData.Units[jobType]
-	if not unitData then
-		WorkerDebug:warn(`No unit data for job type "{jobType}", leaving peasant as-is`)
-		return peasant
+-- Resolve a template rig Model for a unit type from Assets/Units, handling both a
+-- loose Model and a FOLDER of variant Models (Farmer/, Peasant/, ...). Mirrors
+-- UnitManager's spawn resolver so a transformed worker uses the same art pool.
+-- Returns a random matching template, or nil if the type has no rig.
+local function resolveUnitTemplate(typeName: string): Model?
+	local info = GameData.Units[typeName]
+	local modelName = (info and info.model_name) or typeName
+	local prefix = modelName .. "_"
+	local candidates: { Model } = {}
+
+	local function collectFrom(root: Instance?)
+		if not root then
+			return
+		end
+		local exact = root:FindFirstChild(modelName)
+		if exact and exact:IsA("Folder") then
+			for _, child in exact:GetChildren() do
+				if child:IsA("Model") then
+					table.insert(candidates, child)
+				end
+			end
+		end
+		for _, child in root:GetChildren() do
+			if child:IsA("Model") and (child.Name == modelName or child.Name:sub(1, #prefix) == prefix) then
+				table.insert(candidates, child)
+			end
+		end
 	end
 
-	peasant:SetAttribute("UnitType", jobType)
+	local repAssets = ReplicatedStorage:FindFirstChild("Assets")
+	collectFrom(repAssets and repAssets:FindFirstChild("Units"))
+	local ssAssets = game:GetService("ServerStorage"):FindFirstChild("Assets")
+	collectFrom(ssAssets and ssAssets:FindFirstChild("Units"))
 
-	local modelName = unitData.model_name or jobType
-	local assets = ReplicatedStorage:FindFirstChild("Assets")
-	local unitsFolder = assets and assets:FindFirstChild("Units")
-	local newModel = unitsFolder and unitsFolder:FindFirstChild(modelName)
+	if #candidates == 0 then
+		return nil
+	end
+	return candidates[math.random(1, #candidates)]
+end
 
-	if newModel and newModel:IsA("Model") then
-		local position = peasant:GetPivot()
-		local attributes = {}
-		for key, value in pairs(peasant:GetAttributes()) do
-			attributes[key] = value
+-- Make a freshly-cloned rig behave like a live unit: unanchored so it can walk,
+-- and non-colliding (units space themselves via formation/steering, not physics).
+local function makeWalkable(model: Model)
+	if not model.PrimaryPart then
+		local hrp = model:FindFirstChild("HumanoidRootPart")
+		if hrp and hrp:IsA("BasePart") then
+			model.PrimaryPart = hrp
 		end
+	end
+	for _, part in ipairs(model:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.Anchored = false
+			part.CanCollide = false
+		end
+	end
+end
 
-		local clone = newModel:Clone()
-		clone.Name = peasant.Name
-		clone:PivotTo(position)
+-- Swap a unit's MODEL to the rig for `newType`, preserving its position, name,
+-- attributes and owner. Returns the NEW model (callers MUST use the return value —
+-- the old model is destroyed). Uses the same asset resolver as spawning, so it
+-- handles Assets/Units/<Type> being a FOLDER of variant rigs (Farmer, Baker, ...),
+-- not just a loose Model. If `remember` is set, records the pre-swap type in
+-- BaseUnitType so the unit can be reverted later. If no rig exists for newType,
+-- the model is kept and only the overhead label changes.
+local function swapUnitModel(unit: Model, newType: string, remember: boolean, labelType: string?): Model
+	if remember and not unit:GetAttribute("BaseUnitType") then
+		unit:SetAttribute("BaseUnitType", unit:GetAttribute("UnitType") or "Peasant")
+	end
+	-- Set BEFORE capturing attributes so the clone inherits the new UnitType.
+	unit:SetAttribute("UnitType", newType)
 
+	local template = resolveUnitTemplate(newType)
+	if template then
+		local pivot = unit:GetPivot()
+		local attributes = unit:GetAttributes()
+
+		-- Attributes that belong to the MODEL, not to the unit, and must therefore
+		-- come from the new template rather than being carried over.
+		--
+		-- `AnimSet`/`SkinnedRig` describe the rig's SKELETON. Copying them across a
+		-- swap means a unit keeps whichever set its previous body used — so a rig
+		-- built for one skeleton gets driven by another's clips, which loads
+		-- without error and animates nothing at all.
+		--
+		-- `Pose`/`Gait`/`SitJointDrop` are transient animation STATE. A peasant
+		-- assigned to a job while sitting at the campfire would otherwise arrive at
+		-- its workplace still flagged as seated, and carrying a SitJointDrop that
+		-- refers to a RootJoint offset the new model never had — so the eventual
+		-- "stand up" would shunt it a stud and a half into the air.
+		local MODEL_OWNED = {
+			AnimSet = true,
+			SkinnedRig = true,
+			Pose = true,
+			Gait = true,
+			SitJointDrop = true,
+		}
+
+		local clone = template:Clone()
+		clone.Name = unit.Name
+		makeWalkable(clone)
+		clone:PivotTo(pivot)
 		for key, value in pairs(attributes) do
-			clone:SetAttribute(key, value)
+			-- `RBX_`-prefixed attributes are reserved by the engine. The 3D importer
+			-- stamps RBX_ReimportId onto every model it brings in, so it rides along
+			-- in GetAttributes() — and assigning it from a normal script throws
+			-- "CoreScript permission required", once per worker transform.
+			--
+			-- Skipped by PREFIX rather than by name: these are engine-owned, we
+			-- don't control the list, and none of them describe a unit's state.
+			if not MODEL_OWNED[key] and key:sub(1, 4) ~= "RBX_" then
+				clone:SetAttribute(key, value)
+			end
 		end
+		clone.Parent = unit.Parent
+		unit:Destroy()
 
-		clone.Parent = peasant.Parent
-		peasant:Destroy()
-
-		setUnitDisplayName(clone, jobType)
-		WorkerDebug:info(`Transformed peasant into {jobType}`)
+		setUnitDisplayName(clone, labelType or newType)
+		WorkerDebug:info(`Swapped unit model to {newType}`)
 		return clone
 	end
 
-	-- No dedicated model — keep the peasant model but tag it with the job type so
-	-- production still works (visual only differs).
-	setUnitDisplayName(peasant, jobType)
-	WorkerDebug:info(`No model "{modelName}" for {jobType}; keeping peasant model, tagged as {jobType}`)
-	return peasant
+	-- No dedicated rig — keep the current model, just relabel it.
+	setUnitDisplayName(unit, labelType or newType)
+	WorkerDebug:info(`No rig for "{newType}"; kept current model, relabelled`)
+	return unit
+end
+
+-- Assignment: turn an idle peasant into its job unit (Farmer, Woodcutter, ...),
+-- remembering it was a Peasant so it can be reverted on unassign.
+local function transformWorker(peasant: Model, jobType: string): Model
+	if not GameData.Units[jobType] then
+		WorkerDebug:warn(`No unit data for job type "{jobType}", leaving peasant as-is`)
+		return peasant
+	end
+	return swapUnitModel(peasant, jobType, true, nil)
+end
+
+-- Deassignment: revert a unit back to its base Peasant rig + overhead label, so an
+-- unassigned unit no longer looks or reads as its old job. Returns the unit (a NEW
+-- model if the rig was swapped, so callers MUST use the return value). No-ops the
+-- model swap for a unit that never transformed (still walking to its first job).
+function WorkerManager.revertToBaseUnit(unit: Model?): Model?
+	if not unit then
+		return unit
+	end
+	local baseType = unit:GetAttribute("BaseUnitType") or "Peasant"
+	if unit:GetAttribute("UnitType") == baseType then
+		unit:SetAttribute("BaseUnitType", nil)
+		setUnitDisplayName(unit, baseType)
+		return unit
+	end
+	local reverted = swapUnitModel(unit, baseType, false, baseType)
+	reverted:SetAttribute("BaseUnitType", nil)
+	return reverted
 end
 
 -- ============================================
@@ -419,7 +549,7 @@ function WorkerManager.assignWorkerToBuilding(peasant: Model?, building: Instanc
 	-- Unique per-building-instance id so the UI can count workers for THIS
 	-- building, not every building of the same type.
 	peasant:SetAttribute("AssignedBuildingId", building.Name)
-	peasant:SetAttribute("WorkerState", "Walking")
+	setWorkerState(peasant, "Walking")
 	peasant:SetAttribute("ResourceType", buildingInfo.produces_resource)
 	syncBuildingWorkerAttrs(building)
 end
@@ -503,7 +633,7 @@ function WorkerManager.unassignWorker(building: Instance, count: number?): numbe
 				worker:SetAttribute("IsWorking", false)
 				worker:SetAttribute("AssignedTo", nil)
 				worker:SetAttribute("AssignedBuildingId", nil)
-				worker:SetAttribute("WorkerState", nil)
+				setWorkerState(worker, nil)
 				worker:SetAttribute("ResourcesCarrying", 0)
 				worker:SetAttribute("IsMoving", false)
 				worker:SetAttribute("TargetPosition", nil)
@@ -521,6 +651,67 @@ function WorkerManager.unassignWorker(building: Instance, count: number?): numbe
 
 	WorkerDebug:info(`Released {released} worker(s) from {building.Name}`)
 	return released
+end
+
+-- Release EVERY worker assigned to a building (used when the building is
+-- deleted or the player leaves the game). Thin wrapper over unassignWorker.
+function WorkerManager.unassignWorkersFromBuilding(building: Instance): number
+	return WorkerManager.unassignWorker(building, math.huge)
+end
+
+-- Stop whatever job a SINGLE unit is doing (worker task and/or hauler task) and
+-- clear its work-state attributes, WITHOUT returning it to the idle pool. Callers
+-- that want the unit idled (UnassignWorkers) do that explicitly; move/formation/
+-- return-to-Keep orders just need the unit to stop being re-tasked by the worker
+-- loop every frame so it obeys the player. Safe to call on ANY unit — soldiers or
+-- already-idle peasants — it simply no-ops when there is nothing to release.
+function WorkerManager.releaseFromWork(unit: Model?)
+	if not unit then
+		return
+	end
+
+	local wasEmployed = false
+
+	-- Drop any worker task and re-sync the building's headcount/UI.
+	for i = #WorkerTasks, 1, -1 do
+		local task = WorkerTasks[i]
+		if task.worker == unit then
+			table.remove(WorkerTasks, i)
+			wasEmployed = true
+			if task.workplace and task.workplace.Parent then
+				syncBuildingWorkerAttrs(task.workplace)
+			end
+		end
+	end
+
+	-- Drop any in-progress haul.
+	for i = #HaulerTasks, 1, -1 do
+		if HaulerTasks[i].hauler == unit then
+			table.remove(HaulerTasks, i)
+			wasEmployed = true
+		end
+	end
+
+	-- Clear the replicated work/haul state so loops and UI stop treating the unit
+	-- as employed.
+	unit:SetAttribute("IsWorking", false)
+	unit:SetAttribute("AssignedTo", nil)
+	unit:SetAttribute("AssignedBuildingId", nil)
+	setWorkerState(unit, nil)
+	unit:SetAttribute("ResourceType", nil)
+	unit:SetAttribute("ResourcesCarrying", 0)
+	unit:SetAttribute("IsHauling", false)
+
+	-- Only workers get teleported/hidden inside a building; un-hide a released
+	-- worker so it's visible again. Soldiers are never hidden, so leave them alone.
+	if wasEmployed and unit.Parent then
+		for _, part in ipairs(unit:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.Transparency = 0
+				part.CanCollide = false
+			end
+		end
+	end
 end
 
 -- ============================================
@@ -622,12 +813,12 @@ local function updateWorkerTasks(_dt: number)
 					task.state = "GatheringResources"
 					task.walkStartTime = tick()
 					task.atStation = false
-					task.worker:SetAttribute("WorkerState", "Gathering")
+					setWorkerState(task.worker, "Gathering")
 				else
 					-- No nodes on this map — fall back to passive output so the
 					-- building still functions. Stay at the building.
 					pathfindToBuilding(task.worker, task.workplace, 3)
-					task.worker:SetAttribute("WorkerState", "Working")
+					setWorkerState(task.worker, "Working")
 					local interval = getProductionInterval(buildingInfo)
 					if tick() - task.fallbackProductionTime >= interval then
 						task.fallbackProductionTime = tick()
@@ -642,7 +833,7 @@ local function updateWorkerTasks(_dt: number)
 				-- per-building production pass counts this worker.
 				local atStation = pathfindToBuilding(task.worker, task.workplace, 3) or snapIfStuck(task)
 				task.atStation = atStation
-				task.worker:SetAttribute("WorkerState", atStation and "Working" or "Walking")
+				setWorkerState(task.worker, atStation and "Working" or "Walking")
 			end
 
 		-- ── GATHERING RESOURCES (from the world) ───────────────────────────
@@ -665,7 +856,7 @@ local function updateWorkerTasks(_dt: number)
 						task.state = "ReturningToDropoff"
 						task.targetNode = nil
 						task.walkStartTime = tick()
-						task.worker:SetAttribute("WorkerState", "Returning")
+						setWorkerState(task.worker, "Returning")
 					else
 						task.targetNode = nil
 						task.state = "Working"

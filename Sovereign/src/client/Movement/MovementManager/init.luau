@@ -9,6 +9,12 @@ local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local MovementDebug = DebugManager.createChannel("Movement", false)
 
 local SelectionManager = require(script.Parent.Parent.Selection.SelectionManager)
+-- The Lord is moved client-side, never through GameEvent. See LordController's
+-- header for the full reasoning (short version: the player's Character has no
+-- UnitId and is not in workspace.Units, so every server order action is a
+-- guaranteed no-op for him, and parenting him into workspace.Units breaks ~10
+-- systems including EliminationManager, which would DESTROY the Character).
+local LordController = require(script.Parent.LordController)
 
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
@@ -186,15 +192,74 @@ function MovementManager.attackTarget(units: { Model }, target: Model)
 	})
 end
 
--- Get unit or enemy at mouse position
+-- Send a move order for regular (server-owned) units only, splitting civilians
+-- from army exactly the way SelectionManager always has. Civilians take
+-- "MoveWorkers" (which also releases them from their job); army takes
+-- "MoveUnitsInFormation" with the currently selected formation.
+local function orderRegularUnits(units: { Model }, targetPosition: Vector3)
+	if #units == 0 then
+		return
+	end
+
+	local civilianIds: { string } = {}
+	local militaryIds: { string } = {}
+	for _, unit in units do
+		local id = unit:GetAttribute("UnitId") or unit.Name
+		if SelectionManager.isCivilian(unit) then
+			table.insert(civilianIds, id)
+		else
+			table.insert(militaryIds, id)
+		end
+	end
+
+	if #civilianIds > 0 then
+		GameEvent:FireServer("MoveWorkers", {
+			unitIds = civilianIds,
+			targetPosition = targetPosition,
+		})
+	end
+	if #militaryIds > 0 then
+		GameEvent:FireServer("MoveUnitsInFormation", {
+			unitIds = militaryIds,
+			targetPosition = targetPosition,
+			formationType = SelectionManager.getFormationType() or "Line",
+			isMove = true,
+		})
+	end
+
+	MovementDebug:info("Move order", {
+		civilians = #civilianIds,
+		military = #militaryIds,
+		target = targetPosition,
+	})
+end
+
+-- Get unit or enemy at mouse position.
+--
+-- The local player's own Character is excluded here on purpose: this ray only
+-- answers "what am I ordering AGAINST?", and you can neither attack nor target
+-- yourself. (Selection uses SelectionManager's own ray, which deliberately does
+-- NOT exclude the Character — that exclusion was the bug that made the Lord
+-- unclickable.)
 local function getUnitAtMouse(mousePosition: Vector2): Model?
 	local ray = camera:ScreenPointToRay(mousePosition.X, mousePosition.Y)
 	local raycastParams = RaycastParams.new()
 	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 
-	local filterList = { player.Character }
+	local filterList: { Instance } = {}
+	if player.Character then
+		table.insert(filterList, player.Character)
+	end
 	if workspace:FindFirstChild("Terrain") then
 		table.insert(filterList, workspace.Terrain)
+	end
+	-- Selection rings and the fading markers from the previous order are
+	-- CanCollide=false but raycasts still hit them, so they would shadow the
+	-- enemy standing underneath.
+	for _, child in workspace:GetChildren() do
+		if child.Name == "SelectionIndicator" or child.Name == "MoveMarker" or child.Name == "AttackMarker" then
+			table.insert(filterList, child)
+		end
 	end
 	raycastParams.FilterDescendantsInstances = filterList
 
@@ -216,52 +281,118 @@ local function getUnitAtMouse(mousePosition: Vector2): Model?
 	return nil
 end
 
--- Handle right-click movement and attack
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
+--- The server resolves every order id with `workspace.Units:FindFirstChild(id)`.
+--- Anything not parented there — most importantly ANOTHER PLAYER'S Character,
+--- i.e. a rival Lord, which also carries UnitType/OwnerId — can never be found,
+--- so "AttackTarget" against it was accepted by the client and silently dropped
+--- by the server: the player saw an attack marker and his army did nothing.
+local function isServerOrderable(model: Model): boolean
+	local unitsFolder = workspace:FindFirstChild("Units")
+	return unitsFolder ~= nil and model.Parent == unitsFolder
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- THE ONE RIGHT-CLICK HANDLER
+-- ═══════════════════════════════════════════════════════════════════════════
+-- SelectionManager used to own a second MouseButton2 connection that fired its
+-- own move orders for the same click. Both ran, so every right click produced two
+-- competing orders. This is now the only right-click order path in the client;
+-- do not add another one.
+--
+-- Decision tree:
+--   0. ViewMode says block (hero view / mid camera blend) → ignore entirely.
+--   1. Split the selection into "the Lord" and "regular units".
+--   2. Right-clicked an ENEMY that the server can actually resolve
+--      (parented under workspace.Units):
+--        regular units → "AttackTarget"; the Lord walks to it (he fights in hero
+--        view, not by RTS order — an RTS attack-move for him would need a whole
+--        client combat AI, and giving him a silent no-op is worse than walking).
+--   3. Right-clicked an enemy the server CANNOT resolve (a rival player's Lord):
+--      degrade to a move order onto his position for everyone, rather than
+--      emitting an AttackTarget the server throws away.
+--   4. Anything else → ground move: regular units through the remotes, the Lord
+--      through LordController, so a mixed selection all walks to the same point.
+UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: boolean)
 	if gameProcessed then
 		return
 	end
+	if input.UserInputType ~= Enum.UserInputType.MouseButton2 then
+		return
+	end
+	-- Blocks hero view, the mid-blend camera window, AND an active building
+	-- placement ghost. That last one matters here specifically: PlacementController
+	-- also binds MouseButton2 (to cancel the ghost), and these are two independent
+	-- InputBegan listeners, so before ViewMode carried a placement flag one
+	-- right-click during placement cancelled the ghost and marched the whole
+	-- selection to the cursor at the same time.
+	if SelectionManager.shouldBlockRTSInput() then
+		return
+	end
 
-	-- Right mouse button - move or attack command
-	if input.UserInputType == Enum.UserInputType.MouseButton2 then
-		local selectedUnits = SelectionManager.getSelectedUnits()
+	local selectedUnits = SelectionManager.getSelectedUnits()
+	if #selectedUnits == 0 then
+		return
+	end
 
-		if #selectedUnits > 0 then
-			local mousePosition = UserInputService:GetMouseLocation()
-
-			-- Check if right-clicking on a unit
-			local targetUnit = getUnitAtMouse(mousePosition)
-
-			if targetUnit then
-				-- Check if it's an enemy
-				local targetOwner = targetUnit:GetAttribute("OwnerId")
-
-				if targetOwner ~= player.UserId then
-					-- It's an enemy - attack!
-					MovementManager.attackTarget(selectedUnits, targetUnit)
-					MovementDebug:info("Attack command issued", {
-						targetOwner = targetOwner,
-						playerUserId = player.UserId,
-					})
-					return
-				end
-			end
-
-			-- No enemy clicked - move to ground
-			-- Raycast to find ground position
-			local ray = camera:ScreenPointToRay(mousePosition.X, mousePosition.Y)
-
-			local raycastParams = RaycastParams.new()
-			raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-			raycastParams.FilterDescendantsInstances = { player.Character }
-
-			local result = workspace:Raycast(ray.Origin, ray.Direction * 1000, raycastParams)
-
-			if result then
-				MovementManager.moveUnitsTo(selectedUnits, result.Position)
-			end
+	local lordSelected = false
+	local regularUnits: { Model } = {}
+	for _, unit in selectedUnits do
+		if SelectionManager.isLocalLord(unit) then
+			lordSelected = true
+		else
+			table.insert(regularUnits, unit)
 		end
 	end
+
+	local mousePosition = UserInputService:GetMouseLocation()
+	local targetUnit = getUnitAtMouse(mousePosition)
+
+	if targetUnit and targetUnit:GetAttribute("OwnerId") ~= player.UserId then
+		local targetPosition = targetUnit.PrimaryPart and targetUnit.PrimaryPart.Position
+
+		if isServerOrderable(targetUnit) then
+			if #regularUnits > 0 then
+				MovementManager.attackTarget(regularUnits, targetUnit)
+			end
+			if lordSelected and targetPosition then
+				LordController.moveTo(targetPosition)
+				if #regularUnits == 0 then
+					createAttackMarker(targetPosition)
+				end
+			end
+			MovementDebug:info("Attack order", {
+				attackers = #regularUnits,
+				lordWalking = lordSelected,
+				target = targetUnit.Name,
+			})
+			return
+		end
+
+		if targetPosition then
+			-- Rival Lord (a Character, not a workspace.Units entry). Walk at him
+			-- instead of firing an order the server will discard.
+			MovementDebug:info("Target not server-orderable (rival Lord); moving instead", {
+				target = targetUnit.Name,
+			})
+			orderRegularUnits(regularUnits, targetPosition)
+			if lordSelected then
+				LordController.moveTo(targetPosition)
+			end
+			createMoveMarker(targetPosition)
+			return
+		end
+	end
+
+	local dest = SelectionManager.getGroundPointAtMouse(mousePosition)
+	if not dest then
+		return
+	end
+
+	orderRegularUnits(regularUnits, dest)
+	if lordSelected then
+		LordController.moveTo(dest)
+	end
+	createMoveMarker(dest)
 end)
 
 MovementDebug:info("Initialized")

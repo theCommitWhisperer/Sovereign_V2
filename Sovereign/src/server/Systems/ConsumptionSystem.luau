@@ -8,14 +8,15 @@ local ConsumptionManager = require(script.Parent.Parent.Managers.ConsumptionMana
 local PlayerManager = require(script.Parent.Parent.Managers.PlayerManager)
 local NotificationManager = require(script.Parent.Parent.Managers.NotificationManager)
 local GameSettings = require(ReplicatedStorage.Shared.GameSettings)
+local EconomyConfig = require(ReplicatedStorage.Shared.GameData.EconomyConfig)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
 local ConsumptionSystemDebug = DebugManager.createChannel("ConsumptionSystem", false)
 
 local ConsumptionSystem = {}
 
--- Consumption cycle time (in seconds)
-local CONSUMPTION_CYCLE = 30 -- Food consumed every 30 seconds
+-- Consumption cycle time (in seconds) — tunable in EconomyConfig
+local CONSUMPTION_CYCLE = EconomyConfig.Consumption.cycleSeconds
 
 -- Process food consumption for a player
 local function processConsumption(player: Player)

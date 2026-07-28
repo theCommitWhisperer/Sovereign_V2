@@ -49,6 +49,7 @@ export type BuildingData = {
 	maintenance_cost: { [string]: number }?,
 	can_train_units: { string }?,
 	max_queue_size: number?,
+	glory_required: number?, -- lifetime Glory needed before this can be built (see GloryManager)
 	defense_value: number?,
 	attack_range: number?,
 	attack_damage: number?,
@@ -260,7 +261,7 @@ BuildingsData["Barracks"] = {
 	size = Vector3.new(16, 12, 16),
 	storage_capacity = { Weapons = 50 },
 	components = {},
-	can_train_units = { "Spearman", "Archer", "Knight" },
+	can_train_units = { "Spearman", "Pikeman", "MenAtArms", "Archer", "Knight" },
 	max_queue_size = 10,
 	popularity_impact = 2,
 	maintenance_cost = { Gold = 2 },
@@ -277,7 +278,7 @@ BuildingsData["Guard House"] = {
 	size = Vector3.new(10, 8, 10),
 	storage_capacity = { Weapons = 20 },
 	components = {},
-	can_train_units = { "Guard" },
+	can_train_units = { "Spearman" },
 	max_queue_size = 5,
 	maintenance_cost = { Gold = 1 },
 } :: BuildingData
@@ -362,7 +363,7 @@ BuildingsData["Training Ground"] = {
 	size = Vector3.new(20, 2, 20),
 	storage_capacity = {},
 	components = {},
-	can_train_units = { "Swordsman", "Archer" },
+	can_train_units = { "MenAtArms", "Archer" },
 	max_queue_size = 8,
 	maintenance_cost = { Gold = 1 },
 } :: BuildingData
@@ -378,6 +379,8 @@ BuildingsData["Siege Workshop"] = {
 	size = Vector3.new(16, 10, 16),
 	storage_capacity = { Wood = 200, Iron_Bars = 100 },
 	components = {},
+	can_train_units = { "BatteringRam", "Catapult" },
+	max_queue_size = 3,
 	produces_resource = "Siege_Equipment",
 	production_rate = 0.3,
 	requires_worker = true,
@@ -385,6 +388,24 @@ BuildingsData["Siege Workshop"] = {
 	consumes_resource = "Wood",
 	consumption_rate = 5.0,
 	maintenance_cost = { Gold = 3 },
+} :: BuildingData
+
+BuildingsData["Siege Tent"] = {
+	model_asset_name = "Siege_Camps/Red_Siege_Camp", -- TODO: dedicated forward-camp tent model
+	icon_asset_id = "rbxassetid://77987612212831", -- TODO: custom icon (reuses Training Ground for now)
+	type = "Building",
+	subtype = "Military Production",
+	description = "A forward siege camp. Cheap and quick to raise near the front — "
+		.. "assembles catapults, trebuchets, and siege towers where they are needed.",
+	cost = { Wood = 25, Gold = 10 },
+	construction = { build_time_seconds = 8 },
+	size = Vector3.new(14, 8, 14),
+	storage_capacity = { Wood = 100 },
+	components = {},
+	can_train_units = { "Catapult", "Trebuchet", "Siege_Tower" },
+	max_queue_size = 2,
+	maintenance_cost = { Gold = 2 },
+	deletion_confirmation_required = false,
 } :: BuildingData
 
 BuildingsData["Stables"] = {
@@ -398,7 +419,7 @@ BuildingsData["Stables"] = {
 	size = Vector3.new(18, 10, 18),
 	storage_capacity = { Food = 150 },
 	components = {},
-	can_train_units = { "Knight", "Cavalry" },
+	can_train_units = { "Knight", "Light_Cavalry" },
 	max_queue_size = 5,
 	maintenance_cost = { Food = 2, Gold = 2 },
 } :: BuildingData
@@ -417,6 +438,71 @@ BuildingsData["Archery Range"] = {
 	can_train_units = { "Archer", "Longbowman" },
 	max_queue_size = 8,
 	maintenance_cost = { Weapons = 1 },
+} :: BuildingData
+
+-- ========================================
+-- HERO HUBS (prestige structures — Glory-gated)
+-- Each hub is the SOLE training source for its hero/mythical roster.
+-- ========================================
+
+BuildingsData["Royal Assembly Hall"] = {
+	model_asset_name = "Mead_Hall", -- TODO: custom Óenach hall model
+	icon_asset_id = "rbxassetid://95490961977143", -- TODO: custom icon
+	type = "Building",
+	subtype = "Hero Hub",
+	description = "The óenach hall where the clans assemble. Crowns High Kings and gathers "
+		.. "champions and the Fianna under your banner. Requires 100 Glory.",
+	cost = { Wood = 80, Stone = 60, Gold = 100 },
+	construction = { build_time_seconds = 35 },
+	size = Vector3.new(24, 14, 18),
+	storage_capacity = {},
+	components = {},
+	can_train_units = { "High_King", "Celtic_Champion", "Fianna", "Brehon" },
+	max_queue_size = 2,
+	glory_required = 100,
+	popularity_impact = 10,
+	maintenance_cost = { Gold = 5 },
+	deletion_confirmation_required = true,
+} :: BuildingData
+
+BuildingsData["Sidhe Mound"] = {
+	model_asset_name = "Honor_Statue", -- TODO: custom fairy-mound model
+	icon_asset_id = "rbxassetid://103812313156833", -- TODO: custom icon
+	type = "Building",
+	subtype = "Hero Hub",
+	description = "A hollow hill where the veil to the Otherworld is thin. Calls forth druids, "
+		.. "banshees, and the fair folk. Requires 250 Glory.",
+	cost = { Stone = 80, Gold = 120 },
+	construction = { build_time_seconds = 40 },
+	size = Vector3.new(20, 10, 20),
+	storage_capacity = {},
+	components = {},
+	can_train_units = { "Druid", "Banshee", "Sidhe_Warden", "Cu_Sidhe", "Oillipheist" },
+	max_queue_size = 2,
+	glory_required = 250,
+	popularity_impact = 5,
+	maintenance_cost = { Gold = 4 },
+	deletion_confirmation_required = true,
+} :: BuildingData
+
+BuildingsData["Coastal Long-Port"] = {
+	model_asset_name = "Fisherman_Shop", -- TODO: custom longphort dock model
+	icon_asset_id = "rbxassetid://73332606434180", -- TODO: custom icon
+	type = "Building",
+	subtype = "Hero Hub",
+	description = "A fortified longphort on the strand. Norse-Gael reavers, gallowglass, and "
+		.. "selkies answer its horn. Requires 400 Glory.",
+	cost = { Wood = 120, Gold = 150, Iron_Bars = 10 },
+	construction = { build_time_seconds = 45 },
+	size = Vector3.new(26, 12, 20),
+	storage_capacity = { Weapons = 50 },
+	components = {},
+	can_train_units = { "Gallowglass", "Sea_Reaver", "Selkie" },
+	max_queue_size = 3,
+	glory_required = 400,
+	popularity_impact = 5,
+	maintenance_cost = { Gold = 6 },
+	deletion_confirmation_required = true,
 } :: BuildingData
 
 -- ========================================
@@ -879,7 +965,7 @@ BuildingsData["Mead Hall"] = {
 	worker_job_type = "Innkeeper",
 	consumes_resource = "Ale",
 	consumption_rate = 2.5,
-	can_train_units = { "Warrior" },
+	can_train_units = { "MenAtArms" },
 	max_queue_size = 5,
 	maintenance_cost = { Gold = 5, Food = 2 },
 } :: BuildingData
@@ -1147,4 +1233,3 @@ for buildingName, buildingData in BuildingsData do
 end
 
 return BuildingsData
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     

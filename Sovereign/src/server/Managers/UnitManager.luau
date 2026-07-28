@@ -228,16 +228,64 @@ local function normalizeUnitModel(unit: Model): boolean
 		h.Parent = unit
 	end
 
+	-- Templates authored in Studio often arrive with a driver script attached
+	-- (the "walking demo" script that ships with most model tutorials). Left in
+	-- place it runs its own PathfindingService loop on every spawned unit and
+	-- fights MovementSystem for control of the Humanoid — the unit twitches
+	-- between two destinations and appears to ignore orders. Units are driven
+	-- entirely by the server systems, so no unit model may carry its own logic.
+	for _, d in unit:GetDescendants() do
+		if d:IsA("BaseScript") then
+			UnitManagerDebug:warn(
+				`Stripped rogue {d.ClassName} "{d.Name}" from unit template {unit.Name} — `
+					.. `unit models must not carry their own movement logic`
+			)
+			d:Destroy()
+		end
+	end
+
 	local primary = unit.PrimaryPart
+
+	-- A skinned rig is ONE MeshPart deformed by a Bone tree. Its mesh must stay
+	-- free to be posed by the animation; welding it to the root pins it rigid,
+	-- so the unit slides in its bind pose. Detect it and leave the mesh alone.
+	local isSkinned = unit:GetAttribute("SkinnedRig") == true
+	if not isSkinned then
+		for _, d in unit:GetDescendants() do
+			if d:IsA("Bone") then
+				isSkinned = true
+				break
+			end
+		end
+	end
+
 	for _, part in unit:GetDescendants() do
 		if part:IsA("BasePart") then
 			part.Anchored = false
-			if part ~= primary and not isJointed(part, unit) then
+			local skinnedMesh = isSkinned and part:IsA("MeshPart") and #part:GetChildren() > 0
+			if part ~= primary and not skinnedMesh and not isJointed(part, unit) then
 				local weld = Instance.new("WeldConstraint")
 				weld.Part0 = primary
 				weld.Part1 = part
 				weld.Parent = primary
 			end
+		end
+	end
+
+	-- The Humanoid needs something solid under it to stand on. A skinned rig's
+	-- only collider is its root, and custom rigs are frequently exported with
+	-- collision off everywhere — which drops them through the terrain.
+	if not primary.CanCollide then
+		local anyCollider = false
+		for _, part in unit:GetDescendants() do
+			if part:IsA("BasePart") and part.CanCollide then
+				anyCollider = true
+				break
+			end
+		end
+		if not anyCollider then
+			primary.CanCollide = true
+			UnitManagerDebug:info(`Enabled collision on {unit.Name}'s root — rig had no collider`)
 		end
 	end
 
@@ -274,8 +322,9 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 		-- Special case: Vikings
 		if unitType == "Viking" then
 			faction = "Viking"
-		elseif unitInfo.faction then
-			-- Use faction from unit data if specified
+		elseif unitInfo.faction and unitInfo.faction ~= "Neutral" then
+			-- Use faction from unit data if specified ("Neutral" = any faction,
+			-- so fall through to the owning player's faction instead)
 			faction = unitInfo.faction
 		else
 			-- Try to get faction from player
@@ -345,18 +394,19 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 	unit.Name = `{unitType}_{ownerId}_{uniqueId}`
 
 	-- Set health attributes first
-	if unitInfo.health then
-		unit:SetAttribute("MaxHealth", unitInfo.health.max_health or 100)
-		unit:SetAttribute("CurrentHealth", unitInfo.health.max_health or 100)
-	else
-		unit:SetAttribute("MaxHealth", 100)
-		unit:SetAttribute("CurrentHealth", 100)
-	end
+	unit:SetAttribute("MaxHealth", unitInfo.max_health or 100)
+	unit:SetAttribute("CurrentHealth", unitInfo.max_health or 100)
 
 	-- Set unit attributes BEFORE parenting
 	unit:SetAttribute("UnitType", unitType)
 	unit:SetAttribute("OwnerId", ownerId)
 	unit:SetAttribute("UnitId", unit.Name)
+
+	-- Flying units (can_fly in UnitsData): MovementSystem takes over with direct
+	-- anchored flight — no ground pathfinding, no wall collision.
+	if (unitInfo :: any).can_fly then
+		unit:SetAttribute("CanFly", true)
+	end
 
 	-- Set initial position. Snap the model's FEET onto the ground so any rig
 	-- spawns on the surface regardless of its pivot / HipHeight / size — the old
@@ -377,10 +427,10 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 	end
 
 	-- Update humanoid speed if specified
-	if unitInfo.movement then
+	if unitInfo.move_speed then
 		local humanoid = unit:FindFirstChildOfClass("Humanoid")
 		if humanoid then
-			humanoid.WalkSpeed = unitInfo.movement.speed_meters_per_second * 16
+			humanoid.WalkSpeed = unitInfo.move_speed * 16
 			-- Remember the unit's individual speed so group march can cap to the
 			-- slowest member and later restore each unit to its own pace
 			unit:SetAttribute("BaseWalkSpeed", humanoid.WalkSpeed)
@@ -391,7 +441,7 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 	do
 		local humanoid = unit:FindFirstChildOfClass("Humanoid")
 		if humanoid then
-			humanoid.DisplayName = (unitType:gsub("_", " "))
+			humanoid.DisplayName = unitInfo.display_name or (unitType:gsub("_", " "))
 		end
 	end
 
@@ -414,8 +464,14 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 	-- Initialize morale
 	MoraleManager.initializeUnit(unit, faction)
 
-	-- Attach visual weapon/shield props (pure cosmetics)
-	WeaponVisuals.attach(unit, unitType, unitInfo.subtype)
+	-- Attach visual weapon/shield props (pure cosmetics).
+	-- Skipped for rigs that model their own weapon: WeaponVisuals falls back to
+	-- welding onto the root when it can't find a hand, and on a skinned rig there
+	-- is no hand part — so the prop would hang in mid-air beside the unit,
+	-- unanimated, on top of the weapon already in the mesh.
+	if not unit:GetAttribute("HasBuiltInWeapon") then
+		WeaponVisuals.attach(unit, unitType, unitInfo.subtype)
+	end
 
 	-- Create a fake player object for CombatManager if needed
 	local playerForCombat = nil
@@ -441,18 +497,18 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 		-- Call a version that doesn't need PlayerManager
 		local unitData = GameData.Units[unitType]
 
-		if unitData.combat then
+		if unitData then
 			local combatUnit = {
 				model = unit,
 				unitData = unitData,
 				owner = ownerId,
 				unitType = unitType,
-				health = unitData.health.max_health,
-				maxHealth = unitData.health.max_health,
-				attackDamage = unitData.combat.attack_damage,
-				attackSpeed = unitData.combat.attack_speed,
-				attackRange = unitData.combat.attack_range * 3,
-				armor = unitData.combat.armor,
+				health = unitData.max_health,
+				maxHealth = unitData.max_health,
+				attackDamage = unitData.attack_damage,
+				attackSpeed = unitData.attack_speed,
+				attackRange = unitData.attack_range * 3,
+				armor = unitData.armor,
 				morale = 75,
 				stance = "Attack",
 				targetModel = nil,
@@ -478,17 +534,38 @@ function UnitManager.createUnit(unitType: string, ownerId: number, position: Vec
 		PlayerManager.updatePlayerStats(playerForCombat)
 	end
 
-	-- Unanchor the unit after everything is set up so it can move
+	-- Unanchor the unit after everything is set up so it can move.
+	-- Flyers stay ANCHORED: MovementSystem moves them by PivotTo at altitude,
+	-- which is what lets them ignore walls and terrain entirely.
 	task.defer(function()
-		if unit and unit.PrimaryPart and unit.Parent then
-			unit.PrimaryPart.Anchored = false
-			UnitManagerDebug:info(`Unanchored unit {unit.Name} for movement`)
+		local ok, err = pcall(function()
+			if unit and unit.PrimaryPart and unit.Parent then
+				if unit:GetAttribute("CanFly") then
+					-- Lift off: hover a few studs above the spawn point
+					unit:PivotTo(unit:GetPivot() + Vector3.new(0, 10, 0))
+					UnitManagerDebug:info(`Flyer {unit.Name} spawned airborne (stays anchored)`)
+				else
+					unit.PrimaryPart.Anchored = false
+					UnitManagerDebug:info(`Unanchored unit {unit.Name} for movement`)
+				end
+			end
+		end)
+		if not ok then
+			-- Defensive: never let a deferred callback error escape uncaught.
+			-- Logged with full context so a recurrence is diagnosable.
+			UnitManagerDebug:error(`Deferred unanchor/liftoff failed for {tostring(unit and unit.Name)}: {tostring(err)}`)
+			-- Best-effort fallback so the unit isn't left permanently frozen.
+			pcall(function()
+				if unit and unit.PrimaryPart and unit.Parent and not unit:GetAttribute("CanFly") then
+					unit.PrimaryPart.Anchored = false
+				end
+			end)
 		end
 	end)
 
 	-- Clean up pathfinding mover when unit is destroyed
 	unit.Destroying:Connect(function()
-		PathfindingIntegration.removeUnit(unit)
+		PathfindingIntegration.unregisterMover(unit)
 	end)
 
 	return unit
@@ -505,7 +582,7 @@ function UnitManager.destroyRandomUnit(player: Player)
 
 	if unitToDestroy then
 		-- Clean up pathfinding mover for this unit
-		PathfindingIntegration.removeUnit(unitToDestroy)
+		PathfindingIntegration.unregisterMover(unitToDestroy)
 
 		PlayerManager.removeUnit(player, unitToDestroy)
 		PlayerManager.updatePlayerStats(player)

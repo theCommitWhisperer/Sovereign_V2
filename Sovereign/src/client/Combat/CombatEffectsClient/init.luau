@@ -264,6 +264,116 @@ local function animateSwing(unit: Model)
 	end)
 end
 
+-- ── Hero combat beats ──────────────────────────────────────────────────────
+--
+-- The hero's own client predicts all of this locally the instant the player
+-- clicks (see client/Combat/HeroCombatController) — one combat tick of latency is
+-- invisible on a distant soldier but unacceptable on the weapon in your hands.
+-- So these branches exist for OTHER players' heroes, and the local character is
+-- deliberately skipped to avoid double-animating it.
+
+local localPlayer = game:GetService("Players").LocalPlayer
+
+local function isLocalCharacter(model: Model?): boolean
+	return model ~= nil and localPlayer.Character == model
+end
+
+-- Per-step swing amplitude, so a watcher can read which part of the chain the
+-- hero is in. Mirrors ARC_BY_SLOT in HeroCombatController; kept as plain numbers
+-- rather than shared config because it is pure presentation.
+--   step 1..3 = light combo, 0 = heavy, -1 = bow release (no arc)
+local HERO_ARCS: { [number]: { windupDeg: number, strikeDeg: number, roll: number, time: number } } = {
+	[1] = { windupDeg = 30, strikeDeg = -70, roll = -35, time = 0.10 },
+	[2] = { windupDeg = 25, strikeDeg = -65, roll = 40, time = 0.10 },
+	[3] = { windupDeg = 45, strikeDeg = -100, roll = 0, time = 0.14 },
+	[0] = { windupDeg = 70, strikeDeg = -130, roll = 15, time = 0.18 },
+}
+
+local function animateHeroSwing(unit: Model, step: number)
+	local arc = HERO_ARCS[step]
+	if not arc then
+		-- Bow release (or an unknown step): no weapon arc, the projectile is the
+		-- visual. Fall back to nothing rather than playing a sword swing.
+		return
+	end
+
+	local weapon = unit:FindFirstChild("Weapon")
+	if not weapon then
+		return
+	end
+	local weld = weapon:FindFirstChild("WeaponGrip", true)
+	if not weld or not weld:IsA("Weld") then
+		return
+	end
+	if swinging[weld] then
+		return
+	end
+	swinging[weld] = true
+
+	local baseC0 = originalGripC0[weld]
+	if not baseC0 then
+		baseC0 = weld.C0
+		originalGripC0[weld] = baseC0
+	end
+
+	local windupC0 = baseC0 * CFrame.Angles(math.rad(arc.windupDeg), 0, math.rad(-arc.roll * 0.4))
+	local strikeC0 = baseC0 * CFrame.Angles(math.rad(arc.strikeDeg), 0, math.rad(arc.roll))
+
+	local windup = TweenService:Create(weld, TweenInfo.new(arc.time * 0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { C0 = windupC0 })
+	local strike = TweenService:Create(weld, TweenInfo.new(arc.time, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { C0 = strikeC0 })
+	local recover = TweenService:Create(weld, TweenInfo.new(arc.time * 1.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { C0 = baseC0 })
+
+	windup:Play()
+	windup.Completed:Once(function()
+		if not weld.Parent then
+			swinging[weld] = nil
+			originalGripC0[weld] = nil
+			return
+		end
+		strike:Play()
+		strike.Completed:Once(function()
+			if weld.Parent then
+				recover:Play()
+			end
+			swinging[weld] = nil
+			if not weld.Parent then
+				originalGripC0[weld] = nil
+			end
+		end)
+	end)
+end
+
+-- One-off hero flashes: shield block, parry, dodge i-frames. The hit-confirm beat
+-- ("confirm") draws nothing here — the ordinary "hit" event already put a puff on
+-- each victim, and the confirm exists for the attacker's camera kick, which is
+-- HeroCombatController's job and must not fire on every spectator's screen.
+local function heroImpactEffect(kind: string, position: Vector3)
+	if kind == "parry" then
+		local flash = makePart(Vector3.new(1.5, 1.5, 1.5), Color3.fromRGB(255, 250, 190), Enum.Material.Neon)
+		flash.Shape = Enum.PartType.Ball
+		flash.Position = position
+		flash.Transparency = 0.1
+		flash.Parent = effectsFolder
+		TweenService:Create(flash, TweenInfo.new(0.28), { Size = Vector3.new(7, 7, 7), Transparency = 1 }):Play()
+		Debris:AddItem(flash, 0.32)
+	elseif kind == "block" then
+		local spark = makePart(Vector3.new(0.4, 0.4, 0.4), Color3.fromRGB(110, 180, 255), Enum.Material.Neon)
+		spark.Position = position
+		spark.Transparency = 0.2
+		spark.Parent = effectsFolder
+		TweenService:Create(spark, TweenInfo.new(0.22), { Size = Vector3.new(2.2, 2.2, 2.2), Transparency = 1 }):Play()
+		Debris:AddItem(spark, 0.26)
+	elseif kind == "dodge" then
+		-- A dust puff at the hero's feet: the readable "that attack missed" tell.
+		local puff = makePart(Vector3.new(2, 0.3, 2), Color3.fromRGB(200, 200, 210), Enum.Material.SmoothPlastic)
+		puff.Position = position - Vector3.new(0, 2.5, 0)
+		puff.Transparency = 0.5
+		puff.Parent = effectsFolder
+		TweenService:Create(puff, TweenInfo.new(0.35), { Size = Vector3.new(6, 0.3, 6), Transparency = 1 }):Play()
+		Debris:AddItem(puff, 0.4)
+	end
+end
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- EVENT INTAKE
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -286,6 +396,17 @@ local function handleEvents(events: { CombatEvent })
 				animateSwing(event.m :: Model)
 			end
 			continue
+		elseif event.t == "hswing" then
+			-- A hero's combo swing. Skipped for our OWN character: HeroCombatController
+			-- already drove the arc locally at input time, so replaying it here would
+			-- double-tween the same weld one round-trip late and visibly stutter the
+			-- blade. Every OTHER client plays it — that's how spectators see the Lord
+			-- fight, which is the whole point of hero mode being third person.
+			local heroModel = event.m
+			if heroModel and heroModel.Parent and not isLocalCharacter(heroModel) then
+				animateHeroSwing(heroModel :: Model, event.f or 1)
+			end
+			continue
 		end
 
 		local pos = event.p
@@ -304,6 +425,12 @@ local function handleEvents(events: { CombatEvent })
 			buildingHitEffect(pos, event.d or 0)
 		elseif event.t == "bdeath" then
 			buildingDestroyedEffect(pos)
+		elseif event.t == "himpact" and event.n then
+			-- Block spark / parry flash / dodge dust. "confirm" is deliberately a
+			-- no-op here (see heroImpactEffect): it exists so the ATTACKER's own
+			-- client can kick the camera, and drawing it for everyone would put a
+			-- flash on every spectator's screen for a hit they didn't land.
+			heroImpactEffect(event.n :: string, pos)
 		end
 	end
 end

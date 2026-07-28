@@ -38,6 +38,19 @@ local WORKER_POINT_NAMES = {
 	-- SpawnPoint drives peasant spawn positions (radius 12) so its surrounding
 	-- cells must be walkable or newly spawned peasants land on the Keep obstacle.
 	"SpawnPoint",
+	-- Idle peasants gather and sit at the Keep's Campfire (IdlePeasantManager).
+	--
+	-- This one matters more than it looks. The obstacle is an AXIS-ALIGNED box
+	-- over every non-worker-point part, and the Keep's campfire sits at the far
+	-- edge of the model — so counting it as building geometry STRETCHED the box
+	-- 13 studs further out (162 -> 149 wide once excluded) across exactly the
+	-- open ground the fire stands on. Measured on Stone_Wall_Large_Keep: with the
+	-- campfire counted, all 6 gathering slots were unreachable; excluded, the
+	-- fire sits 9 studs clear of the obstacle and all 6 are reachable.
+	--
+	-- Symptom when this is missing: peasants bunch against the side of the Keep
+	-- and never arrive, with open ground visibly between them and the fire.
+	"Campfire",
 }
 
 -- Active state
@@ -101,15 +114,42 @@ end
 -- ============================================
 
 -- Check if a part is a worker point
+local function isNamedWorkerPoint(name: string): boolean
+	for _, pointName in ipairs(WORKER_POINT_NAMES) do
+		if name == pointName then
+			return true
+		end
+	end
+	return false
+end
+
+-- Is this part a worker point, or part of one?
+--
+-- Worker points used to have to be single BaseParts. That silently excluded any
+-- marker authored as a MODEL — the Keep's Campfire is ten parts under a Model
+-- named "Campfire", so it matched nothing, was treated as building geometry, and
+-- its own gathering slots ended up inside the obstacle it created.
+--
+-- So a part also counts if it sits under a Model carrying a worker-point name.
+-- Both callers want that: getCustomBoundingBox keeps those parts OUT of the
+-- obstacle box, and markWorkerPointsWalkable carves walkable cells around them.
 local function isWorkerPoint(part: Instance): boolean
 	if not part:IsA("BasePart") then
 		return false
 	end
 
-	for _, pointName in ipairs(WORKER_POINT_NAMES) do
-		if part.Name == pointName then
+	if isNamedWorkerPoint(part.Name) then
+		return true
+	end
+
+	-- Walk up through enclosing Models only. Stops at the building's Folder (or
+	-- Workspace), so this can't run away up the tree.
+	local ancestor = part.Parent
+	while ancestor and ancestor:IsA("Model") do
+		if isNamedWorkerPoint(ancestor.Name) then
 			return true
 		end
+		ancestor = ancestor.Parent
 	end
 
 	return false
@@ -651,4 +691,3 @@ end
 PathfindingDebug:info("Production PathfindingIntegration module loaded")
 
 return PathfindingIntegration
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         

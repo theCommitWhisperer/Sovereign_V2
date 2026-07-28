@@ -200,7 +200,22 @@ function BuildingManager.createBuilding(
 	end
 
 	if buildingAssets then
-		local foundTemplate = buildingAssets:FindFirstChild(assetName)
+		-- model_asset_name may be a nested path like "Siege_Camps/Red_Siege_Camp":
+		-- walk the segments; fall back to a recursive search for the leaf name.
+		local foundTemplate: Instance? = nil
+		if string.find(assetName, "/") then
+			local current: Instance? = buildingAssets
+			for segment in string.gmatch(assetName, "[^/]+") do
+				current = current and current:FindFirstChild(segment)
+			end
+			foundTemplate = current
+			if not foundTemplate then
+				local leaf = string.match(assetName, "([^/]+)$")
+				foundTemplate = if leaf then buildingAssets:FindFirstChild(leaf, true) else nil
+			end
+		else
+			foundTemplate = buildingAssets:FindFirstChild(assetName)
+		end
 		if foundTemplate then
 			modelAsset = foundTemplate:Clone()
 
@@ -261,10 +276,16 @@ function BuildingManager.createBuilding(
 		end
 	end
 
-	-- Anchor all parts in the building to prevent physics movement
+	-- Anchor all parts in the building to prevent physics movement.
+	-- Also disable any SpawnLocation pads: Lord spawning is per-owner and handled
+	-- explicitly by GameManager, so the engine must never auto-pick another
+	-- kingdom's Keep pad when LoadCharacter runs.
 	for _, descendant in building:GetDescendants() do
 		if descendant:IsA("BasePart") then
 			descendant.Anchored = true
+		end
+		if descendant:IsA("SpawnLocation") then
+			descendant.Enabled = false
 		end
 	end
 
@@ -346,6 +367,49 @@ function BuildingManager.createBuilding(
 	end
 
 	return building
+end
+
+-- Apply a kingdom color to the Banner/Flag meshes of a building (typically the
+-- Stone_Wall_Large_Keep model). Searches all descendants for instances named
+-- "Banner" or "Flag" (exact or prefixed, e.g. "Banner2") and recolors every
+-- BasePart found. Robust to missing meshes: warns instead of erroring.
+function BuildingManager.applyBannerColor(building: Instance?, color: Color3)
+	if not building then
+		channel:warn("applyBannerColor: no building provided")
+		return
+	end
+
+	local function isBannerName(name: string): boolean
+		return name == "Banner" or name == "Flag"
+			or string.match(name, "^Banner") ~= nil
+			or string.match(name, "^Flag") ~= nil
+	end
+
+	local recolored = 0
+	for _, descendant in building:GetDescendants() do
+		if isBannerName(descendant.Name) then
+			if descendant:IsA("BasePart") then
+				descendant.Color = color
+				descendant.BrickColor = BrickColor.new(color)
+				recolored += 1
+			elseif descendant:IsA("Model") or descendant:IsA("Folder") then
+				-- Banner/Flag grouped as a Model/Folder: recolor its parts
+				for _, part in descendant:GetDescendants() do
+					if part:IsA("BasePart") then
+						part.Color = color
+						part.BrickColor = BrickColor.new(color)
+						recolored += 1
+					end
+				end
+			end
+		end
+	end
+
+	if recolored == 0 then
+		channel:warn(`applyBannerColor: no Banner/Flag meshes found in {building.Name}`)
+	else
+		channel:info(`applyBannerColor: recolored {recolored} banner/flag parts in {building.Name}`)
+	end
 end
 
 -- Take resources from a building's storage
@@ -433,4 +497,3 @@ function BuildingManager.hasStorageSpace(building: Instance, resourceType: strin
 end
 
 return BuildingManager
-                                                                                                                                                                                                                                                                                                                                                                                                                  

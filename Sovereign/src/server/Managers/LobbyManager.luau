@@ -71,9 +71,22 @@ local pendingStartSettings: { [number]: any } = {}
 -- Available factions
 local FACTIONS = { "Kingdom", "Empire", "Tribes", "IronLegion" }
 
+-- Max kingdoms for the lobby's currently selected map (hand-placed keep zones
+-- take priority over the declared MaxPlayers; defaults to 4).
+local function getLobbyMaxPlayers(lobby: LobbySession): number
+	local mapConfig = MapData.getMap(lobby.Settings.selectedMap)
+	if mapConfig then
+		if mapConfig.KeepSpawnZones and #mapConfig.KeepSpawnZones > 0 then
+			return #mapConfig.KeepSpawnZones
+		end
+		return mapConfig.MaxPlayers or 4
+	end
+	return 4
+end
+
 -- Auto-assign the first available spawn to a player
 local function autoAssignSpawn(lobby: LobbySession, userId: number, playerName: string)
-	for spawnNum = 1, 4 do
+	for spawnNum = 1, getLobbyMaxPlayers(lobby) do
 		if not lobby.SpawnSelections[spawnNum] then
 			lobby.SpawnSelections[spawnNum] = {
 				userId = userId,
@@ -360,7 +373,7 @@ function LobbyManager.selectSpawn(player: Player, spawnNumber: number)
 		return
 	end
 
-	if spawnNumber < 1 or spawnNumber > 4 then
+	if spawnNumber < 1 or spawnNumber > getLobbyMaxPlayers(lobby) then
 		LobbyDebug:warn("Invalid spawn number:", spawnNumber)
 		return
 	end

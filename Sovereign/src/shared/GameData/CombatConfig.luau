@@ -98,11 +98,23 @@ CombatConfig.StanceModifiers = {
 	Skirmish = { damage = 1.10, defense = 0.80 },
 }
 
+-- `braces`: the unit plants itself and receives a charge instead of absorbing it.
+-- Read by DamageResolver.isBraced, which additionally requires the "spear" tag —
+-- a braced swordsman is just a swordsman standing still.
+--
+-- This exists as data because the old brace test was the literal
+-- `stance == "Defensive" or stance == "Hold"`. Those names were renamed to the
+-- March/Attack/Defend/Skirmish vocabulary and nobody updated the test, so
+-- isBraced() returned false for every unit in the game and the entire
+-- brace-counter branch in CombatService.resolveHit was unreachable dead code for
+-- its whole life. A stance rename now silently drops a flag off this table
+-- rather than silently disabling a mechanic. Do NOT reuse `canCharge == false`
+-- for this: March also can't charge, and a marching column must not brace.
 CombatConfig.StanceBehavior = {
-	March = { autoEngage = false, searchMult = 0, canCharge = false, leash = 0, kite = false, groupSpeed = true },
-	Attack = { autoEngage = true, searchMult = 1.5, canCharge = true, leash = math.huge, kite = false, groupSpeed = false },
-	Defend = { autoEngage = true, searchMult = 0.9, canCharge = false, leash = 26, kite = false, groupSpeed = false },
-	Skirmish = { autoEngage = true, searchMult = 1.2, canCharge = true, leash = math.huge, kite = true, groupSpeed = false },
+	March = { autoEngage = false, searchMult = 0, canCharge = false, leash = 0, kite = false, groupSpeed = true, braces = false },
+	Attack = { autoEngage = true, searchMult = 1.5, canCharge = true, leash = math.huge, kite = false, groupSpeed = false, braces = false },
+	Defend = { autoEngage = true, searchMult = 0.9, canCharge = false, leash = 26, kite = false, groupSpeed = false, braces = true },
+	Skirmish = { autoEngage = true, searchMult = 1.2, canCharge = true, leash = math.huge, kite = true, groupSpeed = false, braces = false },
 }
 
 CombatConfig.DefaultStance = "Attack" -- newly spawned combat units
@@ -150,6 +162,11 @@ CombatConfig.Projectiles = {
 	Javelin = { speed = 80, arcHeight = 6, visual = "Javelin", baseAccuracy = 0.88, movingPenalty = 0.22 },
 	Bolt = { speed = 130, arcHeight = 3, visual = "Bolt", baseAccuracy = 0.95, movingPenalty = 0.15 },
 	MagicBolt = { speed = 60, arcHeight = 2, visual = "Magic", baseAccuracy = 1.0, movingPenalty = 0.0 },
+	-- Trebuchet payload: slower, higher arc than the catapult stone; great vs
+	-- stationary buildings, poor vs moving troops
+	TrebuchetStone = { speed = 55, arcHeight = 22, visual = "Stone", baseAccuracy = 0.9, movingPenalty = 0.45 },
+	-- Oilliphéist breath: fast gout of Otherworld fire
+	WyrmFire = { speed = 75, arcHeight = 4, visual = "Magic", baseAccuracy = 0.95, movingPenalty = 0.1 },
 } :: { [string]: ProjectileDef }
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -188,6 +205,244 @@ CombatConfig.Abilities = {
 	ShieldBash = { cooldown = 12, stunSeconds = 1.2 }, -- Gallowglass: periodic stun
 	Volley = { cooldown = 20, extraShots = 2 }, -- Longbowman: periodic multi-shot
 }
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- HERO COMBAT (the player's Lord, third person)
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- Everything the server-authoritative hero state machine (server/Combat/
+-- HeroCombat.luau) needs, and everything the client feedback layer
+-- (client/Combat/HeroCombatController) mirrors for prediction. There is exactly
+-- one copy of these numbers so the two can never drift.
+--
+-- TIMING VOCABULARY — every melee action is three phases, all in seconds:
+--   windup      the swing is committed but nothing can be hit yet. This is the
+--               window in which an opponent can see it coming.
+--   activeWindow how long the hitbox arc is live. The server sweeps ONCE at the
+--               start of it (a per-frame sweep on a 100-unit battlefield is not
+--               affordable), so this value is really "how generous the sweep is"
+--               — it is sent to clients as the hitflash duration.
+--   recovery    committed, cannot act. nextActionAt = now + windup + active +
+--               recovery.
+--
+--   comboWindow is measured from the END of recovery: press light again inside
+--   it and you advance to the next step, miss it and the chain resets to step 1.
+--   It must be > 0 or the combo is unreachable by a human.
+
+export type HeroComboStep = {
+	damageMult: number, -- multiplies the resolved (post-armor/counter) damage
+	range: number, -- studs from the hero's PrimaryPart
+	arcCos: number, -- cos of the swing's half-angle; LOWER = wider
+	windup: number,
+	activeWindow: number,
+	recovery: number,
+	comboWindow: number, -- grace period after recovery to chain the next step
+	staminaCost: number,
+}
+
+export type HeroConfig = {
+	-- Base fighter stats. GameManager (Lord) and ArenaMode (arena hero) both
+	-- seed registerPlayerFighter from here so the two modes can't diverge.
+	fighter: {
+		baseType: string, -- seeds the combat damage-type profile ONLY
+		maxHealth: number,
+		attackDamage: number, -- the base DamageResolver feeds off; combo mults scale it
+		armor: number,
+	},
+	lightCombo: { HeroComboStep },
+	heavy: {
+		damageMult: number,
+		range: number,
+		arcCos: number,
+		windup: number,
+		activeWindow: number,
+		recovery: number,
+		staminaCost: number,
+		-- A heavy is a chain OPENER or a step-1/step-2 finisher, never the cap on
+		-- a full light chain: allowing light→light→light→heavy makes the heavy
+		-- free (the third light already staggered everyone) and the combo becomes
+		-- a single unconditional rotation.
+		maxComboIndexToChainFrom: number,
+		holdSeconds: number, -- client: LMB held longer than this = heavy, not light
+	},
+	block: {
+		damageReduction: number, -- 0..1 fraction of incoming damage removed
+		parryWindow: number, -- seconds from block start in which a hit is a parry
+		parryRiposteMult: number, -- damage mult on the light attack that follows
+		parryRiposteWindow: number, -- how long the riposte stays available
+		parryStunSeconds: number, -- applied to the parried attacker
+		directional: boolean,
+		facingDot: number, -- attacker must be within this dot of the hero's look
+		moveSpeedMult: number, -- client: how slow you walk with the shield up
+		staminaCostPerParry: number,
+	},
+	dodge: {
+		distance: number, -- studs travelled
+		speed: number, -- studs/sec the client rolls at
+		invulnSeconds: number, -- i-frames, from the moment the server accepts it
+		recovery: number, -- committed-but-vulnerable tail
+		cooldown: number,
+		staminaCost: number,
+	},
+	ranged: {
+		-- The bow reuses the hero's attackDamage through the same resolveHit
+		-- pipeline as melee, so armor/counter/morale all apply. damageMult is
+		-- tuned so a shot lands near the legacy flat 45 off a base of 70.
+		damageMult: number,
+		range: number,
+		arcCos: number,
+		windup: number,
+		recovery: number,
+		cooldown: number,
+		projectile: string, -- key into CombatConfig.Projectiles
+		staminaCost: number,
+		-- The hero fighter is seeded from a MELEE profile (Gallowglass, Slash), so
+		-- without this override his arrows were resolved as sword cuts against the
+		-- counter matrix: 0.85x into Heavy armour instead of 1.15x. Per-attack
+		-- override rather than mutating the profile, which is a shared table.
+		damageType: DamageType,
+	},
+	stamina: {
+		-- DEFAULT OFF. The owner asked for combo / heavy / block / parry / dodge;
+		-- a stamina bar was not on that list and adding a resource the player has
+		-- to babysit changes the feel of a power-fantasy Lord from "wade into the
+		-- peasants" to "manage a meter". Every cost above is already authored, so
+		-- flipping this to true is a one-line balance experiment, not a rewrite.
+		enabled: boolean,
+		max: number,
+		regenPerSecond: number,
+		regenDelay: number, -- seconds after a spend before regen resumes
+	},
+	stagger: {
+		-- Getting hit hard while in windup interrupts the swing.
+		interruptDamageFraction: number, -- of maxHealth, in one hit
+		seconds: number,
+	},
+	-- ── UNCONDITIONAL FRIENDLY FIRE ────────────────────────────────────────
+	-- The player's swings hit ANYTHING in the arc: enemies, allied units, and
+	-- his own peasants. This is a deliberate design decision by the project
+	-- owner, not an oversight.
+	--
+	-- TRADEOFF, stated plainly: in a multiplayer match this is a griefing
+	-- vector — a Lord can walk into his own army and cut it down, and there is
+	-- no server-side check that stops him because "was that a mistake or was it
+	-- intent?" is not answerable from a swing. It is accepted because the
+	-- alternative (arc filtering by faction) means the player's sword passes
+	-- harmlessly through a peasant standing between him and an enemy, which
+	-- reads as a broken hitbox every single time. If this ever needs to become
+	-- a per-lobby setting, flip this flag from the lobby settings table — every
+	-- consumer reads it through CombatConfig, nothing hardcodes it.
+	--
+	-- Note this ONLY widens the PLAYER'S aimed attacks. The autonomous combat
+	-- loop still refuses to target allies, so AI units never friendly-fire.
+	playerAttacksHitAllies: boolean,
+}
+
+local MELEE = CombatConfig.Engine.MELEE_RANGE -- 8 studs; hero reach is this + a bit
+
+CombatConfig.Hero = {
+	fighter = {
+		baseType = "Gallowglass",
+		maxHealth = 800,
+		attackDamage = 70,
+		armor = 10,
+	},
+
+	-- Three-hit chain: quick opener, quick link, slow heavy finisher. Total
+	-- damage of a full chain ≈ 1.0 + 1.15 + 1.65 = 3.8x a soldier's swing, over
+	-- ~1.5s — strong, but you are locked in for that whole 1.5s.
+	lightCombo = {
+		{
+			damageMult = 1.00,
+			range = MELEE + 2, -- 10
+			arcCos = 0.40, -- cos(~66°): wide enough to catch a small crowd
+			windup = 0.12,
+			activeWindow = 0.10,
+			recovery = 0.26,
+			comboWindow = 0.55,
+			staminaCost = 8,
+		},
+		{
+			damageMult = 1.15,
+			range = MELEE + 2, -- 10
+			arcCos = 0.45, -- slightly tighter backhand
+			windup = 0.10,
+			activeWindow = 0.10,
+			recovery = 0.24,
+			comboWindow = 0.50,
+			staminaCost = 8,
+		},
+		{
+			damageMult = 1.65,
+			range = MELEE + 3, -- 11: the finisher steps in
+			arcCos = 0.25, -- cos(~75°): widest of the three, it is a full spin
+			windup = 0.18,
+			activeWindow = 0.14,
+			recovery = 0.42,
+			comboWindow = 0.00, -- chain ends here; index resets to 1
+			staminaCost = 14,
+		},
+	},
+
+	heavy = {
+		damageMult = 2.20,
+		range = MELEE + 4, -- 12
+		arcCos = 0.10, -- cos(~84°): nearly a half-circle cleave
+		windup = 0.42, -- long enough to be reacted to
+		activeWindow = 0.16,
+		recovery = 0.55,
+		staminaCost = 22,
+		maxComboIndexToChainFrom = 2,
+		holdSeconds = 0.35,
+	},
+
+	block = {
+		damageReduction = 0.65,
+		parryWindow = 0.28,
+		parryRiposteMult = 1.80,
+		parryRiposteWindow = 1.20,
+		parryStunSeconds = 1.20, -- matches Abilities.ShieldBash.stunSeconds
+		directional = true,
+		facingDot = 0.15, -- cos(~81°): the shield covers the front, not the flanks
+		moveSpeedMult = 0.45,
+		staminaCostPerParry = 10,
+	},
+
+	dodge = {
+		distance = 18,
+		speed = 34,
+		invulnSeconds = 0.35,
+		recovery = 0.25,
+		cooldown = 0.90,
+		staminaCost = 18,
+	},
+
+	ranged = {
+		damageMult = 0.65, -- 70 * 0.65 ≈ 45, the legacy flat bow damage
+		range = 140,
+		arcCos = 0.93, -- cos(~21°): a tight aim cone
+		windup = 0.30, -- draw the bow
+		recovery = 0.25,
+		cooldown = 0.80,
+		projectile = "Longbow",
+		staminaCost = 6,
+		damageType = "Pierce" :: DamageType, -- a bow is Pierce, not the profile's Slash
+	},
+
+	stamina = {
+		enabled = false,
+		max = 100,
+		regenPerSecond = 18,
+		regenDelay = 0.60,
+	},
+
+	stagger = {
+		interruptDamageFraction = 0.08, -- 8% of max HP in one hit breaks a windup
+		seconds = 0.45,
+	},
+
+	playerAttacksHitAllies = true,
+} :: HeroConfig
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- BUILDING DURABILITY (buildings have no HP in BuildingsData; defined here)
@@ -266,6 +521,54 @@ local UnitProfiles: { [string]: UnitCombatProfile } = {
 		bonusVsTags = { cavalry = 1.8 },
 		weapon = "Spear",
 		shield = true,
+	},
+	Pikeman = {
+		damageType = "Pierce",
+		armorClass = "Medium",
+		attackType = "Melee",
+		tags = { "spear", "infantry" },
+		bonusVsTags = { cavalry = 2.0 },
+		weapon = "Spear",
+	},
+	MenAtArms = {
+		damageType = "Slash",
+		armorClass = "Heavy",
+		attackType = "Melee",
+		tags = { "infantry" },
+		weapon = "Sword",
+		shield = true,
+	},
+	BatteringRam = {
+		damageType = "Siege",
+		armorClass = "Structure",
+		attackType = "Melee",
+		tags = { "siege" },
+		weapon = "None",
+	},
+	Catapult = {
+		damageType = "Siege",
+		armorClass = "Light",
+		attackType = "Ranged",
+		tags = { "siege", "ranged" },
+		bonusVsTags = { structure = 1.25 }, -- "structure" is the implicit tag all buildings carry
+		projectile = "Stone",
+		weapon = "None",
+	},
+	Trebuchet = {
+		damageType = "Siege",
+		armorClass = "Light", -- wooden frame: melee tears it apart if it gets close
+		attackType = "Ranged",
+		tags = { "siege", "ranged" },
+		bonusVsTags = { structure = 1.6 }, -- dedicated wall-breaker
+		projectile = "TrebuchetStone",
+		weapon = "None",
+	},
+	Siege_Tower = {
+		damageType = "Blunt",
+		armorClass = "Structure", -- thick timber sheathing shrugs off arrows and blades
+		attackType = "Melee",
+		tags = { "siege", "transport" },
+		weapon = "None",
 	},
 	Viking = {
 		damageType = "Slash",
@@ -412,6 +715,79 @@ local UnitProfiles: { [string]: UnitCombatProfile } = {
 		abilities = { "PackHunter" },
 		weapon = "None",
 	},
+
+	-- ── Hero hub rosters (Royal Assembly Hall / Sidhe Mound / Coastal Long-Port) ──
+	High_King = {
+		damageType = "Slash",
+		armorClass = "Heavy",
+		attackType = "Melee",
+		tags = { "hero", "infantry" },
+		abilities = { "WarCry", "ShieldWall" },
+		weapon = "Sword",
+		shield = true,
+	},
+	Celtic_Champion = {
+		damageType = "Slash",
+		armorClass = "Medium",
+		attackType = "Melee",
+		tags = { "hero", "infantry" },
+		abilities = { "CelticFury", "Berserk" },
+		weapon = "Spear", -- the Gáe Bolg
+	},
+	Brehon = {
+		damageType = "Magic",
+		armorClass = "Light",
+		attackType = "Ranged",
+		tags = { "hero", "caster", "support" },
+		projectile = "MagicBolt",
+		abilities = { "Heal", "WarCry" }, -- Binding Judgment ≈ WarCry morale shock
+		weapon = "Staff",
+	},
+	Sidhe_Warden = {
+		damageType = "Magic",
+		armorClass = "Medium",
+		attackType = "Melee",
+		tags = { "mythical", "hero" },
+		abilities = { "Ambush", "CelticFury" }, -- Otherworld Step first-strike
+		weapon = "Spear",
+	},
+	Cu_Sidhe = {
+		damageType = "Slash",
+		armorClass = "Unarmored",
+		attackType = "Melee",
+		tags = { "mythical", "beast" },
+		bonusVsTags = { ranged = 1.3, civilian = 1.2 },
+		abilities = { "PackHunter", "HitAndRun" },
+		weapon = "None",
+	},
+	Sea_Reaver = {
+		damageType = "Slash",
+		armorClass = "Medium",
+		attackType = "Melee",
+		tags = { "hero", "infantry", "raider" },
+		bonusVsTags = { ranged = 1.25 },
+		abilities = { "Berserk", "Trample" }, -- Tidal Charge ≈ heavier charges
+		weapon = "Axe",
+	},
+	Selkie = {
+		damageType = "Magic",
+		armorClass = "Unarmored",
+		attackType = "Ranged",
+		tags = { "mythical", "caster", "healer" },
+		projectile = "MagicBolt",
+		abilities = { "Heal", "Wail" }, -- Mend the Tide / Storm Wail
+		weapon = "None",
+	},
+	Oillipheist = {
+		damageType = "Magic",
+		armorClass = "Heavy", -- scaled hide
+		attackType = "Ranged",
+		tags = { "mythical", "flying", "beast" },
+		bonusVsTags = { structure = 1.3 }, -- Otherworld fire chews through roofs
+		projectile = "WyrmFire",
+		abilities = { "Wail" }, -- Terror ≈ the Banshee's morale shock
+		weapon = "None",
+	},
 }
 
 CombatConfig.UnitProfiles = UnitProfiles
@@ -423,6 +799,11 @@ local SubtypeDefaults: { [string]: UnitCombatProfile } = {
 	Ranged = { damageType = "Pierce", armorClass = "Light", attackType = "Ranged", tags = { "ranged" }, projectile = "Arrow" },
 	["Ranged Infantry"] = { damageType = "Pierce", armorClass = "Light", attackType = "Ranged", tags = { "ranged" }, projectile = "Arrow" },
 	Cavalry = { damageType = "Slash", armorClass = "Heavy", attackType = "Melee", tags = { "cavalry" } },
+	Siege = { damageType = "Siege", armorClass = "Structure", attackType = "Melee", tags = { "siege" }, weapon = "None" },
+	["Hero Caster"] = { damageType = "Magic", armorClass = "Light", attackType = "Ranged", tags = { "hero", "caster" }, projectile = "MagicBolt", weapon = "Staff" },
+	["Hero Leader"] = { damageType = "Slash", armorClass = "Heavy", attackType = "Melee", tags = { "hero" }, weapon = "Sword", shield = true },
+	Mythical = { damageType = "Magic", armorClass = "Light", attackType = "Melee", tags = { "mythical" } },
+	["War Beast"] = { damageType = "Slash", armorClass = "Unarmored", attackType = "Melee", tags = { "beast" }, weapon = "None" },
 }
 CombatConfig.SubtypeDefaults = SubtypeDefaults
 

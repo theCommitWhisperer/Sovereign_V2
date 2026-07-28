@@ -6,6 +6,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local PlayerManager = require(script.Parent.PlayerManager)
 local TaxSystem = require(script.Parent.Parent.Systems.TaxSystem)
+local EconomyConfig = require(ReplicatedStorage.Shared.GameData.EconomyConfig)
+local GameSettings = require(ReplicatedStorage.Shared.GameSettings)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
 local TaxDebug = DebugManager.createChannel("TaxManager", false)
@@ -18,7 +20,8 @@ function TaxManager.create(player: Player)
     local playerData = PlayerManager.get(player)
     if playerData then
         taxData[player.UserId] = {
-            taxRate = 0.1, -- Initial tax rate (10%)
+            taxRate = EconomyConfig.Tax.defaultRate,
+            taxPolicy = EconomyConfig.DefaultTaxPolicy,
             lastCollected = tick(),
         }
         TaxDebug:info(`Created tax data for {player.Name}`)
@@ -35,6 +38,24 @@ function TaxManager.setTaxRate(player: Player, newRate: number)
         taxInfo.taxRate = math.clamp(newRate, 0, 1) -- Clamp between 0% and 100%
         TaxDebug:info(`Set tax rate for {player.Name} to {newRate * 100}%`)
     end
+end
+
+-- Set tax rate via a named policy preset from the Policies UI
+-- (EconomyConfig.TaxPolicies). Returns false for unknown policies.
+function TaxManager.setTaxPolicy(player: Player, policyName: string): boolean
+    local taxInfo = taxData[player.UserId]
+    local policy = EconomyConfig.TaxPolicies[policyName]
+    if not taxInfo or not policy then
+        return false
+    end
+    taxInfo.taxPolicy = policyName
+    TaxManager.setTaxRate(player, policy.rate)
+    return true
+end
+
+function TaxManager.getTaxPolicy(player: Player): string
+    local taxInfo = taxData[player.UserId]
+    return taxInfo and taxInfo.taxPolicy or EconomyConfig.DefaultTaxPolicy
 end
 
 function TaxManager.collectTaxes(player: Player)
@@ -57,7 +78,7 @@ end
 function TaxManager.startLoop()
     task.spawn(function()
         while true do
-            task.wait(60)
+            task.wait(GameSettings.waitInterval(EconomyConfig.Tax.cycleSeconds))
             for _, player in ipairs(Players:GetPlayers()) do
                 TaxManager.collectTaxes(player)
             end

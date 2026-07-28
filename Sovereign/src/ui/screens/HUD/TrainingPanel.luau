@@ -65,7 +65,7 @@ function TrainingPanel:render()
 					Size = UDim2.new(1, -4, 0, 20),
 					Position = UDim2.new(0, 2, 0, 2),
 					BackgroundTransparency = 1,
-					Text = unitType,
+					Text = unitInfo.display_name or unitType,
 					Font = Enum.Font.GothamBold,
 					TextSize = 13,
 					TextColor3 = UIConfig.HUD.PanelHeaderColor,

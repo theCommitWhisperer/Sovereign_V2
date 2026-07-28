@@ -9,12 +9,15 @@ local CombatConfig = require(ReplicatedStorage.Shared.GameData.CombatConfig)
 local CombatReplication = {}
 
 export type CombatEvent = {
-	t: string, -- "hit" | "death" | "proj" | "ability" | "bhit" | "bdeath" | "swing"
+	-- "hit" | "death" | "proj" | "ability" | "bhit" | "bdeath" | "swing"
+	-- Hero beats: "hswing" (combo swing on a character) | "himpact" (block /
+	-- parry / dodge / hit-confirm flash at a world position)
+	t: string,
 	p: Vector3?, -- position
 	p2: Vector3?, -- secondary position (projectile target)
 	d: number?, -- damage
-	n: string?, -- name/kind (ability name, projectile visual)
-	f: number?, -- float payload (radius, flight time)
+	n: string?, -- name/kind (ability name, projectile visual, hero beat kind)
+	f: number?, -- float payload (radius, flight time, combo step index)
 	m: Model?, -- instance payload (swinging unit)
 }
 
@@ -77,6 +80,36 @@ end
 -- Melee swing: clients animate the unit's weapon grip weld
 function CombatReplication.swing(unitModel: Model)
 	CombatReplication.push({ t = "swing", m = unitModel })
+end
+
+-- ── HERO BEATS ──────────────────────────────────────────────────────────────
+--
+-- These are cheap on purpose. There is at most one hero per player and a hero
+-- can produce at most ~3 events a second, so they never threaten the
+-- MAX_REPLICATION_EVENTS_PER_TICK budget the way a 200-unit melee does — but
+-- they go through the SAME queue and the same cap, so a saturated battle tick
+-- will drop them rather than starve unit VFX. That is the correct priority: the
+-- attacking player already saw his own swing (his client predicts it locally the
+-- instant he clicks), so a dropped hswing only costs a spectator one animation.
+--
+-- `step` is the light-combo index (1..3), 0 for a heavy, -1 for a bow release.
+-- The client uses it to pick which swing arc to play.
+function CombatReplication.heroSwing(character: Model, step: number, kind: string)
+	CombatReplication.push({ t = "hswing", m = character, f = step, n = kind })
+end
+
+-- One-off hero flashes. `kind` is "block" | "parry" | "dodge" | "confirm".
+--   block   — a hit was absorbed by the raised shield
+--   parry   — a hit landed inside the parry window (attacker stunned)
+--   dodge   — i-frames opened
+--   confirm — the hero's own swing connected (drives hit-stop + camera kick)
+--
+-- `hero` is carried so a receiving client can tell whether the beat belongs to
+-- ITS OWN hero. CombatEffectsClient draws the world VFX for everyone's; only the
+-- owner's HeroCombatController turns it into a camera kick and hit-stop, which
+-- would be nauseating if every hero's parry shook every player's camera.
+function CombatReplication.heroImpact(position: Vector3, kind: string, damage: number?, hero: Model?)
+	CombatReplication.push({ t = "himpact", p = position, n = kind, d = damage, m = hero })
 end
 
 -- Called once per combat tick by CombatService

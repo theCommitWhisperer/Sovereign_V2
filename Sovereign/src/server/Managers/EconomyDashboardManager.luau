@@ -42,6 +42,10 @@ export type EconomySnapshot = {
 	-- Taxes
 	taxRate: number,
 	taxRevenue: number,
+	taxPolicy: string,
+
+	-- Food Rations policy
+	rationsPolicy: string,
 
 	-- Happiness
 	happiness: number,
@@ -128,6 +132,8 @@ function EconomyDashboardManager.getSnapshot(player: Player): EconomySnapshot
 			productionModifier = 1.0,
 			taxRate = 0,
 			taxRevenue = 0,
+			taxPolicy = "Normal Tax",
+			rationsPolicy = "Normal Rations",
 			happiness = 50,
 			happinessFactors = {},
 			currentSeason = "Spring",
@@ -214,6 +220,8 @@ function EconomyDashboardManager.getSnapshot(player: Player): EconomySnapshot
 
 		taxRate = taxInfo and taxInfo.taxRate or 0,
 		taxRevenue = taxInfo and math.floor(PopulationManager.getCurrentPopulation(player) * (taxInfo.taxRate or 0)) or 0,
+		taxPolicy = TaxManager.getTaxPolicy(player),
+		rationsPolicy = ConsumptionManager.getRationsPolicy(player),
 
 		happiness = playerData.Happiness or 50,
 		happinessFactors = happinessFactors,

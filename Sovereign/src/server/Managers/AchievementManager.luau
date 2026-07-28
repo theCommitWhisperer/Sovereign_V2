@@ -309,6 +309,7 @@ function AchievementManager.initializePlayer(player: Player)
 		EnemiesKilled = 0,
 		VikingsKilled = 0,
 		UnitsTrained = 0,
+		UnitsLost = 0,
 		ResourcesGathered = 0,
 		GoldEarned = 0,
 		MaxPopulation = 0,
@@ -390,6 +391,44 @@ end
 
 function AchievementManager.getStats(player: Player): { [string]: number }
 	return PlayerStats[player.UserId] or {}
+end
+
+-- Reset this player's match-scoped counters (UnitsTrained, EnemiesKilled, ...)
+-- for a fresh match — called from GameManager's LeaveGame teardown. Unlocked
+-- achievements themselves are NOT touched here: per the header comment they're
+-- permanent meta-progression, not per-match state.
+function AchievementManager.resetMatchStats(player: Player)
+	local stats = PlayerStats[player.UserId]
+	if not stats then
+		return
+	end
+	for statName in stats do
+		stats[statName] = 0
+	end
+	AchievementDebug:info(`Reset match stats for {player.Name}`)
+end
+
+-- Lean end-of-match summary for the Victory/Defeat screens. Reuses the
+-- counters this manager already tracks (no new tracking systems); the caller
+-- that owns the match clock passes its start time (tick()) for the duration.
+function AchievementManager.getMatchSnapshot(player: Player, matchStartTime: number?): { [string]: number }
+	local stats = PlayerStats[player.UserId] or {}
+	local gloryLifetime = 0
+	pcall(function()
+		-- Lazy-required to avoid init-order cycles (same pattern as CombatService)
+		local GloryManager = require(script.Parent.GloryManager) :: any
+		gloryLifetime = GloryManager.getLifetimeGlory(player)
+	end)
+	return {
+		unitsTrained = stats.UnitsTrained or 0,
+		unitsLost = stats.UnitsLost or 0,
+		kills = stats.EnemiesKilled or 0,
+		buildingsBuilt = stats.BuildingsBuilt or 0,
+		gloryLifetime = gloryLifetime,
+		matchDuration = if matchStartTime and matchStartTime > 0
+			then math.max(0, math.floor(tick() - matchStartTime))
+			else 0,
+	}
 end
 
 function AchievementManager.init()

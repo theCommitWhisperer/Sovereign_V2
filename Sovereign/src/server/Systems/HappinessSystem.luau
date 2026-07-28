@@ -1,5 +1,9 @@
 --!strict
--- HappinessSystem: Calculates player happiness
+-- HappinessSystem: Calculates player happiness (Popularity).
+-- Tunables (rations modifiers, tax penalty thresholds) live in EconomyConfig.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local EconomyConfig = require(ReplicatedStorage.Shared.GameData.EconomyConfig)
 
 local HappinessSystem = {}
 
@@ -52,11 +56,14 @@ function HappinessSystem.calculateHappiness(player: Player)
             happiness = happiness - 25 -- No housing available
         end
 
-        -- Tax factor
-        if taxRate > 0.5 then
-            happiness = happiness - 30
-        elseif taxRate > 0.2 then
-            happiness = happiness - 15
+        -- Food Rations policy factor (Double/Extra rations boost, Half rations hurt)
+        happiness = happiness + ConsumptionManager.getRationsHappinessModifier(player)
+
+        -- Tax factor (thresholds/penalties from EconomyConfig.Tax)
+        if taxRate > EconomyConfig.Tax.heavyTaxThreshold then
+            happiness = happiness + EconomyConfig.Tax.heavyTaxPenalty
+        elseif taxRate > EconomyConfig.Tax.moderateTaxThreshold then
+            happiness = happiness + EconomyConfig.Tax.moderateTaxPenalty
         end
 
         -- Seasonal factor

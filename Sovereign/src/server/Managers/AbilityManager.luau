@@ -9,6 +9,7 @@ local Players = game:GetService("Players")
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local MoraleManager = require(script.Parent.MoraleManager)
+local GloryManager = require(script.Parent.GloryManager)
 
 local AbilityDebug = DebugManager.createChannel("Abilities", false)
 
@@ -25,8 +26,12 @@ export type Ability = {
 	cooldown: number,
 	duration: number?,
 	radius: number?,
+	glory_cost: number?, -- Glory charged on activation (see GloryManager)
 	effect: (player: Player, character: Model) -> (),
 }
+
+-- Glory spent per second of remaining cooldown when buying a cooldown reset
+local GLORY_PER_COOLDOWN_SECOND = 0.5
 
 type AbilityCooldown = {
 	abilityId: string,
@@ -47,6 +52,7 @@ local ABILITIES: { [string]: Ability } = {
 		cooldown = 45,
 		duration = 15,
 		radius = 40,
+		glory_cost = 10,
 		effect = function(player: Player, character: Model)
 			if not character.PrimaryPart then
 				return
@@ -94,6 +100,7 @@ local ABILITIES: { [string]: Ability } = {
 		cooldown = 60,
 		duration = 10,
 		radius = 35,
+		glory_cost = 15,
 		effect = function(player: Player, character: Model)
 			if not character.PrimaryPart then
 				return
@@ -149,6 +156,7 @@ local ABILITIES: { [string]: Ability } = {
 		cooldown = 50,
 		duration = 12,
 		radius = 30,
+		glory_cost = 12,
 		effect = function(player: Player, character: Model)
 			if not character.PrimaryPart then
 				return
@@ -207,6 +215,7 @@ local ABILITIES: { [string]: Ability } = {
 		cooldown = 75,
 		duration = 8,
 		radius = 25,
+		glory_cost = 20,
 		effect = function(player: Player, character: Model)
 			if not character.PrimaryPart then
 				return
@@ -261,6 +270,7 @@ local ABILITIES: { [string]: Ability } = {
 		description = "Restore 30% health to nearby troops instantly",
 		cooldown = 90,
 		radius = 30,
+		glory_cost = 25,
 		effect = function(player: Player, character: Model)
 			if not character.PrimaryPart then
 				return
@@ -353,6 +363,22 @@ function AbilityManager.useAbility(player: Player, abilityId: string): boolean
 		return false
 	end
 
+	-- Charge Glory for the activation (earned from combat kills)
+	local gloryCost = ability.glory_cost or 0
+	if gloryCost > 0 and not GloryManager.spendGlory(player, gloryCost, `ability {abilityId}`) then
+		AbilityDebug:info(`{player.Name} lacks Glory for {abilityId} (needs {gloryCost})`)
+		local remoteEvents = ReplicatedStorage:FindFirstChild("RemoteEvents")
+		if remoteEvents then
+			local gameEvent = remoteEvents:FindFirstChild("GameEvent")
+			if gameEvent and gameEvent:IsA("RemoteEvent") then
+				gameEvent:FireClient(player, "Error", {
+					message = `Not enough Glory ({GloryManager.getGlory(player)}/{gloryCost}). Earn Glory in melee combat!`,
+				})
+			end
+		end
+		return false
+	end
+
 	-- Use ability
 	ability.effect(player, character)
 
@@ -380,6 +406,53 @@ function AbilityManager.getAbilityCooldown(player: Player, abilityId: string): n
 
 	local remaining = playerCooldowns[abilityId] - currentTime
 	return math.max(0, remaining)
+end
+
+-- Spend Glory to clear an ability's remaining cooldown.
+-- Cost scales with the seconds remaining (GLORY_PER_COOLDOWN_SECOND each).
+function AbilityManager.reduceCooldownWithGlory(player: Player, abilityId: string): boolean
+	local ability = ABILITIES[abilityId]
+	if not ability then
+		AbilityDebug:warn(`Unknown ability: {abilityId}`)
+		return false
+	end
+
+	local remaining = AbilityManager.getAbilityCooldown(player, abilityId)
+	if remaining <= 0 then
+		return true -- nothing to buy
+	end
+
+	local cost = math.max(1, math.ceil(remaining * GLORY_PER_COOLDOWN_SECOND))
+	if not GloryManager.spendGlory(player, cost, `cooldown reset {abilityId}`) then
+		local remoteEvents = ReplicatedStorage:FindFirstChild("RemoteEvents")
+		if remoteEvents then
+			local gameEvent = remoteEvents:FindFirstChild("GameEvent")
+			if gameEvent and gameEvent:IsA("RemoteEvent") then
+				gameEvent:FireClient(player, "Error", {
+					message = `Not enough Glory to reset {ability.name} ({GloryManager.getGlory(player)}/{cost}).`,
+				})
+			end
+		end
+		return false
+	end
+
+	local playerCooldowns = PlayerAbilityCooldowns[player.UserId]
+	if playerCooldowns then
+		playerCooldowns[abilityId] = nil
+	end
+	AbilityDebug:info(`{player.Name} reset {abilityId} cooldown for {cost} Glory`)
+
+	local remoteEvents = ReplicatedStorage:FindFirstChild("RemoteEvents")
+	if remoteEvents then
+		local gameEvent = remoteEvents:FindFirstChild("GameEvent")
+		if gameEvent and gameEvent:IsA("RemoteEvent") then
+			gameEvent:FireClient(player, "AbilityUsed", {
+				abilityId = abilityId,
+				message = `{ability.name} is ready again!`,
+			})
+		end
+	end
+	return true
 end
 
 function AbilityManager.getAllCooldowns(player: Player): { [string]: number }

@@ -11,6 +11,9 @@ local GameData = require(ReplicatedStorage.Shared.GameData)
 local GameSettings = require(ReplicatedStorage.Shared.GameSettings)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local MapData = require(ReplicatedStorage.Shared.GameData.MapData)
+-- Hero combat tuning (CombatConfig.Hero) — the Lord's fighter stats and the
+-- action names the client dispatches. See server/Combat/HeroCombat.luau.
+local CombatConfig = require(ReplicatedStorage.Shared.GameData.CombatConfig)
 
 local GameManagerDebug = DebugManager.createChannel("GameManager", false)
 
@@ -56,6 +59,7 @@ local SpawnManager = require(Managers.SpawnManager)
 local MapManager = require(Managers.MapManager)
 local FogOfWarManager = require(Managers.FogOfWarManager)
 local AbilityManager = require(Managers.AbilityManager)
+local GloryManager = require(Managers.GloryManager)
 local UpgradeManager = require(Managers.UpgradeManager)
 local ResearchManager = require(Managers.ResearchManager)
 local QuestManager = require(Managers.QuestManager)
@@ -63,6 +67,9 @@ local AchievementManager = require(Managers.AchievementManager)
 local GameplayEnhancementManager = require(Managers.GameplayEnhancementManager)
 local LobbyManager = require(Managers.LobbyManager)
 local MapEditorManager = require(Managers.MapEditorManager)
+local EstateManager = require(Managers.EstateManager)
+local MonetizationManager = require(Managers.MonetizationManager)
+local EliminationManager = require(Managers.EliminationManager)
 
 CombatManager.init()
 FormationManager.init()
@@ -82,11 +89,15 @@ EconomyDashboardManager.init()
 VictoryConditionManager.init()
 NotificationManager.init()
 AbilityManager.init()
+GloryManager.init()
 UpgradeManager.init()
 ResearchManager.init()
 QuestManager.init()
 AchievementManager.init()
 GameplayEnhancementManager.init()
+EstateManager.init()
+MonetizationManager.init()
+EliminationManager.init()
 
 -- Require from Systems subfolder
 local Systems = script.Parent.Systems
@@ -106,7 +117,9 @@ local DashboardSystem = require(Systems.DashboardSystem)
 local VictorySystem = require(Systems.VictorySystem)
 local WallSystemServer = require(Systems.WallSystemServer)
 local TerrainGenerator = require(Systems.TerrainGenerator)
+local SiegeTowerSystem = require(Systems.SiegeTowerSystem)
 local ArenaMode = require(script.Parent.Combat.ArenaMode)
+local WeaponVisuals = require(script.Parent.Combat.WeaponVisuals)
 
 -- Initialize systems
 PopulationSystem.init()
@@ -190,6 +203,43 @@ local function findUnit(unitId: string): Model?
 	return nil
 end
 
+-- Find the SpawnLocation instance inside a player's Keep model (the
+-- Stone_Wall_Large_Keep asset ships with one). Returns nil when the player has
+-- no Keep yet or the model is missing its SpawnLocation.
+local function getKeepSpawnLocation(playerData: PlayerManager.PlayerData): BasePart?
+	local keep = playerData.Keep
+	if not keep or not keep.Parent then
+		return nil
+	end
+
+	local spawnLocation = keep:FindFirstChildWhichIsA("SpawnLocation", true)
+	if spawnLocation then
+		return spawnLocation
+	end
+
+	-- Fallback: a plain part named "SpawnLocation" also counts
+	local byName = keep:FindFirstChild("SpawnLocation", true)
+	if byName and byName:IsA("BasePart") then
+		return byName
+	end
+
+	GameManagerDebug:warn(`No SpawnLocation found inside Keep model {keep.Name} — falling back to zone spawn`)
+	return nil
+end
+
+-- Where the Lord (player character) should spawn/respawn: the SpawnLocation
+-- inside their own Keep when it exists, otherwise their assigned zone spawn.
+local function getLordSpawnCFrame(playerData: PlayerManager.PlayerData): CFrame?
+	local spawnLocation = getKeepSpawnLocation(playerData)
+	if spawnLocation then
+		return spawnLocation.CFrame * CFrame.new(0, 4, 0)
+	end
+	if playerData.SpawnPoint then
+		return playerData.SpawnPoint * CFrame.new(0, 3, 0)
+	end
+	return nil
+end
+
 -- Helper function to setup King health monitoring
 local function setupKingHealthMonitoring(player: Player, character: Model)
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -219,18 +269,42 @@ local function setupKingHealthMonitoring(player: Player, character: Model)
 			maxHealth = humanoid.MaxHealth,
 		})
 
+		-- A Lord fighting in hero mode leaves the combat roster on death (the
+		-- client drops back to RTS on its own Died watcher). The hero ACTION state
+		-- has to go with it: leaving it behind would leak the per-player table and
+		-- let a respawned Lord inherit the corpse's combo index, block posture and
+		-- dodge cooldown.
+		CombatManager.unregisterHero(player)
+		CombatManager.unregisterPlayerFighter(character)
+		character:SetAttribute("PlayerFighter", nil)
+
+		-- Military victory modes (Conquest/Regicide): the Lord's death is FINAL.
+		-- EliminationManager consumes the death as a Direct Slay elimination and
+		-- we skip the respawn entirely. In Score mode it returns false and the
+		-- classic 10s respawn below still runs.
+		if EliminationManager.onLordSlain(player) then
+			GameManagerDebug:warn(`{player.Name}'s Lord has been slain — ELIMINATED (no respawn)`)
+			return
+		end
+
 		-- Respawn the King after 10 seconds
 		task.delay(10, function()
 			if player and player.Parent then
 				local playerData = PlayerManager.get(player)
-				if playerData and playerData.SpawnPoint then
+				if playerData and (playerData.Keep or playerData.SpawnPoint) then
 					GameManagerDebug:info(`Respawning King for {player.Name}`)
 
-					-- Respawn character
+					-- Respawn character at the Keep's SpawnLocation (falls back
+					-- to the assigned zone spawn if the Keep/SpawnLocation is missing)
 					player:LoadCharacter()
 					local newCharacter = player.Character or player.CharacterAdded:Wait()
 					local humanoidRootPart = newCharacter:WaitForChild("HumanoidRootPart") :: BasePart
-					humanoidRootPart.CFrame = playerData.SpawnPoint * CFrame.new(0, 3, 0)
+					local respawnCFrame = getLordSpawnCFrame(playerData)
+					if respawnCFrame then
+						humanoidRootPart.CFrame = respawnCFrame
+					else
+						GameManagerDebug:warn(`No respawn point available for {player.Name}`)
+					end
 
 					-- Re-tag as King
 					newCharacter:SetAttribute("OwnerId", player.UserId)
@@ -275,6 +349,18 @@ Players.PlayerAdded:Connect(function(player)
 			character:SetAttribute("OwnerId", player.UserId)
 			character:SetAttribute("UnitType", "King")
 			character:SetAttribute("IsKing", true)
+
+			-- Every respawn path places the Lord at their Keep's SpawnLocation
+			-- (zone spawn until the Keep is placed). Covers Reset/auto respawns
+			-- in addition to the explicit death-respawn handler.
+			task.defer(function()
+				local rootPart = character:WaitForChild("HumanoidRootPart", 10)
+				local spawnCFrame = getLordSpawnCFrame(playerData)
+				if rootPart and rootPart:IsA("BasePart") and spawnCFrame then
+					local rootBase = rootPart :: BasePart
+					rootBase.CFrame = spawnCFrame
+				end
+			end)
 
 			-- Setup health monitoring for respawned character
 			setupKingHealthMonitoring(player, character)
@@ -337,7 +423,7 @@ local function spawnInitialSetup(player: Player, factionData: any, spawnPointOve
 
 	-- 3. Spawn starting troops (if peace time is off, otherwise queue them)
 	local troopCount = calculateTroopCount(lobbySettings.startingTroops or "Standard")
-	local troopTypes = { "Archer", "Knight", "Light_Cavalry", "Macemen" }
+	local troopTypes = { "Archer", "Knight", "Light_Cavalry", "Pikeman" }
 
 	if troopCount > 0 then
 		-- Check if peace time is active
@@ -434,14 +520,26 @@ local function spawnInitialSetup(player: Player, factionData: any, spawnPointOve
 	)
 end
 
--- AI-specific spawn function (doesn't require Player object)
-local function spawnAIInitialSetup(ownerId: number, ownerName: string, factionData: any, spawnPoint: CFrame, lobbySettings: any)
+-- AI-specific spawn function (doesn't require Player object). Returns the AI's
+-- Keep instance (or nil if it failed to spawn) so the caller can register the
+-- kingdom with EliminationManager for Keep Capture/Keep Destroyed tracking.
+local function spawnAIInitialSetup(ownerId: number, ownerName: string, factionData: any, spawnPoint: CFrame, lobbySettings: any): Instance?
 	GameManagerDebug:info("AI " .. ownerName .. " spawning as " .. factionData.Name)
 
 	-- 1. Spawn Keep at the spawn point (AI gets Keep at game start, same as players)
 	local keep = BuildingManager.createBuilding(ownerId, "Keep", spawnPoint, nil, nil, true)
 	if keep then
 		GameManagerDebug:info("Spawned Keep for AI " .. ownerName)
+
+		-- Deterministic banner color per AI kingdom (AI has no lobby color pick)
+		local aiBannerPalette = {
+			Color3.fromRGB(170, 40, 40), -- crimson
+			Color3.fromRGB(60, 90, 170), -- royal blue
+			Color3.fromRGB(70, 130, 60), -- forest green
+			Color3.fromRGB(150, 110, 40), -- gold ochre
+		}
+		local aiColor = aiBannerPalette[(math.abs(ownerId) - 1) % #aiBannerPalette + 1]
+		BuildingManager.applyBannerColor(keep, aiColor)
 
 		-- Spawn starting peasants using SpawnPointSystem (same as player implementation).
 		-- Spawn radius must clear the pathfinding obstacle (model bbox + padding).
@@ -479,6 +577,20 @@ local function spawnAIInitialSetup(ownerId: number, ownerName: string, factionDa
 			end
 			GameManagerDebug:info(`Spawned {peasantCount} peasants using fallback for AI {ownerName}`)
 		end
+		-- Spawn a King (Lord) unit for AI Direct Slay: a plain NPC combat unit
+		-- (UnitManager.createUnit — the same data-driven path every other AI
+		-- unit above uses; no Player character, so none of the camera/
+		-- first-person hooks that key off IsKing/CanFirstPerson ever run for
+		-- it). Its death is caught by EliminationManager's CombatManager.
+		-- onUnitKilled hook (unitType == "King") for the Direct Slay path,
+		-- mirroring the human Lord's permadeath in Conquest/Regicide modes.
+		local kingSpawnPos = spawnPoint.Position + Vector3.new(0, 10, -aiSafeSpawnRadius - 10)
+		local aiKing = UnitManager.createUnit("King", ownerId, kingSpawnPos, factionData.Name)
+		if aiKing then
+			GameManagerDebug:info(`Spawned King (Lord) for AI {ownerName}`)
+		else
+			GameManagerDebug:warn(`Failed to spawn King for AI {ownerName} — Direct Slay unavailable, Keep Capture still applies`)
+		end
 	else
 		GameManagerDebug:warn("Failed to spawn Keep for AI " .. ownerName)
 	end
@@ -510,13 +622,164 @@ local function spawnAIInitialSetup(ownerId: number, ownerName: string, factionDa
 	GameManagerDebug:info(
 		"Spawned Keep and resource nodes for AI " .. ownerName .. " in " .. factionData.Name
 	)
+
+	return keep
 end
+
+-- ── Hero combat (the Lord, third person, normal game) ───────────────────────
+-- The Battle Arena registers its hero fighter on spawn (ArenaMode); in a normal
+-- game the Lord only joins the combat roster while the player is actually in
+-- hero mode (V toggle), so RTS mode leaves him a plain character.
+--
+-- Combat itself lives in server/Combat/HeroCombat.luau (state machine, combo
+-- chain, block/parry, dodge i-frames) with all tuning in CombatConfig.Hero.
+-- GameManager's only jobs here are: register/unregister on the mode toggle,
+-- swap the weapon visuals, and forward validated remote actions.
+--
+-- LORD_FIGHTER derives from CombatConfig.Hero.fighter rather than restating it,
+-- so the Lord and the arena hero cannot drift apart.
+local LORD_FIGHTER = {
+	baseType = CombatConfig.Hero.fighter.baseType, -- seeds the damage-type profile only
+	maxHealth = CombatConfig.Hero.fighter.maxHealth,
+	attackDamage = CombatConfig.Hero.fighter.attackDamage,
+	armor = CombatConfig.Hero.fighter.armor,
+}
+
+-- Show or hide the Lord's sword + shield. WeaponVisuals builds them from the
+-- "King" combat profile and welds them to the avatar's hands; there's no detach
+-- API, so removal is by the names the builders use ("Weapon", "Shield").
+local function setLordWeaponVisible(character: Model?, visible: boolean)
+	if not character then
+		return
+	end
+	for _, child in character:GetChildren() do
+		if child:IsA("Model") and (child.Name == "Weapon" or child.Name == "Shield") then
+			child:Destroy()
+		end
+	end
+	character:SetAttribute("WeaponKind", nil)
+	if visible then
+		WeaponVisuals.attach(character, "King", "Hero")
+	end
+end
+
+-- ── Hero action dispatch ────────────────────────────────────────────────────
+--
+-- Every hero action arrives as GameEvent("<Action>", payload) from
+-- client/Combat/HeroCombatController. This layer does NOTHING but shape
+-- validation and forwarding — HeroCombat owns legality, cooldowns, combo state,
+-- damage and i-frames, because the client is assumed hostile and a client-side
+-- guard is a convenience, never a control.
+--
+--   "HeroLight"   { aim = Vector3 }
+--   "HeroHeavy"   { aim = Vector3 }
+--   "HeroRanged"  { aim = Vector3 }
+--   "HeroBlock"   { blocking = boolean, aim = Vector3 }
+--   "HeroDodge"   { direction = Vector3 }   -- omit/zero for "roll backwards"
+--
+-- Legacy aliases "PlayerMeleeAttack" / "PlayerRangedAttack" map onto HeroLight /
+-- HeroRanged so older clients and saved Studio test scripts keep working.
+--
+-- Arena players are handled by ArenaMode's own dispatch (gated on isArenaPlayer),
+-- which forwards into the SAME HeroCombat — so the two modes share one
+-- implementation. Guard here to avoid double-firing an action.
+local function heroPayloadAim(data: any): Vector3?
+	if typeof(data) ~= "table" then
+		return nil
+	end
+	local aim = (data :: any).aim
+	if typeof(aim) ~= "Vector3" then
+		return nil
+	end
+	return aim :: Vector3
+end
+
+local function handleHeroAction(player: Player, action: string, data: any)
+	if ArenaMode.isArenaPlayer(player) then
+		return -- ArenaMode already routed this
+	end
+
+	if action == "HeroBlock" then
+		-- `blocking` must be a real boolean; a truthy string from a hacked client
+		-- would otherwise raise a shield that could never be lowered.
+		local blocking = typeof(data) == "table" and (data :: any).blocking or nil
+		if typeof(blocking) ~= "boolean" then
+			return
+		end
+		CombatManager.heroBlock(player, blocking, heroPayloadAim(data))
+		return
+	end
+
+	if action == "HeroDodge" then
+		-- Direction is optional (nil = roll backwards, resolved client-side against
+		-- the character's facing). HeroCombat rejects malformed non-nil vectors.
+		local direction = typeof(data) == "table" and (data :: any).direction or nil
+		CombatManager.heroDodge(player, direction)
+		return
+	end
+
+	local aim = heroPayloadAim(data)
+	if not aim then
+		return
+	end
+	if action == "HeroLight" then
+		CombatManager.heroLight(player, aim)
+	elseif action == "HeroHeavy" then
+		CombatManager.heroHeavy(player, aim)
+	elseif action == "HeroRanged" then
+		CombatManager.heroRanged(player, aim)
+	end
+end
+
+-- Actions that issue orders (unit/worker movement, building/training/research,
+-- combat, policy). An eliminated kingdom (Conquest/Regicide military modes)
+-- keeps its RTS camera and can spectate, but stale client UI must not be able
+-- to keep giving orders after the loss — every handler below is rejected.
+-- Read-only queries (GetStats, GetGlory, GetQuests, ...), camera toggling and
+-- LeaveGame stay available so a defeated player can still watch the match end.
+local ELIMINATION_GATED_ACTIONS: { [string]: boolean } = {
+	StartPlacement = true,
+	PlaceBuilding = true,
+	MoveUnit = true,
+	MoveUnitsInFormation = true,
+	MoveWorkers = true,
+	ReturnToKeep = true,
+	UnassignWorkers = true,
+	StartTraining = true,
+	DeleteBuilding = true,
+	UndoDeletion = true,
+	AttackTarget = true,
+	SetStance = true,
+	UseAbility = true,
+	UpgradeBuilding = true,
+	AssignWorker = true,
+	UnassignWorker = true,
+	StartResearch = true,
+	-- Hero combat. A fallen kingdom's Lord must not be able to keep swinging;
+	-- HeroBlock/HeroDodge are gated too, not just the attacks, so an eliminated
+	-- player cannot sit invulnerable behind a raised shield mid-spectate.
+	HeroLight = true,
+	HeroHeavy = true,
+	HeroRanged = true,
+	HeroBlock = true,
+	HeroDodge = true,
+	PlayerMeleeAttack = true, -- legacy alias of HeroLight
+	PlayerRangedAttack = true, -- legacy alias of HeroRanged
+	SetPolicy = true,
+}
 
 -- Handle game events from client
 GameEvent.OnServerEvent:Connect(function(player, action, data)
 	local playerData = PlayerManager.get(player)
 	if not playerData then
 		GameManagerDebug:warn(`No player data for {player.Name}`)
+		return
+	end
+
+	if ELIMINATION_GATED_ACTIONS[action] and EliminationManager.isEliminated(player) then
+		GameEvent:FireClient(player, "Error", {
+			message = "Your kingdom has fallen — you can only spectate.",
+		})
 		return
 	end
 
@@ -759,10 +1022,28 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		playerData.SpawnPoint = zoneSpawn
 		playerData.GameState = "InGame"
 
+		-- Store the lobby-selected kingdom color; applied to the Keep's
+		-- Banner/Flag meshes when the player places their Keep.
+		local playerColor = settings.playerColor
+		if typeof(playerColor) == "table" and #playerColor == 3
+			and typeof(playerColor[1]) == "number"
+			and typeof(playerColor[2]) == "number"
+			and typeof(playerColor[3]) == "number" then
+			playerData.BannerColor = Color3.fromRGB(
+				math.clamp(playerColor[1], 0, 255),
+				math.clamp(playerColor[2], 0, 255),
+				math.clamp(playerColor[3], 0, 255)
+			)
+			GameManagerDebug:info(`Stored banner color for {player.Name}`)
+		end
+
 		-- Tell VictoryConditionManager when the game started and how long peace time is
 		VictoryConditionManager.setGameStarted(player, peaceTimeMinutes * 60)
 		-- Apply victory mode from lobby settings
 		VictoryConditionManager.setVictoryMode(settings.victoryCondition or "Score")
+		-- Military elimination (Direct Slay + Keep Capture) for Conquest/Regicide
+		EliminationManager.setup(settings.victoryCondition or "Score", peaceTimeMinutes * 60)
+		EliminationManager.registerPlayer(player)
 
 		GameManagerDebug:info(`Assigned {player.Name} to spawn zone {spawnZone} ({factionName})`)
 
@@ -784,10 +1065,12 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		player:LoadCharacter()
 		GameManagerDebug:info(`Loading character for {player.Name}`)
 
-		-- Wait for character and teleport to spawn zone
+		-- Wait for character and teleport to the Lord spawn point: the Keep's
+		-- SpawnLocation when a Keep already exists (e.g. restart mid-match),
+		-- otherwise the assigned zone spawn.
 		local character = player.Character or player.CharacterAdded:Wait()
 		local humanoidRootPart = character:WaitForChild("HumanoidRootPart") :: BasePart
-		humanoidRootPart.CFrame = zoneSpawn * CFrame.new(0, 3, 0)
+		humanoidRootPart.CFrame = getLordSpawnCFrame(playerData) or (zoneSpawn * CFrame.new(0, 3, 0))
 
 		-- Tag the player's character as King (can't change name due to security restrictions)
 		character:SetAttribute("OwnerId", player.UserId)
@@ -832,6 +1115,8 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 			FogOfWarManager.startUpdates()
 			WorkerManager.startLoop()
 			VikingRaidSystem.startLoop()
+			SiegeTowerSystem.startLoop()
+			EliminationManager.startLoop()
 
 			-- Environment: cheap, start early so first ticks happen naturally
 			SeasonSystem.startLoop()
@@ -848,6 +1133,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				HappinessManager.startLoop()
 				ConsumptionSystem.startLoop()
 				CaravanSystem.startLoop()
+				EstateManager.startLoop()
 			end)
 
 			-- Deferred 60s: maintenance and taxes need buildings to exist;
@@ -881,10 +1167,14 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				end
 
 				-- Spawn initial setup for AI (units, troops, resources)
-				spawnAIInitialSetup(aiData.UserId, aiData.Name, aiFactionData, aiSpawnPoint, settings)
+				local aiKeep = spawnAIInitialSetup(aiData.UserId, aiData.Name, aiFactionData, aiSpawnPoint, settings)
 
 				-- Register AI with AIManager for autonomous behavior
 				AIManager.registerAI(aiData.UserId, aiData.Name, aiData.Faction, aiSpawnPoint)
+
+				-- Register the AI kingdom for elimination tracking (Keep Capture +
+				-- Direct Slay via its King unit's death — see EliminationManager).
+				EliminationManager.registerAIKingdom(aiData.UserId, aiData.Name, aiKeep)
 
 				GameManagerDebug:info(`Spawned AI player {aiData.Name} as {aiData.Faction} in spawn zone {aiSpawnZone}`)
 			end
@@ -962,6 +1252,16 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				return
 			end
 
+			-- Prestige structures (Hero Hubs) unlock at lifetime Glory thresholds
+			if not GloryManager.canUnlockBuilding(player, data.buildingName) then
+				local required = GloryManager.getBuildingGloryRequirement(data.buildingName)
+				local earned = GloryManager.getLifetimeGlory(player)
+				GameEvent:FireClient(player, "Error", {
+					message = `{data.buildingName} requires {required} Glory (earned: {earned}). Win renown in melee combat!`,
+				})
+				return
+			end
+
 			-- Check if this is the first building (Keep should be free)
 			local hasBuildings = false
 			for _, building in playerData.Buildings do
@@ -1003,6 +1303,30 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 					-- Special handling for Keep placement
 					if data.buildingName == "Keep" then
 						GameManagerDebug:info(`Keep placed by {player.Name}, spawning initial peasants`)
+
+						-- Register the Keep's SpawnLocation as this Lord's spawn point.
+						-- All future (re)spawns route through getLordSpawnCFrame, which
+						-- prefers this SpawnLocation over the zone spawn.
+						local keepSpawnLocation = getKeepSpawnLocation(playerData)
+						if keepSpawnLocation then
+							-- Disable engine auto-spawning here: spawns are per-owner and
+							-- handled explicitly, so other players never hijack this pad.
+							if keepSpawnLocation:IsA("SpawnLocation") then
+								keepSpawnLocation.Enabled = false
+							end
+							playerData.SpawnPoint = keepSpawnLocation.CFrame
+							GameManagerDebug:info(`Registered Keep SpawnLocation for {player.Name}`)
+						else
+							GameManagerDebug:warn(
+								`Keep for {player.Name} has no SpawnLocation — Lord will respawn at zone spawn`
+							)
+						end
+
+						-- Apply the lobby-selected kingdom color to the Keep's
+						-- Banner/Flag meshes (warns internally if meshes are missing).
+						if playerData.BannerColor then
+							BuildingManager.applyBannerColor(building, playerData.BannerColor)
+						end
 
 						-- Get player's faction
 						local playerFaction = playerData.Faction or "Kingdom"
@@ -1107,6 +1431,9 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				-- A manual move order releases a working peasant/worker so it obeys
 				-- the player instead of being re-tasked to its building each frame.
 				WorkerManager.releaseFromWork(unitToMove)
+				-- A direct move order takes priority over idle roaming: drop it from
+				-- the idle pool so IdlePeasantManager stops steering it back home.
+				IdlePeasantManager.removeIdlePeasant(unitToMove)
 				-- Clear combat target and delegate movement to MovementSystem
 				unitToMove:SetAttribute("CombatTarget", nil)
 				unitToMove:SetAttribute("TargetPosition", data.targetPosition)
@@ -1130,6 +1457,7 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				if unit and unit:GetAttribute("OwnerId") == player.UserId then
 					-- Manual formation move also releases any working civilians.
 					WorkerManager.releaseFromWork(unit)
+					IdlePeasantManager.removeIdlePeasant(unit)
 					table.insert(units, unit)
 				end
 			end
@@ -1206,6 +1534,9 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				local unit = findUnit(unitId)
 				if unit and unit:GetAttribute("OwnerId") == player.UserId then
 					WorkerManager.releaseFromWork(unit)
+					-- A direct move order takes priority over idle roaming: drop the
+					-- peasant from the idle pool so IdlePeasantManager stops steering it.
+					IdlePeasantManager.removeIdlePeasant(unit)
 					table.insert(units, unit)
 				end
 			end
@@ -1226,6 +1557,14 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 						local unit = findUnit(unitId)
 						if unit and unit:GetAttribute("OwnerId") == player.UserId then
 							WorkerManager.releaseFromWork(unit)
+							IdlePeasantManager.removeIdlePeasant(unit)
+							-- Returning home also deassigns: revert the job rig/label
+							-- back to a plain Peasant. Use the returned (possibly new) model.
+							unit = WorkerManager.revertToBaseUnit(unit)
+							-- Called home: run, don't stroll. MovementSystem clears
+							-- this on arrival. See the Gait contract in
+							-- GameData/UnitAnimationsData.
+							unit:SetAttribute("Gait", "hurry")
 							table.insert(units, unit)
 						end
 					end
@@ -1242,6 +1581,9 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				local unit = findUnit(unitId)
 				if unit and unit:GetAttribute("OwnerId") == player.UserId then
 					WorkerManager.releaseFromWork(unit)
+					-- Revert the job rig + overhead label back to a plain Peasant, then
+					-- idle the (possibly new) model.
+					unit = WorkerManager.revertToBaseUnit(unit)
 					IdlePeasantManager.addIdlePeasant(unit, player.UserId)
 				end
 			end
@@ -1431,6 +1773,37 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 			GameManagerDebug:info(`{player.Name} using ability: {data.abilityId}`)
 			AbilityManager.useAbility(player, data.abilityId)
 		end
+	elseif action == "GloryReduceCooldown" then
+		-- Spend Glory to reset a hero ability's remaining cooldown
+		if typeof(data) == "table" and data.abilityId then
+			GameManagerDebug:info(`{player.Name} buying cooldown reset: {data.abilityId}`)
+			AbilityManager.reduceCooldownWithGlory(player, data.abilityId)
+		end
+	elseif action == "GetGlory" then
+		-- Send current Glory state to client (HUD initial fetch)
+		GameEvent:FireClient(player, "GloryUpdate", {
+			glory = GloryManager.getGlory(player),
+			lifetime = GloryManager.getLifetimeGlory(player),
+		})
+	elseif action == "GetAbilityTree" then
+		-- Hero ability tree UI: current node ranks + spendable Glory
+		GameEvent:FireClient(player, "AbilityTreeData", {
+			ranks = MonetizationManager.getAbilityRanks(player),
+			glory = GloryManager.getGlory(player),
+		})
+	elseif action == "PurchaseAbilityNode" then
+		-- Spend Glory to unlock/upgrade a hero ability tree node (MonetizationConfig)
+		if typeof(data) == "table" and typeof(data.nodeId) == "string" then
+			local ok, reason = MonetizationManager.purchaseAbilityNode(player, data.nodeId)
+			GameManagerDebug:info(`{player.Name} ability node purchase {data.nodeId}: {ok} ({reason})`)
+			GameEvent:FireClient(player, "AbilityNodeResult", {
+				nodeId = data.nodeId,
+				success = ok,
+				reason = reason,
+				ranks = MonetizationManager.getAbilityRanks(player),
+				glory = GloryManager.getGlory(player),
+			})
+		end
 	elseif action == "UpgradeBuilding" then
 		-- Handle building upgrade
 		if typeof(data) == "table" and data.buildingId then
@@ -1480,14 +1853,122 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 			GameManagerDebug:info(`{player.Name} starting research: {data.techId}`)
 			ResearchManager.startResearch(player, data.techId)
 		end
+	elseif action == "CameraModeChanged" then
+		-- Client toggled between the RTS overhead view and THIRD-PERSON hero mode
+		-- (V). Echo the value back so the HUD (which listens on OnClientEvent) can
+		-- swap layouts, then manage the Lord's combat registration for normal games.
+		--
+		-- "Hero" is the current name; "King" is the legacy spelling that older HUD
+		-- builds and saved Studio test scripts still send. Both are accepted and
+		-- NORMALIZED to "Hero" before anything downstream sees them, and the echo
+		-- sends the normalized value — so a client that spoke legacy on the way in
+		-- gets told the modern name and converges. Mirrors ViewMode.normalize on
+		-- the client (which the server must not require: it is client-only state).
+		local mode: string? = if data == "RTS"
+			then "RTS"
+			elseif data == "Hero" or data == "King" then "Hero"
+			else nil
+		if not mode then
+			return
+		end
+		GameEvent:FireClient(player, "CameraModeChanged", mode)
+
+		-- The Battle Arena registers its hero on spawn; don't double-register.
+		if ArenaMode.isArenaPlayer(player) then
+			return
+		end
+
+		local character = player.Character
+		if mode == "Hero" then
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			if
+				character
+				and character:GetAttribute("IsKing")
+				and humanoid
+				and humanoid.Health > 0
+				and not character:GetAttribute("PlayerFighter")
+			then
+				-- Preserve the current health fraction across the stat swap so the
+				-- V toggle can't be used as a free full heal (the combat loop
+				-- mirrors playerControlled health from the Humanoid every tick).
+				local healthFraction = humanoid.Health / math.max(humanoid.MaxHealth, 1)
+				CombatManager.registerPlayerFighter(character, playerData.Faction or "Kingdom", player.UserId, {
+					baseType = LORD_FIGHTER.baseType,
+					maxHealth = LORD_FIGHTER.maxHealth,
+					attackDamage = LORD_FIGHTER.attackDamage,
+					armor = LORD_FIGHTER.armor,
+				})
+				humanoid.Health = math.max(1, LORD_FIGHTER.maxHealth * healthFraction)
+				-- Hero action state (combo chain, block/parry, dodge) lives alongside
+				-- the fighter registration and must be created and torn down with it,
+				-- or a re-entry would resume mid-combo with a stale cooldown.
+				CombatManager.registerHero(player, character, { maxHealth = LORD_FIGHTER.maxHealth })
+				-- Draw the Lord's sword and shield. The "King" CombatConfig profile
+				-- already specifies weapon = "Sword", shield = true, so this is the
+				-- same cosmetic path every unit uses — and WeaponVisuals finds the
+				-- R15 avatar's RightHand/LeftHand grips without any special casing.
+				setLordWeaponVisible(character, true)
+				GameManagerDebug:info(`{player.Name}'s Lord entered hero combat`)
+			end
+		else
+			-- Always tear the hero state down, even if the character is already gone
+			-- (dying while in hero mode fires RTS on the way out): dropping the
+			-- per-player table is what prevents the leak.
+			CombatManager.unregisterHero(player)
+			if character then
+				CombatManager.unregisterPlayerFighter(character)
+				character:SetAttribute("PlayerFighter", nil)
+				-- Sheathe: the RTS camera shouldn't leave a sword stuck to the avatar.
+				setLordWeaponVisible(character, false)
+			end
+			GameManagerDebug:info(`{player.Name}'s Lord returned to RTS mode`)
+		end
+	elseif
+		action == "HeroLight"
+		or action == "HeroHeavy"
+		or action == "HeroRanged"
+		or action == "HeroBlock"
+		or action == "HeroDodge"
+	then
+		handleHeroAction(player, action, data)
+	elseif action == "PlayerMeleeAttack" or action == "PlayerRangedAttack" then
+		-- Legacy aliases, kept working so anything still sending the old action
+		-- names (older client builds, saved Studio test scripts) routes into the
+		-- same hero state machine instead of silently doing nothing.
+		handleHeroAction(player, if action == "PlayerMeleeAttack" then "HeroLight" else "HeroRanged", data)
 	elseif action == "GetAbilities" then
-		-- Send abilities to client
+		-- Send abilities to client (with current Glory so the panel can render costs)
 		local abilities = AbilityManager.getAbilities()
 		local cooldowns = AbilityManager.getAllCooldowns(player)
 		GameEvent:FireClient(player, "AbilitiesData", {
 			abilities = abilities,
 			cooldowns = cooldowns,
+			glory = GloryManager.getGlory(player),
+			lifetimeGlory = GloryManager.getLifetimeGlory(player),
 		})
+	elseif action == "SetPolicy" then
+		-- Kingdom Policies UI: data = { category = "Taxation"|"Food Rations", policy = <name> }
+		-- Policy names/values live in EconomyConfig (TaxPolicies / RationsPolicies).
+		if typeof(data) == "table" and typeof(data.category) == "string" and typeof(data.policy) == "string" then
+			local applied = false
+			if data.category == "Taxation" then
+				applied = TaxManager.setTaxPolicy(player, data.policy)
+			elseif data.category == "Food Rations" then
+				applied = ConsumptionManager.setRationsPolicy(player, data.policy)
+			end
+
+			if applied then
+				GameManagerDebug:info(`{player.Name} set policy {data.category} -> {data.policy}`)
+				GameEvent:FireClient(player, "PolicyUpdated", {
+					category = data.category,
+					policy = data.policy,
+				})
+				-- Policies move happiness/taxes: refresh the dashboard right away
+				EconomyDashboardManager.sendUpdate(player)
+			else
+				GameManagerDebug:warn(`{player.Name} sent invalid policy {data.category}/{data.policy}`)
+			end
+		end
 	elseif action == "GetQuests" then
 		-- Send quests to client
 		local activeQuests = QuestManager.getActiveQuests(player)
@@ -1537,16 +2018,32 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 		playerData.GameState = "Menu"
 		playerData.Faction = nil
 		playerData.SpawnPoint = nil
+		playerData.Keep = nil
+		playerData.Happiness = 50
 
 		-- Reset resources to 0
 		for resource, _ in pairs(playerData.Resources) do
 			playerData.Resources[resource] = 0
 		end
 
+		-- ── Match-lifecycle teardown for THIS player ────────────────────────
+		-- Single teardown point: every manager that accumulates per-match
+		-- state for a real player gets a clean slate here so a new match can
+		-- start without a server restart. AI kingdoms never fire LeaveGame (no
+		-- Player instance) — they're cleared in the bulk branch below instead.
+		EliminationManager.cleanupPlayer(player.UserId)
+		EstateManager.releaseEstatesForOwner(player.UserId)
+		VictoryConditionManager.create(player) -- fresh victory/loss state
+		AchievementManager.resetMatchStats(player) -- unlocked achievements persist
+		GloryManager.resetPlayer(player)
+		SpawnManager.removePlayer(player.UserId)
+
 		GameManagerDebug:info(`{player.Name} successfully left game - all data cleaned up`)
 
-		-- If no one is left in-game, reset the shared map state so the next
-		-- match spawns fresh resource nodes instead of inheriting depleted ones.
+		-- If no one is left in-game, reset the shared map state AND every
+		-- manager's global/AI-owned match state so the next match starts
+		-- clean. Lifecycle: lobby → StartGame → match → elimination/victory
+		-- → this teardown → lobby.
 		local anyoneInGame = false
 		for _, otherPlayer in ipairs(Players:GetPlayers()) do
 			local otherData = PlayerManager.get(otherPlayer)
@@ -1562,7 +2059,16 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 			matchMapConfig = nil
 			mapWorldInitialized = false
 			MapManager.unlockMatchMap()
-			GameManagerDebug:info("Last player left game — cleared resource nodes for next match")
+
+			-- AI kingdoms have no leave event of their own — tear them all
+			-- down here (destroys their remaining buildings/units too).
+			AIManager.resetMatch()
+			EliminationManager.resetMatch()
+			EstateManager.resetMatch()
+			GloryManager.resetMatch()
+			SpawnManager.resetMatch()
+
+			GameManagerDebug:info("Last player left game — cleared match state for next match")
 		end
 
 		-- Notify client that cleanup is complete
@@ -1688,7 +2194,7 @@ MapEditorEvent.OnServerEvent:Connect(function(player, action, ...)
 		MapEditorManager.updateKeepSpawn(player, data)
 	elseif action == "ActivateCustomMap" then
 		-- Set this player's saved map as the lobby's custom map
-		local session = MapEditorManager.getActiveSession(player)
+		local session = MapEditorManager.getSession(player)
 		if session then
 			LobbyManager.voteSetting(player, "customMapId", session.MapId)
 			LobbyManager.voteSetting(player, "customMapAuthorId", player.UserId)
@@ -1704,4 +2210,3 @@ end)
 
 -- Clean up map editor session when player leaves
 GameManagerDebug:info("Server ready!")
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             

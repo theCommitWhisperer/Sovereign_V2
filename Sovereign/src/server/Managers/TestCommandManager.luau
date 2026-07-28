@@ -20,6 +20,7 @@ local UnitManager = require(script.Parent.UnitManager)
 local BuildingManager = require(script.Parent.BuildingManager)
 local FogOfWarManager = require(script.Parent.FogOfWarManager)
 local CombatSandbox = require(script.Parent.Parent.Combat.CombatSandbox)
+local CombatManager = require(script.Parent.CombatManager)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
 local TestDebug = DebugManager.createChannel("TestCommands", false)
@@ -280,6 +281,38 @@ local function cmdKillAll(player: Player, args: { string })
 	TestDebug:info(`{player.Name} cleared all combat units`)
 end
 
+-- Command: Toggle friendly fire for the player's first-person attacks.
+--
+-- Purpose is testing animation and reaction work — death poses, hit flinches,
+-- morale-on-death — by hitting your OWN units instead of having to stage a
+-- battle against an enemy faction. Only the Lord's first-person swing/shot is
+-- affected; the autonomous combat loop still refuses to attack allies, so your
+-- army will not start killing itself while this is on.
+local function cmdFriendlyFire(player: Player, args: { string })
+	local arg = (args[1] or ""):lower()
+	local enabled
+	if arg == "on" then
+		enabled = true
+	elseif arg == "off" then
+		enabled = false
+	else
+		enabled = not CombatManager.getFriendlyFire() -- bare "/ff" toggles
+	end
+
+	CombatManager.setFriendlyFire(enabled)
+	if enabled then
+		NotificationManager.success(
+			player,
+			"Friendly Fire ON",
+			"Press V for first person, then left-click to swing at your own units.\n"
+				.. "A Lord swing does 70 damage — a Peasant has 25 health, so one hit kills."
+		)
+	else
+		NotificationManager.info(player, "Friendly Fire OFF", "Your attacks only hit enemies again.")
+	end
+	TestDebug:info(`{player.Name} set friendly fire = {enabled}`)
+end
+
 -- Command: Show all commands
 local function cmdHelp(player: Player, args: { string })
 	local helpText = [[
@@ -298,6 +331,8 @@ TEST COMMANDS:
 /arena - Build combat test arena
 /battle [spec] vs [spec] - Instant battle (e.g. /battle 10xSpearman vs 12xViking)
 /killall - Remove all combat units
+/ff [on|off] - Friendly fire: lets your first-person attacks hit your OWN units
+               (V = first person, left-click = swing). For testing death anims.
 /help - Show this help
 ]]
 
@@ -320,6 +355,7 @@ local COMMANDS = {
 	arena = cmdArena,
 	battle = cmdBattle,
 	killall = cmdKillAll,
+	ff = cmdFriendlyFire,
 	help = cmdHelp,
 }
 

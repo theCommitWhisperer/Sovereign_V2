@@ -98,6 +98,7 @@ local UIConfig = {
 			Industry = { X = 442, Y = 124 }, -- 82 + 44
 			Food = { X = 442, Y = 168 }, -- 126 + 44
 			Housing = { X = 442, Y = 212 }, -- 170 + 44
+			Prestige = { X = 442, Y = 256 }, -- 212 + 44
 		},
 
 		-- Content Area (shows buildings or selected units or training)

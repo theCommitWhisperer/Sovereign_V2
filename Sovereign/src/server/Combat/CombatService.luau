@@ -38,6 +38,7 @@ local PlayerManager = require(Managers.PlayerManager)
 -- Lazy-loaded to avoid circular dependencies (legacy pattern preserved)
 local AchievementManager = nil :: any
 local QuestManager = nil :: any
+local GloryManager = nil :: any
 
 local CombatDebug = DebugManager.createChannel("Combat", false)
 local DamageDebug = DebugManager.createChannel("Damage", false)
@@ -49,6 +50,7 @@ type Stance = CombatTypes.Stance
 local Engine = CombatConfig.Engine
 local Positional = CombatConfig.Positional
 local MoraleCfg = CombatConfig.Morale
+local HeroCfg = CombatConfig.Hero
 
 local CONFIG_DEFAULT_SPEED = 16 -- fallback march speed (studs/sec) if none known
 
@@ -78,11 +80,7 @@ local function metersToStuds(meters: number): number
 end
 
 local function getAttackRangeStuds(unitData: GameData.UnitData): number
-	if not unitData.combat then
-		return Engine.MELEE_RANGE
-	end
-	local combat = unitData.combat :: any
-	local rangeInStuds = metersToStuds(combat.attack_range or 2)
+	local rangeInStuds = metersToStuds(unitData.attack_range or 2)
 	if unitData.subtype == "Ranged" or unitData.subtype == "Ranged Infantry" then
 		rangeInStuds *= Engine.RANGED_RANGE_MULT
 	end
@@ -141,6 +139,16 @@ function CombatService.registerCombatUnit(unitModel: Model, combatUnit: any)
 	combatUnit.slotAngle = math.random() * 2 * math.pi
 	combatUnit.guardPost = nil
 	combatUnit.retreatUntil = 0
+	-- Hero fields: explicitly cleared rather than left absent. Callers hand us
+	-- recycled/legacy-shaped tables (initializeCombatUnit, the AI spawn path,
+	-- registerPlayerFighter), and a stale heroState pointer on a re-registered
+	-- character would route an AI unit's incoming damage through the hero
+	-- mitigation hook.
+	combatUnit.killCreditAttackType = nil
+	if combatUnit.playerControlled ~= true then
+		combatUnit.playerControlled = nil
+		combatUnit.heroState = nil
+	end
 	-- Migrate any legacy stance value to the new vocabulary
 	if not CombatConfig.StanceBehavior[combatUnit.stance] then
 		combatUnit.stance = CombatConfig.DefaultStance
@@ -177,11 +185,10 @@ function CombatService.initializeCombatUnit(unitModel: Model, owner: Player)
 	end
 
 	local unitData = GameData.Units[unitType]
-	if not unitData or not unitData.combat then
-		CombatDebug:warn("No combat data for unit type", { unitType = unitType })
+	if not unitData then
+		CombatDebug:warn("No unit data for unit type", { unitType = unitType })
 		return
 	end
-	local combat = unitData.combat :: any
 
 	local playerData = PlayerManager.get(owner)
 	local faction = (playerData and playerData.Faction) or "Kingdom"
@@ -192,12 +199,12 @@ function CombatService.initializeCombatUnit(unitModel: Model, owner: Player)
 		unitData = unitData,
 		owner = owner.UserId,
 		unitType = unitType,
-		health = (unitModel:GetAttribute("CurrentHealth") :: number?) or unitData.health.max_health,
-		maxHealth = unitData.health.max_health,
-		attackDamage = combat.attack_damage,
-		attackSpeed = combat.attack_speed,
+		health = (unitModel:GetAttribute("CurrentHealth") :: number?) or unitData.max_health,
+		maxHealth = unitData.max_health,
+		attackDamage = unitData.attack_damage,
+		attackSpeed = unitData.attack_speed,
 		attackRange = getAttackRangeStuds(unitData),
-		armor = combat.armor,
+		armor = unitData.armor,
 		morale = startingMorale,
 		stance = CombatConfig.DefaultStance,
 		targetModel = nil,
@@ -293,6 +300,12 @@ end
 local function unregisterUnit(unitModel: Model)
 	ActiveCombatUnits[unitModel] = nil
 	unitGrid:remove(unitModel)
+	-- A unit that leaves combat mid-charge must not keep the charge gait, or a
+	-- survivor would run everywhere for the rest of its life. Cleared here rather
+	-- than in syncGait because syncGait no longer runs for an unregistered unit.
+	if unitModel:GetAttribute(GameData.UnitAnimations.GAIT_ATTRIBUTE) == "charge" then
+		unitModel:SetAttribute(GameData.UnitAnimations.GAIT_ATTRIBUTE, nil)
+	end
 end
 
 local function unregisterBuilding(buildingModel: Model)
@@ -439,6 +452,63 @@ local function forEachEnemyInRadius(unit: CombatUnit, radius: number, visitor: (
 	end)
 end
 
+-- ── FRIENDLY FIRE (AI-vs-AI sandbox aid) ───────────────────────────────────
+--
+-- OFF by default and deliberately not reachable from normal gameplay: it is
+-- toggled only by the admin "/ff" chat command (TestCommandManager). It exists
+-- so allied formations can be made to fight each other in the sandbox without
+-- staging a real two-faction battle.
+--
+-- It NO LONGER gates the player's own attacks — see below.
+local friendlyFire = false
+
+function CombatService.setFriendlyFire(enabled: boolean)
+	friendlyFire = enabled == true
+end
+
+function CombatService.getFriendlyFire(): boolean
+	return friendlyFire
+end
+
+-- Targets for a player-aimed attack: EVERY living unit in the radius except the
+-- attacker himself — enemies, allied troops, and his own peasants alike.
+--
+-- WHY THIS IS UNCONDITIONAL (and why it stopped reading `friendlyFire`):
+-- the project owner's design decision is that the Lord's sword hits whatever it
+-- swings through. The alternative — filtering the arc by faction — means a
+-- peasant standing between the Lord and a Viking eats nothing while the Viking
+-- behind him takes full damage, which reads as a broken hitbox every time. The
+-- griefing tradeoff (a Lord can walk into his own army and cut it down, and the
+-- server cannot tell intent from accident) is documented in full at
+-- CombatConfig.Hero.playerAttacksHitAllies and is accepted.
+--
+-- This is data, not a hardcoded decision: flip
+-- CombatConfig.Hero.playerAttacksHitAllies to false and player attacks fall
+-- back to enemies-only (still honouring /ff, so the old test workflow survives).
+--
+-- Scope is unchanged in the important direction: this widens the PLAYER'S aimed
+-- attacks ONLY. The autonomous combat loop still calls forEachEnemyInRadius, so
+-- AI units never friendly-fire each other.
+local function forEachPlayerTargetInRadius(unit: CombatUnit, radius: number, visitor: (CombatUnit) -> ())
+	if not (HeroCfg.playerAttacksHitAllies or friendlyFire) then
+		forEachEnemyInRadius(unit, radius, visitor)
+		return
+	end
+	local pos = getPosition(unit.model)
+	if not pos then
+		return
+	end
+	unitGrid:query(pos, radius, function(model, _modelPos)
+		if model ~= unit.model then
+			local other = ActiveCombatUnits[model]
+			if other and other.health > 0 then
+				visitor(other)
+			end
+		end
+		return nil
+	end)
+end
+
 local function countAlliesInRadius(unit: CombatUnit, radius: number): number
 	local count = 0
 	forEachAllyInRadius(unit, radius, function()
@@ -494,6 +564,11 @@ local function handleUnitDeath(victim: CombatUnit, killer: CombatUnit?)
 	local ownerPlayer = Players:GetPlayerByUserId(victim.owner)
 	if ownerPlayer then
 		RevoltManager.recordUnitLoss(ownerPlayer)
+		-- Match-stats counter (Victory/Defeat screen summary)
+		if not AchievementManager then
+			AchievementManager = require(Managers.AchievementManager) :: any
+		end
+		AchievementManager.incrementStat(ownerPlayer, "UnitsLost", 1)
 	end
 
 	-- Nearby enemies gain morale; killer's owner gets achievement/quest credit
@@ -515,6 +590,23 @@ local function handleUnitDeath(victim: CombatUnit, killer: CombatUnit?)
 				AchievementManager.incrementStat(killerPlayer, "VikingsKilled", 1)
 				QuestManager.updateQuestProgress(killerPlayer, "KillEnemies", "Viking", 1)
 			end
+
+			-- Glory: renown per kill, scaled by victim value. Melee earns full
+			-- value, ranged half; the first-person Lord's melee kills double.
+			if not GloryManager then
+				GloryManager = require(Managers.GloryManager) :: any
+			end
+			GloryManager.awardForKill(killerPlayer, {
+				victimType = victim.unitType,
+				victimCost = victim.unitData and victim.unitData.cost or nil,
+				victimMaxHealth = victim.maxHealth,
+				-- killCreditAttackType lets a single unit score kills by the attack
+				-- it ACTUALLY used rather than by its profile. The hero is seeded
+				-- from a melee profile, so without this his bow kills would claim
+				-- the 2.0x Lord-melee bonus instead of the 0.5x ranged rate.
+				attackType = killer.killCreditAttackType or killer.attackType,
+				killerIsLord = killer.playerControlled == true,
+			})
 		end
 	end
 
@@ -548,7 +640,57 @@ end
 -- DAMAGE APPLICATION
 -- ═══════════════════════════════════════════════════════════════════════════
 
-local function applyDamageToUnit(attacker: CombatUnit, defender: CombatUnit, damage: number)
+-- ═══════════════════════════════════════════════════════════════════════════
+-- INCOMING DAMAGE HOOK
+-- ═══════════════════════════════════════════════════════════════════════════
+-- HeroCombat installs a hook here so a blocking / parrying / dodging player can
+-- actually mitigate damage. It lives on this side of the boundary to keep the
+-- dependency acyclic: HeroCombat requires CombatService, never the reverse.
+--
+-- The hook receives the resolved damage and returns the damage to actually
+-- apply — 0 means fully negated (a parry or an i-frame). It is only consulted
+-- for `playerControlled` defenders: this function is the funnel for EVERY hit in
+-- a battle of hundreds of units, so an unconditional call would put a function
+-- call plus a table lookup on the hottest path in the combat engine for the
+-- benefit of the one or two models that can ever block.
+type IncomingDamageHook = (attacker: CombatUnit, defender: CombatUnit, damage: number) -> number
+
+local incomingDamageHook: IncomingDamageHook? = nil
+
+function CombatService.setIncomingDamageHook(hook: IncomingDamageHook?)
+	incomingDamageHook = hook
+end
+
+--- Applies damage and returns the amount ACTUALLY applied — 0 when the incoming
+--- damage hook negated it (parry / dodge i-frames). Callers use the return value
+--- to decide whether a hit "landed"; before this returned anything, the hero
+--- pipeline compared a nil against 0 and threw.
+local function applyDamageToUnit(attacker: CombatUnit, defender: CombatUnit, damage: number): number
+	if defender.playerControlled and incomingDamageHook then
+		-- pcall'd: a bug in the hero mitigation logic must not be able to abort
+		-- damage application engine-wide and leave units immortal.
+		local ok, mitigated = pcall(incomingDamageHook, attacker, defender, damage)
+		if ok and typeof(mitigated) == "number" then
+			-- NaN is a `number` and would survive the typeof test. It also poisons
+			-- everything downstream: `defender.health - nan` is nan, `nan <= 0` is
+			-- false, so a single NaN would make a unit permanently unkillable with
+			-- a health bar showing nothing. Relying on math.max(0, nan) to clamp is
+			-- implementation detail, not a guarantee — reject it explicitly.
+			if mitigated ~= mitigated then
+				CombatDebug:warn("incoming damage hook returned NaN; treating as fully negated")
+				return 0
+			end
+			damage = math.max(0, mitigated)
+		elseif not ok then
+			CombatDebug:warn("incoming damage hook errored", { err = mitigated })
+		end
+		-- Fully negated (parry / dodge i-frames). Return before touching health,
+		-- morale or damageDealt so a parried blow leaves no trace in the stats.
+		if damage <= 0 then
+			return 0
+		end
+	end
+
 	defender.health = math.max(0, defender.health - damage)
 	defender.model:SetAttribute("CurrentHealth", defender.health)
 
@@ -572,12 +714,38 @@ local function applyDamageToUnit(attacker: CombatUnit, defender: CombatUnit, dam
 	if defender.health <= 0 then
 		handleUnitDeath(defender, attacker)
 	end
+
+	return damage
 end
 
--- Resolve one attack instance (melee hit or projectile impact)
-local function resolveHit(attacker: CombatUnit, defender: CombatUnit, now: number)
+-- Extra knobs the hero pipeline needs on top of a normal attack resolution.
+-- AI attacks pass nil and behave exactly as before.
+export type HitOptions = {
+	-- Scales the FINAL resolved damage (post counter-matrix, armor, stance,
+	-- positional and morale). The hero's combo-step multiplier rides here rather
+	-- than being folded into attackDamage, so DamageResolver stays pure and no
+	-- math is duplicated.
+	damageMult: number?,
+	-- Overrides the attack type reported to GloryManager on a kill. See
+	-- CombatUnit.killCreditAttackType.
+	attackTypeCredit: CombatConfig.AttackType?,
+	-- Overrides the DAMAGE type this one attack resolves as against the counter
+	-- matrix. Needed because a single fighter can swing two different weapons: the
+	-- hero is registered from a melee profile (Gallowglass / Slash) but can draw a
+	-- bow, and a bow is Pierce. Without this his arrows took the Slash row —
+	-- 0.85x vs Heavy armour where Pierce gets 1.15x, i.e. archery was worse than
+	-- his own sword against exactly the targets a bow is meant to answer.
+	-- Threaded down as DamageContext.damageTypeOverride rather than written onto
+	-- attacker.profile, which is a shared CombatConfig table.
+	damageTypeOverride: CombatConfig.DamageType?,
+}
+
+-- Resolve one attack instance (melee hit or projectile impact).
+-- Returns the damage that landed (0 if the hit was negated), so the hero
+-- pipeline can decide whether to fire a hit-confirm beat.
+local function resolveHit(attacker: CombatUnit, defender: CombatUnit, now: number, opts: HitOptions?): number
 	if defender.health <= 0 or ActiveCombatUnits[defender.model] == nil then
-		return
+		return 0
 	end
 
 	local attackerPos = getPosition(attacker.model)
@@ -609,6 +777,7 @@ local function resolveHit(attacker: CombatUnit, defender: CombatUnit, now: numbe
 		defenderAllyCount = countAlliesInRadius(defender, Positional.FORMATION_RADIUS),
 		isIrish = isIrish(attacker),
 		moraleEnabled = moraleEnabled,
+		damageTypeOverride = opts and opts.damageTypeOverride or nil,
 	}
 
 	local breakdown = DamageResolver.calculate(attacker, defender, positionalMult, ctx)
@@ -621,7 +790,10 @@ local function resolveHit(attacker: CombatUnit, defender: CombatUnit, now: numbe
 		local counterDamage = math.max(1, math.floor(defender.attackDamage * Positional.BRACE_COUNTER_BONUS * counterMult))
 		applyDamageToUnit(defender, attacker, counterDamage)
 		if attacker.health <= 0 then
-			return
+			-- The charger died on the brace. No damage of his own ever landed, so
+			-- report 0 rather than falling out with a bare `return` (which yielded
+			-- nil and crashed every caller that reads the landed damage).
+			return 0
 		end
 	end
 
@@ -630,12 +802,32 @@ local function resolveHit(attacker: CombatUnit, defender: CombatUnit, now: numbe
 		defender.stunnedUntil = now + (onHitFx.stunTarget :: number)
 	end
 
-	applyDamageToUnit(attacker, defender, breakdown.final)
+	-- Apply the caller's multiplier LAST, on top of the fully resolved number, so
+	-- the hero's combo-step scaling rides over the counter matrix, armor, stance,
+	-- positional and morale maths instead of duplicating any of it. AI attacks
+	-- pass no opts and are completely unaffected.
+	local finalDamage = breakdown.final
+	local damageMult = opts and opts.damageMult
+	if damageMult and damageMult ~= 1 then
+		finalDamage = math.max(1, math.floor(finalDamage * damageMult))
+	end
+
+	-- Kill credit for Glory. The hero is seeded from a melee profile, so without
+	-- this override a bow kill would score as a Lord MELEE kill and pay the 2.0x
+	-- hero bonus instead of the 0.5x ranged rate. Set immediately before the
+	-- damage lands (handleUnitDeath reads it synchronously) and always restored
+	-- after, so it can never leak onto this attacker's next, unrelated swing.
+	local previousCredit = attacker.killCreditAttackType
+	attacker.killCreditAttackType = opts and opts.attackTypeCredit or nil
+
+	local dealt = applyDamageToUnit(attacker, defender, finalDamage)
+
+	attacker.killCreditAttackType = previousCredit
 
 	DamageDebug:info("Attack", {
 		attacker = attacker.unitType,
 		defender = defender.unitType,
-		damage = breakdown.final,
+		damage = dealt,
 		counter = breakdown.counterMult,
 		positional = breakdown.positionalMult,
 	})
@@ -665,6 +857,11 @@ local function resolveHit(attacker: CombatUnit, defender: CombatUnit, now: numbe
 			end
 		end)
 	end
+
+	-- The damage this hit actually landed (0 if a parry / i-frame ate it). The
+	-- hero pipeline reads this to decide whether to fire a hit-confirm beat;
+	-- returning nothing here is what threw "attempt to compare nil with number".
+	return dealt
 end
 
 local function executeAttackOnUnit(attacker: CombatUnit, defender: CombatUnit, now: number)
@@ -768,6 +965,20 @@ local function updateFleeing(unitModel: Model, unit: CombatUnit, now: number)
 end
 
 local function updateUnit(unitModel: Model, unit: CombatUnit, now: number)
+	-- Player-controlled fighters (first-person "fight alongside your men") are
+	-- driven by the player, never by the combat AI. They stay registered so enemies
+	-- target them and allies count them as friendly, and the tick loop keeps their
+	-- grid cell fresh — but we run no movement/targeting/abilities for them. Health
+	-- is mirrored from the Humanoid so heals/regen and enemy hits stay consistent.
+	if unit.playerControlled then
+		local humanoid = unitModel:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			unit.health = humanoid.Health
+			unit.maxHealth = humanoid.MaxHealth
+		end
+		return
+	end
+
 	-- Stunned units do nothing
 	if now < unit.stunnedUntil then
 		return
@@ -978,6 +1189,34 @@ local function updateUnit(unitModel: Model, unit: CombatUnit, now: number)
 	end
 end
 
+-- Publish `isCharging` to the client as the `Gait` attribute, which is what
+-- makes UnitAnimator play the run cycle instead of the walk.
+--
+-- `isCharging` is assigned in a dozen places across this file, so rather than
+-- stamping the attribute at every one of them (and inevitably missing one) this
+-- reconciles once per unit per tick from the authoritative field.
+--
+-- It writes ONLY on a transition, so a charging unit costs two attribute
+-- replications for the whole charge rather than one per frame.
+--
+-- It also clears only the reason it owns. A peasant hurrying back to the Keep
+-- carries Gait = "hurry", set by a completely different system; if this cleared
+-- unconditionally it would cancel that the moment the peasant registered with
+-- the combat system. See the Gait contract in UnitAnimationsData.
+local GAIT_ATTRIBUTE = GameData.UnitAnimations.GAIT_ATTRIBUTE
+local GAIT_CHARGE = "charge"
+
+local function syncGait(unitModel: Model, unit: CombatUnit)
+	local current = unitModel:GetAttribute(GAIT_ATTRIBUTE)
+	if unit.isCharging then
+		if current ~= GAIT_CHARGE then
+			unitModel:SetAttribute(GAIT_ATTRIBUTE, GAIT_CHARGE)
+		end
+	elseif current == GAIT_CHARGE then
+		unitModel:SetAttribute(GAIT_ATTRIBUTE, nil)
+	end
+end
+
 local function updateCombat(now: number)
 	abilityContext.moraleEnabled = moraleEnabled
 	rebuildEngagementCounts()
@@ -998,6 +1237,7 @@ local function updateCombat(now: number)
 		unit.morale = MoraleManager.getMorale(unitModel) or unit.morale
 
 		updateUnit(unitModel, unit, now)
+		syncGait(unitModel, unit)
 	end
 
 	ProjectileSystem.update(now)
@@ -1174,6 +1414,325 @@ function CombatService.clearAllUnits()
 	table.clear(ActiveCombatUnits)
 	unitGrid:clear()
 	ProjectileSystem.clear()
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- PLAYER FIGHTER (first-person "fight alongside your men")
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- Register a player's CHARACTER as a combat unit on `faction`. Enemies target and
+-- damage it via the normal combat loop, allies treat it as friendly, but the AI
+-- never drives it — the player does. `opts` may override maxHealth / attackDamage /
+-- armor / baseType (baseType only seeds the combat profile used for damage-type
+-- interactions; the stats below are what actually apply).
+function CombatService.registerPlayerFighter(character: Model, faction: string, ownerId: number, opts: any?)
+	opts = opts or {}
+	-- Defaults come from CombatConfig.Hero.fighter so the Lord (GameManager) and
+	-- the arena hero (ArenaMode) cannot drift apart by editing one call site.
+	local fighterCfg = HeroCfg.fighter
+	local baseType = opts.baseType or fighterCfg.baseType
+	local unitData = GameData.Units[baseType] or GameData.Units.Peasant
+	local maxHealth = opts.maxHealth or fighterCfg.maxHealth
+
+	local combatUnit = {
+		model = character,
+		unitData = unitData,
+		owner = ownerId,
+		unitType = baseType,
+		health = maxHealth,
+		maxHealth = maxHealth,
+		attackDamage = opts.attackDamage or fighterCfg.attackDamage,
+		attackSpeed = (unitData and unitData.attack_speed) or 1,
+		-- Reach used by ENEMIES deciding whether they can hit him, not by his own
+		-- swings (those carry their own per-combo-step range).
+		attackRange = Engine.MELEE_RANGE,
+		armor = opts.armor or fighterCfg.armor,
+		morale = 100,
+		stance = CombatConfig.DefaultStance,
+		targetModel = nil,
+		formation = nil,
+		lastAttackTime = 0,
+		isCharging = false,
+		faction = faction,
+		playerControlled = true,
+	}
+
+	character:SetAttribute("OwnerId", ownerId)
+	character:SetAttribute("Faction", faction)
+	character:SetAttribute("PlayerFighter", true)
+	CombatService.registerCombatUnit(character, combatUnit)
+end
+
+function CombatService.unregisterPlayerFighter(character: Model)
+	if ActiveCombatUnits[character] then
+		unregisterUnit(character)
+	end
+end
+
+-- Look up a registered player fighter. HeroCombat uses this to confirm the
+-- character is actually in the combat roster before accepting any action.
+function CombatService.getPlayerFighter(character: Model): CombatUnit?
+	local unit = ActiveCombatUnits[character]
+	if unit and unit.playerControlled then
+		return unit
+	end
+	return nil
+end
+
+-- Attach/detach the hero state machine's table to the registered fighter so the
+-- damage funnel can reach it without a Players lookup per hit.
+function CombatService.setHeroState(character: Model, state: CombatTypes.HeroState?)
+	local unit = ActiveCombatUnits[character]
+	if unit then
+		unit.heroState = state
+	end
+end
+
+-- Stun any unit (used by the hero's parry riposte). `stunnedUntil` is the
+-- existing mechanism — see Abilities.ShieldBash.
+function CombatService.stunUnit(unitModel: Model, seconds: number)
+	local unit = ActiveCombatUnits[unitModel]
+	if unit and unit.health > 0 and seconds > 0 then
+		unit.stunnedUntil = math.max(unit.stunnedUntil, os.clock() + seconds)
+		unit.isCharging = false -- a stunned unit is not mid-charge any more
+	end
+end
+
+-- ── HERO ATTACK PIPELINE ────────────────────────────────────────────────────
+
+export type ComboAttackResult = {
+	hits: number,
+	damage: number, -- total damage dealt across every unit caught in the arc
+	firstHitPosition: Vector3?, -- where to put the hit-confirm flash
+	killedAny: boolean,
+}
+
+-- Is `targetPos` inside the flat forward cone of half-angle acos(arcCos) around
+-- `flatAim`, measured from `origin`?
+--
+-- BUGFIX: the old inline version read
+--     if to.Magnitude < 1e-3 or to.Unit:Dot(flatAim) >= arcCos then hit()
+-- so a target at (near) zero horizontal distance short-circuited the OR and was
+-- counted as a HIT regardless of where the player was aiming — swinging directly
+-- away from a unit standing on top of you still killed it. Degenerate geometry
+-- has to be resolved deliberately, not by falling out of a short-circuit:
+-- something occupying your own space is inside every arc, so it is a hit, but we
+-- say so explicitly instead of leaking it through the aim test.
+local function isInsideArc(origin: Vector3, targetPos: Vector3, flatAim: Vector3, arcCos: number): boolean
+	local to = Vector3.new(targetPos.X - origin.X, 0, targetPos.Z - origin.Z)
+	local distance = to.Magnitude
+	if distance < 1e-3 then
+		-- Overlapping the attacker: no meaningful direction exists. Treat it as a
+		-- hit (you cannot miss something you are standing inside) but never as an
+		-- automatic pass of the aim test.
+		return true
+	end
+	return to.Unit:Dot(flatAim) >= arcCos
+end
+
+-- Normalize a client-supplied aim vector to a flat unit vector, or nil if the
+-- vector is unusable. Callers must treat nil as "reject the request".
+local function flattenAim(aimDir: Vector3): Vector3?
+	-- NaN check: NaN ~= NaN. A hostile client can send Vector3.new(0/0, 0/0, 0/0)
+	-- and every comparison below would silently pass.
+	if aimDir.X ~= aimDir.X or aimDir.Y ~= aimDir.Y or aimDir.Z ~= aimDir.Z then
+		return nil
+	end
+	local flat = Vector3.new(aimDir.X, 0, aimDir.Z)
+	local magnitude = flat.Magnitude
+	if magnitude < 1e-3 or magnitude > 1e6 then
+		return nil
+	end
+	return flat / magnitude
+end
+
+CombatService.flattenAim = flattenAim
+
+-- The hero's melee sweep, through the REAL damage pipeline.
+--
+-- Previously playerMeleeAttack called applyDamageToUnit with a flat number,
+-- which meant the Lord's sword ignored the counter matrix, armor class,
+-- flank/rear positional bonuses and morale entirely — the one attack in the game
+-- that bypassed every combat rule was the player's own. This routes through
+-- resolveHit with the combo step's multiplier folded in as HitOptions.damageMult,
+-- so a hero swing is resolved by exactly the same code as a Gallowglass swing,
+-- and emits the swing replication event that was also missing.
+function CombatService.playerComboAttack(
+	character: Model,
+	aimDir: Vector3,
+	range: number,
+	arcCos: number,
+	damageMult: number,
+	comboStep: number,
+	kind: string
+): ComboAttackResult
+	local result: ComboAttackResult = { hits = 0, damage = 0, firstHitPosition = nil, killedAny = false }
+
+	local unit = ActiveCombatUnits[character]
+	if not unit or not unit.playerControlled then
+		return result
+	end
+	local origin = getPosition(character)
+	if not origin then
+		return result
+	end
+	local flatAim = flattenAim(aimDir)
+	if not flatAim then
+		return result
+	end
+
+	-- Tell every client to animate the swing on this character. Fired before the
+	-- sweep so the visual arrives even if the sweep hits nothing.
+	CombatReplication.heroSwing(character, comboStep, kind)
+
+	local now = os.clock()
+	-- Collect first, resolve second. resolveHit can kill a unit, and
+	-- handleUnitDeath calls unregisterUnit -> unitGrid:remove, which mutates the
+	-- structure forEachPlayerTargetInRadius is iterating. Buffering the arc keeps
+	-- the sweep off a container being modified underneath it.
+	local caught: { CombatUnit } = {}
+	forEachPlayerTargetInRadius(unit, range, function(target)
+		if target.health <= 0 then
+			return
+		end
+		local targetPos = getPosition(target.model)
+		if not targetPos then
+			return
+		end
+		if isInsideArc(origin, targetPos, flatAim :: Vector3, arcCos) then
+			table.insert(caught, target)
+		end
+	end)
+
+	for _, target in caught do
+		-- Re-check liveness: an earlier target in this same sweep may have been a
+		-- cleave that already killed this one (Volley/extraShots can chain).
+		if target.health > 0 and ActiveCombatUnits[target.model] then
+			local hitPos = getPosition(target.model)
+			local dealt = resolveHit(unit, target, now, { damageMult = damageMult, attackTypeCredit = "Melee" })
+			if dealt > 0 then
+				result.hits += 1
+				result.damage += dealt
+				if not result.firstHitPosition then
+					result.firstHitPosition = hitPos
+				end
+				if target.health <= 0 then
+					result.killedAny = true
+				end
+			end
+		end
+	end
+
+	return result
+end
+
+-- The hero's bow shot, through the real pipeline. Picks the best-aimed target in
+-- the cone and fires a real projectile; damage resolves on impact.
+--
+-- The arrow used to resolve with the hero's PROFILE damage type — Slash, because
+-- the fighter is seeded from a Gallowglass — so a bow shot was scored as a sword
+-- cut against armour (0.85x into Heavy where Pierce gets 1.15x). It now carries
+-- HitOptions.damageTypeOverride = CombatConfig.Hero.ranged.damageType. The
+-- override is per-attack on purpose: attacker.profile is a table SHARED by every
+-- unit of that type, so writing the bow's type onto it would turn every
+-- Gallowglass on the map into a spearman for the arrow's flight time.
+-- Kill CREDIT is separate and already correct — attackTypeCredit = "Ranged" — so
+-- Glory scores bow kills at 0.5x, not the Lord's 2.0x melee rate.
+function CombatService.playerBowShot(
+	character: Model,
+	aimDir: Vector3,
+	maxRange: number,
+	arcCos: number,
+	damageMult: number,
+	projectileKey: string
+): boolean
+	local unit = ActiveCombatUnits[character]
+	if not unit or not unit.playerControlled then
+		return false
+	end
+	local origin = getPosition(character)
+	if not origin then
+		return false
+	end
+	local flatAim = flattenAim(aimDir)
+	if not flatAim then
+		return false
+	end
+
+	local best: CombatUnit? = nil
+	local bestScore = -math.huge
+	forEachPlayerTargetInRadius(unit, maxRange, function(target)
+		if target.health <= 0 then
+			return
+		end
+		local targetPos = getPosition(target.model)
+		if not targetPos then
+			return
+		end
+		local to = Vector3.new(targetPos.X - origin.X, 0, targetPos.Z - origin.Z)
+		local dist = to.Magnitude
+		if dist < 1e-3 then
+			return
+		end
+		local aligned = to.Unit:Dot(flatAim :: Vector3)
+		if aligned >= arcCos then
+			local score = aligned - dist * 0.001 -- prefer well-aimed, then nearest
+			if score > bestScore then
+				bestScore = score
+				best = target
+			end
+		end
+	end)
+
+	-- Release the bow animation regardless of whether anything was in the cone:
+	-- the player pressed the button, he should see the draw and release.
+	CombatReplication.heroSwing(character, -1, "ranged")
+
+	if not best then
+		return false
+	end
+	local target = (best :: CombatUnit)
+	local fromPos = origin + Vector3.new(0, 2, 0)
+	local moving = target.model:GetAttribute("IsMoving") == true
+	ProjectileSystem.fire(projectileKey, fromPos, target.model, moving, function(hitModel)
+		local hitUnit = ActiveCombatUnits[hitModel]
+		-- The hero may have died, been unregistered (left hero mode) or the target
+		-- may already be dead during the arrow's flight time — all normal.
+		if hitUnit and hitUnit.health > 0 and unit.health > 0 and ActiveCombatUnits[character] then
+			resolveHit(unit, hitUnit, os.clock(), {
+				damageMult = damageMult,
+				attackTypeCredit = "Ranged",
+				damageTypeOverride = HeroCfg.ranged.damageType,
+			})
+		end
+	end)
+	return true
+end
+
+-- ── LEGACY ALIASES ──────────────────────────────────────────────────────────
+--
+-- Kept so anything still calling the pre-combo API keeps working (saved Studio
+-- test scripts, the old "PlayerMeleeAttack"/"PlayerRangedAttack" remote actions).
+-- They now go through the real pipeline too, converting their flat `damage`
+-- argument into the equivalent multiplier against the fighter's attackDamage —
+-- the numbers move slightly, and that is the point: they were bypassing armor.
+
+function CombatService.playerMeleeAttack(character: Model, aimDir: Vector3, range: number, arcCos: number, damage: number): number
+	local unit = ActiveCombatUnits[character]
+	if not unit then
+		return 0
+	end
+	local mult = if unit.attackDamage > 0 then damage / unit.attackDamage else 1
+	return CombatService.playerComboAttack(character, aimDir, range, arcCos, mult, 1, "light").hits
+end
+
+function CombatService.playerRangedAttack(character: Model, aimDir: Vector3, maxRange: number, arcCos: number, damage: number, projectileKey: string): boolean
+	local unit = ActiveCombatUnits[character]
+	if not unit then
+		return false
+	end
+	local mult = if unit.attackDamage > 0 then damage / unit.attackDamage else 1
+	return CombatService.playerBowShot(character, aimDir, maxRange, arcCos, mult, projectileKey)
 end
 
 function CombatService.init()

@@ -16,6 +16,14 @@ export type DamageContext = {
 	defenderAllyCount: number, -- allies near defender
 	isIrish: boolean, -- attacker belongs to an Irish faction
 	moraleEnabled: boolean,
+	-- Per-ATTACK damage type, overriding attacker.profile.damageType for this one
+	-- resolution. Exists because the hero fighter is seeded from a melee profile
+	-- (Gallowglass / Slash) yet can draw a bow: without this his arrows were
+	-- scored as sword cuts against the counter matrix. It lives here instead of
+	-- being written onto attacker.profile because that profile is a SHARED table
+	-- owned by CombatConfig — mutating it would flip the damage type of every
+	-- Gallowglass on the map for as long as the arrow was in flight.
+	damageTypeOverride: CombatConfig.DamageType?,
 }
 
 export type DamageBreakdown = {
@@ -51,9 +59,22 @@ local function getBonusVsTags(attacker: CombatUnit, defender: CombatUnit): numbe
 	return mult
 end
 
+-- A spear unit that has planted itself negates an incoming charge outright and
+-- gets a counter-strike (see CombatService.resolveHit).
+--
+-- BUGFIX: this used to read `defender.stance == "Defensive" or == "Hold"`.
+-- Neither name has existed since stances became March/Attack/Defend/Skirmish, so
+-- this returned false for EVERY unit and the brace-counter branch downstream had
+-- never once executed. Now driven off CombatConfig.StanceBehavior[...].braces so
+-- the next stance rename breaks a table lookup instead of silently deleting a
+-- mechanic. The "spear" tag gate is kept deliberately: Defend stance is
+-- available to the whole army, but only spears may brace.
 local function isBraced(defender: CombatUnit): boolean
-	return CombatConfig.hasTag(defender.profile, "spear")
-		and (defender.stance == "Defensive" or defender.stance == "Hold")
+	if not CombatConfig.hasTag(defender.profile, "spear") then
+		return false
+	end
+	local behavior = CombatConfig.StanceBehavior[defender.stance]
+	return behavior ~= nil and behavior.braces == true
 end
 
 -- Positional multiplier from attacker/defender world state
@@ -87,7 +108,11 @@ function DamageResolver.calculate(
 	local baseDamage = attacker.attackDamage
 
 	-- ── Counter matrix ────────────────────────────────────────────────────
-	local matrixRow = CombatConfig.CounterMatrix[attacker.profile.damageType]
+	-- ctx.damageTypeOverride lets ONE attack resolve as a different damage type
+	-- (the hero's bow firing Pierce out of a Slash profile). nil for every AI
+	-- attack, which therefore behaves exactly as before.
+	local damageType = ctx.damageTypeOverride or attacker.profile.damageType
+	local matrixRow = CombatConfig.CounterMatrix[damageType]
 	local counterMult = (matrixRow and matrixRow[defender.profile.armorClass]) or 1
 	counterMult *= getBonusVsTags(attacker, defender)
 
@@ -184,10 +209,16 @@ function DamageResolver.calculate(
 end
 
 -- Damage vs buildings: counter matrix vs Structure, no morale/stance games.
+-- Buildings carry an implicit "structure" tag, so siege engines can declare
+-- anti-building bonuses via bonusVsTags (same mechanism as Pikeman vs cavalry).
 function DamageResolver.calculateVsBuilding(attacker: CombatUnit): number
 	local matrixRow = CombatConfig.CounterMatrix[attacker.profile.damageType]
 	local counterMult = (matrixRow and matrixRow.Structure) or 0.5
 	local damage = attacker.attackDamage * counterMult
+	local bonuses = attacker.profile.bonusVsTags
+	if bonuses and bonuses.structure then
+		damage *= bonuses.structure
+	end
 	if attacker.berserkActive then
 		damage *= Abilities.Berserk.damageMult
 	end

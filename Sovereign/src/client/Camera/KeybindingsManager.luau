@@ -20,6 +20,22 @@ local HttpService = game:GetService("HttpService")
 	| "CyclePlacementType"
 	| "CyclePivot"
 	| "AdjustPlacementHeight"
+	-- Hero view actions. Consumed by HeroCamera / the hero combat controller;
+	-- meaningless (and unbound) while the player is in the RTS view.
+	| "HeroFreeLook"
+	| "HeroFirstPerson"
+	| "HeroDodge"
+	| "HeroHeavyAttack"
+	| "HeroRangedAttack"
+
+-- Which mutually-exclusive input context an action belongs to. Two actions in
+-- DIFFERENT contexts are allowed to share a key: the RTS camera, the building
+-- placement ghost and the hero view are never live at the same time.
+-- Before this existed, HasConflict compared every action against every other
+-- action, which (a) already reported the shipped Focus=F / CyclePivot=F defaults
+-- as a conflict and refused legitimate rebinds, and (b) would have rejected the
+-- hero defaults below (R shared with RotatePlacement, Q with RotateLeft).
+export type KeybindingContext = "Camera" | "Placement" | "Hero"
 
 export type KeybindingsData = {
 	[KeybindingAction]: Enum.KeyCode,
@@ -34,11 +50,47 @@ local DEFAULT_KEYBINDINGS: KeybindingsData = {
 	RotateRight = Enum.KeyCode.E,
 	Focus = Enum.KeyCode.F,
 	ResetCamera = Enum.KeyCode.Home,
-	ToggleCameraMode = Enum.KeyCode.Tab,
+	-- Toggles RTS view <-> Hero (third-person) view.
+	-- NOT Tab: the engine reserves Tab for GUI focus, so a plain
+	-- UserInputService.InputBegan handler never sees it.
+	ToggleCameraMode = Enum.KeyCode.V,
 	RotatePlacement = Enum.KeyCode.R,
 	CyclePlacementType = Enum.KeyCode.T,
 	CyclePivot = Enum.KeyCode.F,
 	AdjustPlacementHeight = Enum.KeyCode.LeftShift,
+
+	HeroFreeLook = Enum.KeyCode.LeftAlt,
+	-- Deliberately NOT Tab. Tab is reserved by the engine for GUI focus /
+	-- navigation, so binding gameplay to it means fighting CoreGui for priority
+	-- and stealing a key players expect to move UI focus. No default in this
+	-- table may be Tab. B is free across every context here.
+	-- Fully rebindable in Settings > Controls like every other action, and also
+	-- reachable without a keyboard via the on-screen view button (mobile).
+	HeroFirstPerson = Enum.KeyCode.B,
+	HeroDodge = Enum.KeyCode.LeftControl,
+	HeroHeavyAttack = Enum.KeyCode.R,
+	HeroRangedAttack = Enum.KeyCode.Q,
+}
+
+local ACTION_CONTEXTS: { [KeybindingAction]: KeybindingContext } = {
+	PanUp = "Camera",
+	PanDown = "Camera",
+	PanLeft = "Camera",
+	PanRight = "Camera",
+	RotateLeft = "Camera",
+	RotateRight = "Camera",
+	Focus = "Camera",
+	ResetCamera = "Camera",
+	ToggleCameraMode = "Camera",
+	RotatePlacement = "Placement",
+	CyclePlacementType = "Placement",
+	CyclePivot = "Placement",
+	AdjustPlacementHeight = "Placement",
+	HeroFreeLook = "Hero",
+	HeroFirstPerson = "Hero",
+	HeroDodge = "Hero",
+	HeroHeavyAttack = "Hero",
+	HeroRangedAttack = "Hero",
 }
 
 local ACTION_DESCRIPTIONS = {
@@ -50,11 +102,16 @@ local ACTION_DESCRIPTIONS = {
 	RotateRight = "Rotate Camera Right",
 	Focus = "Focus on Target",
 	ResetCamera = "Reset Camera Position",
-	ToggleCameraMode = "Toggle Camera Mode",
+	ToggleCameraMode = "Switch RTS / Hero View",
 	RotatePlacement = "Rotate Building",
 	CyclePlacementType = "Cycle Wall Type",
 	CyclePivot = "Cycle Placement Pivot",
 	AdjustPlacementHeight = "Adjust Wall Height (hold + mouse wheel)",
+	HeroFreeLook = "Hero: Free Look (hold)",
+	HeroFirstPerson = "Hero: Toggle First Person",
+	HeroDodge = "Hero: Dodge Roll",
+	HeroHeavyAttack = "Hero: Heavy Attack",
+	HeroRangedAttack = "Hero: Ranged Attack",
 }
 
 local KeybindingsManager = {}
@@ -101,9 +158,29 @@ function KeybindingsManager.GetAllActions(): { KeybindingAction }
 	return actions
 end
 
+function KeybindingsManager.GetActionContext(action: KeybindingAction): KeybindingContext
+	return ACTION_CONTEXTS[action] or "Camera"
+end
+
+--- True when `action` belongs to the hero view. Callers that forward keybindings
+--- to the RTS input modules use this to skip them: DesktopInput has no concept of
+--- a dodge roll and would silently drop them anyway, but being explicit keeps a
+--- future `SetKeybinding` that accepts unknown actions from binding Q to two
+--- different things at once.
+function KeybindingsManager.IsHeroAction(action: KeybindingAction): boolean
+	return ACTION_CONTEXTS[action] == "Hero"
+end
+
+--- Only actions inside the SAME context can conflict — see the comment on
+--- KeybindingContext for why a global comparison was wrong.
 function KeybindingsManager.HasConflict(action: KeybindingAction, keyCode: Enum.KeyCode): (boolean, KeybindingAction?)
+	local context = KeybindingsManager.GetActionContext(action)
 	for otherAction, otherKeyCode in pairs(KeybindingsManager.keybindings) do
-		if otherAction ~= action and otherKeyCode == keyCode then
+		if
+			otherAction ~= action
+			and otherKeyCode == keyCode
+			and KeybindingsManager.GetActionContext(otherAction) == context
+		then
 			return true, otherAction
 		end
 	end

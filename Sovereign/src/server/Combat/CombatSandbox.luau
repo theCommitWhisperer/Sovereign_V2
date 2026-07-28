@@ -155,8 +155,8 @@ function CombatSandbox.parseArmySpec(spec: string): (ArmySpec?, string?)
 			return nil, `Unknown unit type "{typeStr}"`
 		end
 		local unitData = (GameData.Units :: { [string]: any })[unitType]
-		if not unitData.combat then
-			return nil, `{unitType} has no combat stats`
+		if not unitData then
+			return nil, `{unitType} has no unit data`
 		end
 		table.insert(army, { count = tonumber(countStr) :: number, unitType = unitType })
 	end

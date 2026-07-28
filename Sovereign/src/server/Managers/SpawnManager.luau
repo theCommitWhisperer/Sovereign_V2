@@ -37,6 +37,16 @@ end
 -- Spawn assignments (stores which players are in which spawn zone)
 local playerSpawns: { [number]: number } = {} -- Maps UserId to spawn number
 
+-- Number of distinct kingdoms (spawn zones) the current map supports.
+-- Hand-placed KeepSpawnZones take priority; otherwise the map's MaxPlayers.
+local function getMaxSpawnZones(): number
+	local mapConfig = getMapConfig()
+	if mapConfig.KeepSpawnZones and #mapConfig.KeepSpawnZones > 0 then
+		return #mapConfig.KeepSpawnZones
+	end
+	return mapConfig.MaxPlayers or 4
+end
+
 -- Calculate spawn points for each zone
 -- Layout:
 --   Zone 1 (NW)  |  NEUTRAL  |  Zone 2 (NE)
@@ -69,6 +79,17 @@ local function calculateSpawnPoint(spawnNumber: number): CFrame
 		return CFrame.new(-offset, mapConfig.SpawnHeight, offset)
 	elseif spawnNumber == 4 then
 		return CFrame.new(offset, mapConfig.SpawnHeight, offset)
+	elseif spawnNumber > 4 then
+		-- Maps with more than 4 kingdoms and no hand-placed zones: distribute
+		-- the extra kingdoms evenly on a circle inside the map bounds.
+		local maxZones = getMaxSpawnZones()
+		local angle = (math.pi * 2 * (spawnNumber - 1)) / math.max(maxZones, 1)
+		local ringRadius = offset * math.sqrt(2)
+		return CFrame.new(
+			math.cos(angle) * ringRadius,
+			mapConfig.SpawnHeight,
+			math.sin(angle) * ringRadius
+		)
 	end
 
 	return CFrame.new(0, mapConfig.SpawnHeight, 0)
@@ -159,7 +180,7 @@ end
 
 -- Assign a player to a specific spawn zone (from lobby selection)
 function SpawnManager.assignPlayerToExplicitSpawn(userId: number, spawnNumber: number): number
-	if spawnNumber < 1 or spawnNumber > 4 then
+	if spawnNumber < 1 or spawnNumber > getMaxSpawnZones() then
 		SpawnManagerDebug:warn(`Invalid spawn {spawnNumber} for player {userId}, falling back to auto-assign`)
 		return SpawnManager.assignPlayerToSpawn(userId)
 	end
@@ -184,16 +205,19 @@ function SpawnManager.assignPlayerToSpawn(userId: number): number
 		return playerSpawns[userId]
 	end
 
-	-- Find the spawn zone with the fewest players
-	local spawnCounts = { 0, 0, 0, 0 }
+	-- Find the spawn zone with the fewest players (one zone per kingdom)
+	local maxZones = getMaxSpawnZones()
+	local spawnCounts: { number } = table.create(maxZones, 0)
 	for _, spawn in pairs(playerSpawns) do
-		spawnCounts[spawn] = spawnCounts[spawn] + 1
+		if spawn >= 1 and spawn <= maxZones then
+			spawnCounts[spawn] = spawnCounts[spawn] + 1
+		end
 	end
 
 	-- Find minimum count spawn
 	local minSpawn = 1
 	local minCount = spawnCounts[1]
-	for i = 2, 4 do
+	for i = 2, maxZones do
 		if spawnCounts[i] < minCount then
 			minSpawn = i
 			minCount = spawnCounts[i]
@@ -224,10 +248,9 @@ function SpawnManager.getBuildRadius(): number
 	return (mapConfig.SpawnZoneSize or mapConfig.QuadrantSize) / 2
 end
 
--- Get max players for current map
+-- Get max players (kingdoms) for current map
 function SpawnManager.getMaxPlayers(): number
-	local mapConfig = getMapConfig()
-	return mapConfig.MaxPlayers or 4
+	return getMaxSpawnZones()
 end
 
 -- Remove player from spawn zone (when they leave)
@@ -236,6 +259,14 @@ function SpawnManager.removePlayer(userId: number)
 		SpawnManagerDebug:info(`Removed player {userId} from spawn {playerSpawns[userId]}`)
 		playerSpawns[userId] = nil
 	end
+end
+
+-- Full state wipe for a new match: clears every zone assignment (players and
+-- AI alike — both are just numeric userIds in this table). Called once from
+-- GameManager's LeaveGame teardown when the last player leaves.
+function SpawnManager.resetMatch()
+	playerSpawns = {}
+	SpawnManagerDebug:info("SpawnManager match state reset — cleared all zone assignments")
 end
 
 -- Get all players in a spawn zone

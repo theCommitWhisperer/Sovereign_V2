@@ -31,6 +31,7 @@ local CONFIG = {
 	SEPARATION_RADIUS = 5, -- Studs - neighbours inside this push apart
 	SEPARATION_STRENGTH = 3.5, -- Studs of lateral offset applied to move target
 	FLOW_LOOKAHEAD = 10, -- Studs ahead the unit steers along its flow field
+	FLY_ALTITUDE = 14, -- Studs above the target height that flying units cruise at
 }
 
 -- Track last target position for each unit to detect changes
@@ -178,6 +179,63 @@ local function computeSeparation(unit: Instance, pos: Vector3): Vector3
 	return Vector3.zero
 end
 
+-- ── Flying units ───────────────────────────────────────────────────────────
+-- Units with the CanFly attribute (UnitsData.can_fly, e.g. the Oilliphéist)
+-- skip A*, flow fields and physics entirely: their PrimaryPart stays ANCHORED
+-- and the model is PivotTo-lerped straight at the target at cruise altitude.
+-- This is the cheapest correct way to bypass walls/obstacles — no collision,
+-- no pathfinding grid, no Humanoid:MoveTo. Known limitations are documented on
+-- the Oillipheist entry in UnitsData/CombatConfig (melee can't reach a hovering
+-- flyer; ranged and other flyers can).
+local lastFlyClock = os.clock()
+local flyFrameDt = 1 / 60
+
+local function handleFlyingUnit(unit: Model, targetPos: Vector3, dt: number)
+	local primary = unit.PrimaryPart
+	if not primary then
+		return
+	end
+	if not primary.Anchored then
+		primary.Anchored = true -- flight is anchored movement; physics stays off
+	end
+
+	local pivot = unit:GetPivot()
+	local pos = pivot.Position
+	local goal = Vector3.new(targetPos.X, targetPos.Y + CONFIG.FLY_ALTITUDE, targetPos.Z)
+
+	-- Horizontal arrival check (same convention as ground units)
+	local flatDelta = Vector3.new(goal.X - pos.X, 0, goal.Z - pos.Z)
+	local arrivalDistance = (unit:GetAttribute("ArrivalDistance") :: number?) or CONFIG.ARRIVAL_DISTANCE
+	if flatDelta.Magnitude < arrivalDistance then
+		unit:SetAttribute("IsMoving", false)
+		unit:SetAttribute("TargetPosition", nil)
+		unit:SetAttribute("FlowFieldId", nil)
+		unit:SetAttribute("Marching", nil)
+		cleanupUnit(unit)
+		return
+	end
+
+	local speed = CONFIG.DEFAULT_SPEED
+	local humanoid = unit:FindFirstChildOfClass("Humanoid")
+	if humanoid and humanoid.WalkSpeed > 0 then
+		speed = math.clamp(humanoid.WalkSpeed, 1, 120)
+	end
+
+	local delta = goal - pos
+	local step = math.min(speed * dt, delta.Magnitude)
+	if step <= 0 then
+		return
+	end
+	local newPos = pos + delta.Unit * step
+	local face = if flatDelta.Magnitude > 0.1
+		then flatDelta.Unit
+		else Vector3.new(pivot.LookVector.X, 0, pivot.LookVector.Z)
+	if face.Magnitude < 0.01 then
+		face = Vector3.zAxis
+	end
+	unit:PivotTo(CFrame.lookAt(newPos, newPos + face))
+end
+
 -- Round-robin resume point: the old throttle iterated GetChildren() in a
 -- FIXED order and broke after MAX_UNITS_PER_FRAME — with more movers than
 -- the budget, the same units were processed every frame and the rest NEVER
@@ -202,6 +260,11 @@ function MovementSystem.update()
 
 	-- Rebuild the separation spatial hash once for this update
 	buildSeparationBuckets(unitsFolder)
+
+	-- Frame delta for anchored flight (clamped so tab-outs don't teleport flyers)
+	local nowClock = os.clock()
+	flyFrameDt = math.clamp(nowClock - lastFlyClock, 0, 0.25)
+	lastFlyClock = nowClock
 
 	local unitsProcessedThisFrame = 0
 	local visited = 0
@@ -248,6 +311,11 @@ function MovementSystem.update()
 			if targetPos and typeof(targetPos) == "Vector3" then
 				-- Wrap in pcall for safety
 				local success, result = pcall(function()
+					-- Flying units: direct anchored flight, no pathfinding at all
+					if unit:GetAttribute("CanFly") then
+						handleFlyingUnit(unit, targetPos, flyFrameDt)
+						return
+					end
 					-- Check if unit is close enough to target. Formation moves set
 					-- a tighter per-unit ArrivalDistance (slots are only 2-6 studs
 					-- apart — the default 5-stud tolerance turned formations into
@@ -265,6 +333,13 @@ function MovementSystem.update()
 						unit:SetAttribute("IsMoving", false)
 						unit:SetAttribute("TargetPosition", nil)
 						unit:SetAttribute("FlowFieldId", nil)
+
+						-- Stop running now that we're home. Only "hurry" is cleared
+						-- here: a "charge" gait belongs to CombatService and is
+						-- cleared when the charge ends, not when a move completes.
+						if unit:GetAttribute("Gait") == "hurry" then
+							unit:SetAttribute("Gait", nil)
+						end
 
 						-- End of a group march: restore this unit's own walk speed
 						-- (it was capped to the slowest member for the journey)
@@ -649,4 +724,3 @@ end
 MovementDebug:info("MovementSystem initialized successfully with production A* pathfinding!")
 
 return MovementSystem
-                                                                                                                                                                                                                                                                                                                                                        

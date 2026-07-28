@@ -103,7 +103,7 @@ function AIManager.registerAI(
 	local aiDifficulty: AIDifficulty = difficulty or "Medium" -- Default to Medium
 
 	-- Generate random AI personality for variety
-	local unitTypes = { "Archer", "Knight", "Swordsman", "Macemen", "Light_Cavalry" }
+	local unitTypes = { "Archer", "Knight", "MenAtArms", "Pikeman", "Light_Cavalry" }
 	local preferredUnit = unitTypes[math.random(1, #unitTypes)]
 	local buildingBias = if math.random() > 0.5 then "economy" else "military"
 	local aggressionBonus = math.random() * 0.3 -- 0.0 to 0.3 extra aggression
@@ -471,10 +471,10 @@ function AIManager.attemptTraining(ownerId: number)
 		unitOptions = { "Peasant" }
 	elseif math.random() < (config.aggressiveness + state.aggressionBonus) then
 		-- Aggressive units (combat focused) - favor preferred unit
-		unitOptions = { state.preferredUnitType, "Swordsman", "Knight", "Macemen", "Archer" }
+		unitOptions = { state.preferredUnitType, "MenAtArms", "Knight", "Pikeman", "Archer" }
 	else
 		-- Mix of combat and economy units
-		unitOptions = { "Peasant", "Archer", "Swordsman", state.preferredUnitType }
+		unitOptions = { "Peasant", "Archer", "MenAtArms", state.preferredUnitType }
 	end
 
 	local randomUnit = unitOptions[math.random(1, #unitOptions)]
@@ -1112,6 +1112,22 @@ function AIManager.getValidBuildingPosition(ownerId: number, buildingName: strin
 	local offsetX = math.random(-200, 200)
 	local offsetZ = math.random(-200, 200)
 	return state.spawnPoint * CFrame.new(offsetX, 0, offsetZ)
+end
+
+-- Full state wipe for a new match: tears down every registered AI kingdom
+-- (destroys their buildings/units and drops their state, which also stops
+-- each AI's runAILoop coroutine on its next `while state and aiStates[ownerId]`
+-- check). Called once from GameManager's LeaveGame teardown when the last
+-- player leaves — AI has no leave event of its own to hook.
+function AIManager.resetMatch()
+	local ownerIds = {}
+	for ownerId in aiStates do
+		table.insert(ownerIds, ownerId)
+	end
+	for _, ownerId in ownerIds do
+		AIManager.removeAI(ownerId)
+	end
+	AIDebug:info(`AIManager match state reset — cleared {#ownerIds} AI kingdom(s)`)
 end
 
 -- Remove AI when they're defeated

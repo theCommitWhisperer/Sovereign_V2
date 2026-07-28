@@ -11,6 +11,7 @@ function HeroAbilitiesPanel:init()
 	self:setState({
 		abilities = {},
 		cooldowns = {},
+		glory = 0,
 		currentTime = tick(),
 	})
 
@@ -42,6 +43,12 @@ function HeroAbilitiesPanel:didMount()
 			self:setState({
 				abilities = data.abilities,
 				cooldowns = data.cooldowns,
+				glory = data.glory or self.state.glory,
+			})
+		elseif action == "GloryUpdate" then
+			-- Batched server push: single int pair per player (see GloryManager)
+			self:setState({
+				glory = data.glory or 0,
 			})
 		elseif action == "AbilityUsed" then
 			-- Ability was used successfully, refresh cooldowns
@@ -56,6 +63,7 @@ end
 function HeroAbilitiesPanel:render()
 	local abilities = self.state.abilities or {}
 	local cooldowns = self.state.cooldowns or {}
+	local glory = self.state.glory or 0
 	local currentTime = self.state.currentTime
 
 	-- Convert abilities table to array for rendering
@@ -73,6 +81,11 @@ function HeroAbilitiesPanel:render()
 	end)
 
 	local abilityButtons = {}
+	abilityButtons.Layout = React.createElement("UIGridLayout", {
+		CellSize = UDim2.fromOffset(80, 80),
+		CellPadding = UDim2.fromOffset(10, 10),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	})
 
 	for index, abilityEntry in ipairs(abilityArray) do
 		local ability = abilityEntry.data
@@ -162,6 +175,20 @@ function HeroAbilitiesPanel:render()
 				}),
 			}) or nil,
 
+			-- Glory activation cost
+			GloryCost = (ability.glory_cost and ability.glory_cost > 0) and React.createElement("TextLabel", {
+				Size = UDim2.new(1, -4, 0, 16),
+				Position = UDim2.new(0, 2, 1, -18),
+				BackgroundTransparency = 1,
+				Text = string.format("%d Glory", ability.glory_cost),
+				TextColor3 = glory >= ability.glory_cost and Color3.fromRGB(255, 215, 0)
+					or Color3.fromRGB(200, 80, 80),
+				TextSize = 12,
+				Font = UIConfig.Font.Default,
+				TextXAlignment = Enum.TextXAlignment.Center,
+				ZIndex = 3,
+			}) or nil,
+
 			-- Hotkey hint
 			Hotkey = React.createElement("TextLabel", {
 				Size = UDim2.new(0, 20, 0, 20),
@@ -188,7 +215,7 @@ function HeroAbilitiesPanel:render()
 		BackgroundColor3 = UIConfig.HUD.PanelBackground,
 	}, {
 		Header = React.createElement("TextLabel", {
-			Size = UDim2.new(1, -20, 0, 30),
+			Size = UDim2.new(0.6, -20, 0, 30),
 			Position = UDim2.fromOffset(10, 10),
 			BackgroundTransparency = 1,
 			Text = "⚔️ Hero Abilities",
@@ -198,17 +225,22 @@ function HeroAbilitiesPanel:render()
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
 
+		GloryCounter = React.createElement("TextLabel", {
+			Size = UDim2.new(0.4, -10, 0, 30),
+			Position = UDim2.new(0.6, 0, 0, 10),
+			BackgroundTransparency = 1,
+			Text = string.format("🏆 Glory: %d", glory),
+			TextColor3 = Color3.fromRGB(255, 215, 0),
+			TextSize = 18,
+			Font = UIConfig.Font.Title,
+			TextXAlignment = Enum.TextXAlignment.Right,
+		}),
+
 		AbilityGrid = React.createElement("Frame", {
 			Size = UDim2.new(1, -20, 1, -50),
 			Position = UDim2.fromOffset(10, 45),
 			BackgroundTransparency = 1,
-		}, React.assign({
-			Layout = React.createElement("UIGridLayout", {
-				CellSize = UDim2.fromOffset(80, 80),
-				CellPadding = UDim2.fromOffset(10, 10),
-				SortOrder = Enum.SortOrder.LayoutOrder,
-			}),
-		}, abilityButtons)),
+		}, abilityButtons),
 
 		HelpText = React.createElement("TextLabel", {
 			Size = UDim2.new(1, -20, 0, 20),

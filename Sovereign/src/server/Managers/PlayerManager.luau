@@ -17,6 +17,8 @@ export type PlayerData = {
 	Units: { Instance },
 	Keep: Instance?,
     Happiness: number?,
+	-- Lobby-selected kingdom color (applied to Banner/Flag meshes on the Keep)
+	BannerColor: Color3?,
 }
 
 local PlayersData: { [number]: PlayerData } = {}
@@ -92,7 +94,7 @@ end
 
 -- Remove a unit from player's data
 function PlayerManager.removeUnit(player: Player, unit: Model)
-	local playerData = get(player)
+	local playerData = PlayerManager.get(player)
 	if not playerData then
 		channel:warn(`No player data for {player.Name}`)
 		return

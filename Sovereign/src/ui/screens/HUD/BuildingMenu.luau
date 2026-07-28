@@ -72,10 +72,18 @@ local BUILDING_CATEGORIES = {
 		"Scriptorium",
 		"Celtic Cross",
 	},
+	-- Prestige: Glory-gated hero hubs and forward siege camp (Crown icon)
+	Prestige = {
+		"Siege Tent",
+		"Royal Assembly Hall",
+		"Sidhe Mound",
+		"Coastal Long-Port",
+	},
 }
 
 function BuildingMenu:render()
 	local resources = self.props.resources or {}
+	local gloryLifetime = self.props.gloryLifetime or 0
 	local selectedCategory = self.props.selectedCategory or "Defense"
 	local currentWallPiece = self.props.currentWallPiece or "Wall Segment"
 	local isPlacingWall = self.props.isPlacingWall or false
@@ -123,15 +131,66 @@ function BuildingMenu:render()
 			-- Check if this wall piece is currently selected (only highlight when actively placing walls)
 			local isSelectedWallPiece = isPlacingWall and wallPieceMapping[currentWallPiece] == buildingName
 
+			-- Prestige (Hero Hub) buildings unlock at LIFETIME Glory thresholds
+			-- (GloryManager.canUnlockBuilding mirror — server still enforces).
+			local gloryRequired = buildingInfo.glory_required or 0
+			local isGloryLocked = gloryRequired > 0 and gloryLifetime < gloryRequired
+
 			local buttonChildren = {}
 
-			-- Add icon if available
+			-- Add icon if available (fallback text label when no icon is set)
 			if buildingInfo.icon_asset_id then
 				buttonChildren.Icon = React.createElement("ImageLabel", {
 					Size = UDim2.fromScale(1, 1),
 					Image = buildingInfo.icon_asset_id,
+					ImageColor3 = isGloryLocked and Color3.fromRGB(95, 95, 95) or Color3.fromRGB(255, 255, 255),
 					BackgroundTransparency = 1,
 					ScaleType = Enum.ScaleType.Fit,
+				})
+			else
+				buttonChildren.NameFallback = React.createElement("TextLabel", {
+					Size = UDim2.fromScale(1, 1),
+					BackgroundColor3 = UIConfig.HUD.UtilityButtonBackground,
+					BorderSizePixel = 1,
+					BorderColor3 = UIConfig.HUD.UtilityButtonBorder,
+					Text = buildingName:gsub("_", " "),
+					TextColor3 = isGloryLocked and Color3.fromRGB(140, 140, 140) or UIConfig.HUD.PanelTextColor,
+					TextSize = 11,
+					Font = Enum.Font.GothamBold,
+					TextWrapped = true,
+				})
+			end
+
+			if isGloryLocked then
+				-- Darken + lock badge + lifetime-Glory progress
+				buttonChildren.LockShade = React.createElement("Frame", {
+					Size = UDim2.fromScale(1, 1),
+					BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+					BackgroundTransparency = 0.45,
+					BorderSizePixel = 0,
+					ZIndex = 2,
+				})
+				buttonChildren.LockBadge = React.createElement("TextLabel", {
+					Size = UDim2.fromScale(1, 0.55),
+					Position = UDim2.fromScale(0, 0.08),
+					BackgroundTransparency = 1,
+					Text = "🔒",
+					TextSize = 22,
+					Font = Enum.Font.GothamBold,
+					TextColor3 = Color3.fromRGB(255, 255, 255),
+					ZIndex = 3,
+				})
+				buttonChildren.LockProgress = React.createElement("TextLabel", {
+					Size = UDim2.new(1, 0, 0, 14),
+					Position = UDim2.new(0, 0, 1, -15),
+					BackgroundTransparency = 1,
+					Text = string.format("%d/%d", gloryLifetime, gloryRequired),
+					TextSize = 11,
+					Font = Enum.Font.GothamBold,
+					TextColor3 = Color3.fromRGB(255, 215, 0),
+					TextStrokeTransparency = 0.4,
+					TextStrokeColor3 = Color3.fromRGB(0, 0, 0),
+					ZIndex = 3,
 				})
 			end
 
@@ -144,7 +203,7 @@ function BuildingMenu:render()
 				BorderSizePixel = 0,
 				LayoutOrder = i,
 				[React.Event.MouseButton1Click] = function()
-					if canAfford and self.props.onBuildingSelected then
+					if not isGloryLocked and canAfford and self.props.onBuildingSelected then
 						self.props.onBuildingSelected(buildingName)
 					end
 				end,
@@ -213,6 +272,24 @@ function BuildingMenu:render()
 						if buildingInfo.can_train_units then
 							tooltipLines[#tooltipLines + 1] = "⚔️ Trains: "
 								.. table.concat(buildingInfo.can_train_units, ", ")
+						end
+
+						-- Glory gate (Prestige/Hero Hub buildings) with unlock progress
+						if gloryRequired > 0 then
+							if isGloryLocked then
+								tooltipLines[#tooltipLines + 1] = string.format(
+									"🔒 Requires %d lifetime Glory (%d/%d) — win renown in combat!",
+									gloryRequired,
+									gloryLifetime,
+									gloryRequired
+								)
+							else
+								tooltipLines[#tooltipLines + 1] = string.format(
+									"🏆 Glory unlock earned (%d/%d)",
+									gloryLifetime,
+									gloryRequired
+								)
+							end
 						end
 
 						-- Build time

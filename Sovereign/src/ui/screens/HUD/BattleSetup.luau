@@ -34,11 +34,9 @@ local COLOR_ENEMY = Color3.fromRGB(190, 90, 80)
 local function buildUnitList(): { string }
 	local list = {}
 	for unitType, unitData in GameData.Units :: { [string]: any } do
-		if unitData.combat then
-			local profile = CombatConfig.getProfile(unitType, unitData.subtype)
-			if not CombatConfig.hasTag(profile, "civilian") then
-				table.insert(list, unitType)
-			end
+		local profile = CombatConfig.getProfile(unitType, unitData.subtype)
+		if not CombatConfig.hasTag(profile, "civilian") then
+			table.insert(list, unitType)
 		end
 	end
 	table.sort(list)

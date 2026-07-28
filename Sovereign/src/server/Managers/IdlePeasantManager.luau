@@ -6,6 +6,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
+local UnitAnimations = require(ReplicatedStorage.Shared.GameData.UnitAnimationsData)
 local SpawnPointSystem = require(script.Parent.Parent.Systems.SpawnPointSystem)
 
 local IdlePeasantManager = {}
@@ -19,6 +20,13 @@ export type IdleBehavior = {
 	behaviorType: "Campfire" | "Roaming",
 	ownerId: number,
 	campfirePosition: Vector3?, -- Position to gather at (for Campfire behavior)
+	-- Which of the CAMPFIRE_POSITIONS_COUNT slots this peasant owns. Held so no
+	-- two peasants are ever sent to the same spot; freed when the entry is
+	-- removed from IdlePeasants, which is the only place it's tracked.
+	slotIndex: number?,
+	campfireCenter: Vector3?, -- The fire itself, so seated peasants can face it
+	seated: boolean?, -- Already arrived and sitting; stops re-facing every tick
+	arriveBy: number?, -- tick() deadline; see CAMPFIRE_ARRIVAL_TIMEOUT
 	roamCenter: Vector3?, -- Center point for roaming (for Roaming behavior)
 	roamRadius: number, -- Roaming radius (default: 30 studs)
 	roamMinRadius: number?, -- Minimum distance from center (outside obstacle)
@@ -31,7 +39,25 @@ local lastBehaviorUpdate = 0
 local BEHAVIOR_UPDATE_INTERVAL = 2 -- Update behaviors every 2 seconds
 local ROAM_RADIUS = 30 -- Peasants roam within 30 studs of Keep
 local CAMPFIRE_POSITIONS_COUNT = 6 -- 6 positions around the campfire
-local CAMPFIRE_RADIUS = 8 -- 8 studs from SpawnPoint
+local CAMPFIRE_RADIUS = 8 -- 8 studs from SpawnPoint (fallback when no fire model)
+-- Ring radius when we DO have a Campfire model. The fire is ~6.4 studs across,
+-- so 5 studs from centre puts peasants just outside it, close enough to read as
+-- huddled rather than loitering nearby.
+-- The fire itself is ~6.4 studs across, i.e. ~3.2 from centre. At 5 studs a
+-- peasant sat less than two studs clear of the flames, so any shove put someone
+-- inside them. 7 leaves ~3.8 studs of clearance and still reads as huddled.
+local CAMPFIRE_MODEL_RADIUS = 7
+
+-- How long a peasant may spend trying to reach its campfire slot before we give
+-- up and let it sit where it stands.
+--
+-- This exists because the campfire is INSIDE the Keep's bounding box, whereas
+-- every other idle position is deliberately pushed outside it (see
+-- safeIdleRadius below). If the Keep's footprint is treated as one solid
+-- pathfinding obstacle, the slot is unreachable and the peasant would walk on
+-- the spot forever with no error anywhere. Timing out converts that silent hang
+-- into a logged warning plus a peasant that at least looks settled.
+local CAMPFIRE_ARRIVAL_TIMEOUT = 30
 
 -- Get campfire positions in a circle around Keep's SpawnPoint.
 -- radius parameter overrides CAMPFIRE_RADIUS so positions can be pushed
@@ -49,6 +75,101 @@ local function getCampfirePositions(keepSpawnPoint: Vector3, count: number, radi
 	end
 
 	return positions
+end
+
+-- Locate the actual fire inside a Keep.
+--
+-- Before this, "campfire" peasants were arranged around the Keep's SPAWN POINT
+-- at a radius wide enough to clear the whole building — on the Stone Wall Large
+-- Keep that works out to a 76-stud circle, so the gathering had nothing to do
+-- with the fire and read as peasants loitering around the perimeter.
+--
+-- Returns nil when a Keep has no Campfire, and the caller falls back to the old
+-- spawn-point ring. Not every Keep model is guaranteed to have one.
+-- Sit down / stand up, including the hover correction.
+--
+-- The Humanoid parks its root a fixed height above the ground no matter what
+-- the rig is doing, so a seated pose — legs folded, body lower — leaves the
+-- unit hanging in mid-air. Dropping HipHeight by the clip's measured `sitHipDrop`
+-- puts it back on the ground. The original height is stashed on the model rather
+-- than recomputed, because the six peasant rigs each have their own (1.65–2.12).
+-- Lower the seated body WITHOUT touching physics.
+--
+-- The obvious lever is Humanoid.HipHeight, and it is the wrong one. A skinned
+-- rig's root part is its only collider, so lowering HipHeight walks the collider
+-- down towards the floor; at 0 the root's bottom face is resting on the ground
+-- while the Humanoid is still trying to maintain that clearance against it, and
+-- the unit never settles. It reads exactly like "the ground is interfering".
+--
+-- These rigs stand at 1.65–2.12, so a 1.90 drop pinned five of the six at
+-- HipHeight 0. Only Male_Peasant_3 (2.12, landing at 0.22) had room to spare —
+-- and it was the only one that sat correctly. That was the tell.
+--
+-- So the whole drop goes through the RootJoint instead. It shifts the MESH
+-- relative to the root, which is purely visual: the Humanoid keeps its normal
+-- standing HipHeight, the collider never approaches the floor, and there is no
+-- lower limit to hit. Every rig drops by exactly `sitHipDrop`.
+--
+-- Safe from the animation: clips drive BONES (poses named Hips, Spine, …) and
+-- this Motor6D's Part1 is the mesh itself, so nothing overwrites C0.
+--
+-- The trade-off is that a seated peasant's collision capsule stays at standing
+-- height. For a stationary unit at a campfire that is invisible, and it keeps a
+-- little personal space around the fire rather than letting units walk through.
+local function findRootJoint(peasant: Model): Motor6D?
+	local root = peasant.PrimaryPart
+	if not root then
+		return nil
+	end
+	local joint = root:FindFirstChild("RootJoint")
+	return (joint and joint:IsA("Motor6D")) and joint or nil
+end
+
+local function setSeated(peasant: Model, seated: boolean)
+	local joint = findRootJoint(peasant)
+
+	if seated then
+		peasant:SetAttribute(UnitAnimations.POSE_ATTRIBUTE, "sit")
+
+		-- Guarded on the stored drop so the 2-second update loop can call this
+		-- repeatedly without sinking the peasant a little further each pass.
+		if joint and peasant:GetAttribute("SitJointDrop") == nil then
+			local set = UnitAnimations.getSet(peasant:GetAttribute("AnimSet") :: string?)
+			local drop = set and set.sitHipDrop or 0
+			if drop > 0 then
+				joint.C0 = joint.C0 * CFrame.new(0, -drop, 0)
+				peasant:SetAttribute("SitJointDrop", drop)
+			end
+		end
+		return
+	end
+
+	peasant:SetAttribute(UnitAnimations.POSE_ATTRIBUTE, nil)
+
+	-- Restore by the exact amount applied, so repeated sit/stand cycles can't
+	-- accumulate drift.
+	local jointDrop = peasant:GetAttribute("SitJointDrop") :: number?
+	if jointDrop and joint then
+		joint.C0 = joint.C0 * CFrame.new(0, jointDrop, 0)
+	end
+	peasant:SetAttribute("SitJointDrop", nil)
+end
+
+local function findCampfire(keep: Model): Vector3?
+	local fire = keep:FindFirstChild("Campfire", true)
+	if not fire then
+		return nil
+	end
+	if fire:IsA("BasePart") then
+		return fire.Position
+	end
+	if fire:IsA("Model") then
+		-- Campfire models here have no PrimaryPart, so the bounding box centre is
+		-- the only thing available.
+		local cf = fire:GetBoundingBox()
+		return cf.Position
+	end
+	return nil
 end
 
 -- Find Keep for a player
@@ -98,28 +219,66 @@ function IdlePeasantManager.addIdlePeasant(peasant: Model, ownerId: number)
 	local _, keepSize = keep:GetBoundingBox()
 	local safeIdleRadius = math.max(keepSize.X, keepSize.Z) / 2 + 10
 
-	-- Randomly assign behavior type (60% campfire, 40% roaming)
-	local behaviorType: "Campfire" | "Roaming" = math.random() < 0.6 and "Campfire" or "Roaming"
+	-- Gather at the fire itself when the Keep has one; otherwise fall back to the
+	-- old wide ring around the spawn point, which at least keeps peasants clear
+	-- of the Keep's obstacle.
+	local fireCenter = findCampfire(keep)
+	local ringCenter = fireCenter or spawnPoint
+	local ringRadius = if fireCenter then CAMPFIRE_MODEL_RADIUS else safeIdleRadius
+	local campfirePositions = getCampfirePositions(ringCenter, CAMPFIRE_POSITIONS_COUNT, ringRadius)
+
+	-- Claim a slot EXCLUSIVELY.
+	--
+	-- This used to be `campfirePositions[math.random(1, #campfirePositions)]` — a
+	-- random pick WITH REPLACEMENT, so two peasants could be sent to the same
+	-- spot. They then shoved each other off it, and with the ring drawn tight
+	-- around the fire the loser ended up standing in the flames.
+	--
+	-- Six slots is therefore a hard cap on how many can sit at one fire. This is
+	-- resolved BEFORE choosing a behaviour, because "the fire is full" has to be
+	-- able to turn a would-be sitter into a roamer.
+	local taken: { [number]: boolean } = {}
+	for _, existing in IdlePeasants do
+		if existing.ownerId == ownerId and existing.slotIndex then
+			taken[existing.slotIndex] = true
+		end
+	end
+
+	local free = {}
+	for i = 1, #campfirePositions do
+		if not taken[i] then
+			table.insert(free, i)
+		end
+	end
+
+	-- 60/40 campfire/roaming as before, but a full fire forces roaming.
+	local behaviorType: "Campfire" | "Roaming" = (math.random() < 0.6 and #free > 0) and "Campfire" or "Roaming"
 
 	local behavior: IdleBehavior
 
 	if behaviorType == "Campfire" then
-		-- Assign to one of the campfire positions (outside the Keep obstacle)
-		local campfirePositions = getCampfirePositions(spawnPoint, CAMPFIRE_POSITIONS_COUNT, safeIdleRadius)
-		local randomPosition = campfirePositions[math.random(1, #campfirePositions)]
+		local slotIndex = free[math.random(1, #free)]
+		local slotPosition = campfirePositions[slotIndex]
 
 		behavior = {
 			peasant = peasant,
 			behaviorType = "Campfire",
 			ownerId = ownerId,
-			campfirePosition = randomPosition,
+			slotIndex = slotIndex,
+			campfirePosition = slotPosition,
+			campfireCenter = fireCenter,
+			seated = false,
+			arriveBy = tick() + CAMPFIRE_ARRIVAL_TIMEOUT,
 			roamCenter = nil,
 			roamRadius = ROAM_RADIUS,
 			nextRoamTime = 0,
-			targetPosition = randomPosition,
+			targetPosition = slotPosition,
 		}
 
-		IdleDebug:info(`Peasant {peasant.Name} assigned to Campfire at {randomPosition}`)
+		IdleDebug:info(
+			`Peasant {peasant.Name} -> campfire slot {slotIndex}/{CAMPFIRE_POSITIONS_COUNT} at {slotPosition} `
+				.. `({fireCenter and "fire model" or "spawn-point fallback"})`
+		)
 	else
 		-- Roaming behavior — roam between safeIdleRadius and safeIdleRadius+ROAM_RADIUS
 		-- so targets always land outside the Keep obstacle
@@ -148,6 +307,10 @@ function IdlePeasantManager.removeIdlePeasant(peasant: Model)
 		if IdlePeasants[i].peasant == peasant then
 			table.remove(IdlePeasants, i)
 			peasant:SetAttribute("IsIdle", false)
+			-- Stand up. A peasant pulled off the fire to go and work must not keep
+			-- the seated pose — it would sit down again the moment it stops, and
+			-- would keep the lowered HipHeight and sink into the ground.
+			setSeated(peasant, false)
 			IdleDebug:info(`Removed {peasant.Name} from idle behavior`)
 			return true
 		end
@@ -217,13 +380,57 @@ local function updateIdleBehaviors(dt: number)
 		if behavior.peasant:GetAttribute("IsWorking") or behavior.peasant:GetAttribute("IsHauling") then
 			table.remove(IdlePeasants, i)
 			behavior.peasant:SetAttribute("IsIdle", false)
+			-- Second removal path (the other is removeIdlePeasant): a peasant that
+			-- picked up a job while seated must stand up here too, or it would sit
+			-- down again at the first pause in its work.
+			setSeated(behavior.peasant, false)
 			continue
 		end
 
 		if behavior.behaviorType == "Campfire" then
-			-- Campfire behavior: Stay at assigned campfire position
+			-- Campfire behavior: walk to the assigned slot, then sit down.
 			if behavior.campfirePosition then
-				pathfindToPosition(behavior.peasant, behavior.campfirePosition, 2)
+				local arrived = pathfindToPosition(behavior.peasant, behavior.campfirePosition, 2)
+
+				if not arrived and behavior.arriveBy and tick() > behavior.arriveBy then
+					-- Couldn't get there. Overwhelmingly likely the slot is inside
+					-- the Keep's pathfinding obstacle; say so rather than letting the
+					-- peasant walk on the spot forever.
+					IdleDebug:warn(
+						`{behavior.peasant.Name} could not reach its campfire slot in `
+							.. `{CAMPFIRE_ARRIVAL_TIMEOUT}s — sitting where it stands. If this fires for `
+							.. `every peasant, the Campfire is unreachable inside the Keep's obstacle; `
+							.. `move the fire outside the footprint or exclude the Keep interior.`
+					)
+					arrived = true
+					behavior.peasant:SetAttribute("IsMoving", false)
+					behavior.peasant:SetAttribute("TargetPosition", nil)
+				end
+
+				if arrived and not behavior.seated then
+					behavior.seated = true
+					behavior.arriveBy = nil
+					-- Turn to face the fire before sitting, so the ring reads as a
+					-- circle around it rather than six people facing at random.
+					local root = behavior.peasant.PrimaryPart
+					if root and behavior.campfireCenter then
+						local here = root.Position
+						local look = Vector3.new(behavior.campfireCenter.X, here.Y, behavior.campfireCenter.Z)
+						if (look - here).Magnitude > 0.05 then
+							behavior.peasant:PivotTo(CFrame.lookAt(here, look))
+						end
+					end
+					-- UnitAnimator swaps idle for the seated clip. It only takes
+					-- effect once the unit is actually stationary, so there's no
+					-- hand-off to get wrong: an order to move elsewhere makes the
+					-- peasant walk, and walking outranks the pose.
+					setSeated(behavior.peasant, true)
+				elseif not arrived and behavior.seated then
+					-- Pushed off its slot (shoved by a crowd, or re-targeted): stand
+					-- back up so it doesn't slide to the fire in a seated pose.
+					behavior.seated = false
+					setSeated(behavior.peasant, false)
+				end
 			end
 
 		elseif behavior.behaviorType == "Roaming" then
@@ -267,4 +474,3 @@ function IdlePeasantManager.update(dt: number)
 end
 
 return IdlePeasantManager
-                                                                                                                                                                                                                                                                                                                                   

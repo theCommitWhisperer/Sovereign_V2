@@ -1,19 +1,32 @@
 --!strict
--- TaxSystem: Calculates player taxes
+-- TaxSystem: Calculates player tax income (Gold).
+-- Income = population * taxRate * popularity multiplier.
+-- Popularity (Happiness) gates income via EconomyConfig.TaxPopularityGate:
+-- unhappy subjects pay reduced or no taxes, loyal ones pay a small bonus.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local EconomyConfig = require(ReplicatedStorage.Shared.GameData.EconomyConfig)
 
 local TaxSystem = {}
 
-function TaxSystem.calculateTaxes(player: Player)
+function TaxSystem.calculateTaxes(player: Player): number
     local PlayerManager = require(script.Parent.Parent.Managers.PlayerManager)
     local TaxManager = require(script.Parent.Parent.Managers.TaxManager)
+    local PopulationManager = require(script.Parent.Parent.Managers.PopulationManager)
+
     local playerData = PlayerManager.get(player)
     local taxInfo = TaxManager.get(player)
 
     if playerData and taxInfo then
-        local population = #playerData.Units -- Simple population count
+        -- Population = peasants (same count the dashboard shows), not army size
+        local population = PopulationManager.getCurrentPopulation(player)
         local taxRate = taxInfo.taxRate
-        local taxes = math.floor(population * taxRate)
-        return taxes
+
+        -- Popularity gate: happiness drives how much of the levy is actually paid
+        local happiness = playerData.Happiness or 50
+        local popularityMultiplier = EconomyConfig.getTaxPopularityMultiplier(happiness)
+
+        return math.floor(population * taxRate * popularityMultiplier)
     end
 
     return 0

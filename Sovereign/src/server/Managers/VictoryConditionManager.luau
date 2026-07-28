@@ -262,9 +262,11 @@ function VictoryConditionManager.checkVictory(player: Player)
 					local GameEvent = RemoteEvents:FindFirstChild("GameEvent")
 					if GameEvent then
 						pcall(function()
+							local AchievementManager = require(script.Parent.AchievementManager) :: any
 							GameEvent:FireClient(player, "Victory", {
 								victoryType = condition.name,
 								description = condition.description,
+								stats = AchievementManager.getMatchSnapshot(player, data.gameStartTime),
 							})
 						end)
 					end
@@ -309,9 +311,11 @@ function VictoryConditionManager.checkDefeat(player: Player)
 				local GameEvent = RemoteEvents:FindFirstChild("GameEvent")
 				if GameEvent then
 					pcall(function()
+						local AchievementManager = require(script.Parent.AchievementManager) :: any
 						GameEvent:FireClient(player, "Defeat", {
 							lossReason = condition.name,
 							description = condition.description,
+							stats = AchievementManager.getMatchSnapshot(player, data.gameStartTime),
 						})
 					end)
 				end
@@ -340,4 +344,3 @@ function VictoryConditionManager.init()
 end
 
 return VictoryConditionManager
-                                                                                                                                                                                                                                                                                               

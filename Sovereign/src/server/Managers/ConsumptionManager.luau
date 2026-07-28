@@ -9,6 +9,7 @@ local PopulationManager = require(script.Parent.PopulationManager)
 local BuildingManager = require(script.Parent.BuildingManager)
 local SeasonManager = require(script.Parent.SeasonManager)
 local GameData = require(ReplicatedStorage.Shared.GameData)
+local EconomyConfig = require(ReplicatedStorage.Shared.GameData.EconomyConfig)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
 local ConsumptionDebug = DebugManager.createChannel("ConsumptionManager", false)
@@ -23,6 +24,7 @@ export type ConsumptionData = {
 	totalConsumedThisCycle: number,
 	isStarving: boolean,
 	starvationDuration: number, -- How long (in seconds) they've been starving
+	rationsPolicy: string, -- Key into EconomyConfig.RationsPolicies
 }
 
 -- Initialize consumption data for a player
@@ -32,8 +34,31 @@ function ConsumptionManager.create(player: Player)
 		totalConsumedThisCycle = 0,
 		isStarving = false,
 		starvationDuration = 0,
+		rationsPolicy = EconomyConfig.DefaultRationsPolicy,
 	}
 	ConsumptionDebug:info(`Created consumption data for {player.Name}`)
+end
+
+-- Set the Food Rations policy (from the Policies UI). Returns false for unknown levels.
+function ConsumptionManager.setRationsPolicy(player: Player, policyName: string): boolean
+	local consData = consumptionData[player.UserId]
+	if not consData or not EconomyConfig.RationsPolicies[policyName] then
+		return false
+	end
+	consData.rationsPolicy = policyName
+	ConsumptionDebug:info(`{player.Name} set rations policy to {policyName}`)
+	return true
+end
+
+function ConsumptionManager.getRationsPolicy(player: Player): string
+	local consData = consumptionData[player.UserId]
+	return consData and consData.rationsPolicy or EconomyConfig.DefaultRationsPolicy
+end
+
+-- Happiness modifier granted/taken by the current rations level (used by HappinessSystem)
+function ConsumptionManager.getRationsHappinessModifier(player: Player): number
+	local policy = EconomyConfig.RationsPolicies[ConsumptionManager.getRationsPolicy(player)]
+	return policy and policy.happinessModifier or 0
 end
 
 -- Get consumption data for a player
@@ -42,11 +67,10 @@ function ConsumptionManager.get(player: Player): ConsumptionData?
 end
 
 -- Calculate food consumption rate for population
--- Base: 0.1 food per peasant per consumption cycle (30 seconds)
+-- Base rate and cycle come from EconomyConfig.Consumption
 function ConsumptionManager.getPopulationConsumption(player: Player): number
 	local population = PopulationManager.getCurrentPopulation(player)
-	local consumptionRate = 0.1 -- food per person per 30 seconds
-	return population * consumptionRate
+	return population * EconomyConfig.Consumption.foodPerPeasant
 end
 
 -- Calculate food consumption for buildings (Kitchen, Restaurant)
@@ -85,9 +109,14 @@ function ConsumptionManager.getTotalConsumption(player: Player): number
 	local buildingConsumption = ConsumptionManager.getBuildingConsumption(player)
 	local baseConsumption = popConsumption + buildingConsumption
 
+	-- Apply the Food Rations policy multiplier (population only would be more
+	-- realistic, but the whole-economy multiplier matches the old behavior scale)
+	local rationsPolicy = EconomyConfig.RationsPolicies[ConsumptionManager.getRationsPolicy(player)]
+	local rationsMultiplier = rationsPolicy and rationsPolicy.consumptionMultiplier or 1.0
+
 	-- Apply seasonal multiplier
 	local seasonalMultiplier = SeasonManager.getFoodConsumptionMultiplier(player)
-	local totalConsumption = baseConsumption * seasonalMultiplier
+	local totalConsumption = baseConsumption * rationsMultiplier * seasonalMultiplier
 
 	return totalConsumption
 end

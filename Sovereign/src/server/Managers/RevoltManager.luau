@@ -188,7 +188,7 @@ function RevoltManager.triggerRevoltStage(player: Player, stage: number)
             -- Spawn rebel units
             local spawnPosition = playerData.SpawnPoint and playerData.SpawnPoint.Position or Vector3.new(0, 10, 0)
             for i = 1, 5 do
-                UnitManager.createUnit("Swordsman", -1, spawnPosition + Vector3.new(math.random(-20, 20), 0, math.random(-20, 20)), rebelFaction)
+                UnitManager.createUnit("MenAtArms", -1, spawnPosition + Vector3.new(math.random(-20, 20), 0, math.random(-20, 20)), rebelFaction)
             end
         end)
 
