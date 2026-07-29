@@ -1,0 +1,412 @@
+  22:51:00.882  ========================================  -  Edit
+  22:51:00.882  CORNER WALL ANALYSIS  -  Edit
+  22:51:00.883  ========================================  -  Edit
+  22:51:00.883
+1. MODEL INFORMATION:  -  Edit
+  22:51:00.883     Name: Corner_Stone_Wall  -  Edit
+  22:51:00.883     ClassName: Model  -  Edit
+  22:51:00.883
+2. PIVOT INFORMATION:  -  Edit
+  22:51:00.883     Pivot Position: -76.50382995605469, 28.101566314697266, -74.49846649169922  -  Edit
+  22:51:00.883     Pivot X: -76.50382995605469  -  Edit
+  22:51:00.883     Pivot Y: 28.101566314697266  -  Edit
+  22:51:00.883     Pivot Z: -74.49846649169922  -  Edit
+  22:51:00.883
+3. BOUNDING BOX:  -  Edit
+  22:51:00.883     Center Position: -76.50384521484375, 28.1015682220459, -74.49852752685547  -  Edit
+  22:51:00.884     Center X: -76.50384521484375  -  Edit
+  22:51:00.884     Center Y: 28.1015682220459  -  Edit
+  22:51:00.884     Center Z: -74.49852752685547  -  Edit
+  22:51:00.884     Size: 31.010929107666016, 36.20608139038086, 31.004833221435547  -  Edit
+  22:51:00.884     Width (X): 31.010929107666016  -  Edit
+  22:51:00.884     Height (Y): 36.20608139038086  -  Edit
+  22:51:00.884     Depth (Z): 31.004833221435547  -  Edit
+  22:51:00.884
+4. BOUNDING BOX EXTENTS:  -  Edit
+  22:51:00.884     Min X: -92.00930976867676  -  Edit
+  22:51:00.884     Max X: -60.99838066101074  -  Edit
+  22:51:00.884     Min Y: 9.998527526855469  -  Edit
+  22:51:00.884     Max Y: 46.20460891723633  -  Edit
+  22:51:00.884     Min Z: -90.00094413757324  -  Edit
+  22:51:00.884     Max Z: -58.996110916137695  -  Edit
+  22:51:00.884
+5. PIVOT OFFSETS FROM BOUNDING BOX:  -  Edit
+  22:51:00.884     Pivot to Center X: 0.0000152587890625  -  Edit
+  22:51:00.884     Pivot to Center Y: -0.0000019073486328125  -  Edit
+  22:51:00.885     Pivot to Center Z: 0.00006103515625  -  Edit
+  22:51:00.885     Pivot to Bottom: 18.103038787841797  -  Edit
+  22:51:00.885     Pivot to Top: 18.103042602539062  -  Edit
+  22:51:00.885     Pivot to Front (-Z): 15.502477645874023  -  Edit
+  22:51:00.885     Pivot to Back (+Z): 15.502355575561523  -  Edit
+  22:51:00.885     Pivot to Left (-X): 15.50547981262207  -  Edit
+  22:51:00.885     Pivot to Right (+X): 15.505449295043945  -  Edit
+  22:51:00.885
+6. PRIMARY PART:  -  Edit
+  22:51:00.885     Primary Part: NONE  -  Edit
+  22:51:00.885
+7. ALL PARTS IN MODEL:  -  Edit
+  22:51:00.885     Part 1: Part  -  Edit
+  22:51:00.885        Position: -62.50, 43.00, -65.10  -  Edit
+  22:51:00.885        Size: 1.40, 4.00, 1.40  -  Edit
+  22:51:00.885        Bottom Y: 41.00  -  Edit
+  22:51:00.885     Part 2: Part  -  Edit
+  22:51:00.885        Position: -62.50, 42.00, -71.00  -  Edit
+  22:51:00.885        Size: 2.80, 2.00, 0.60  -  Edit
+  22:51:00.886        Bottom Y: 41.00  -  Edit
+  22:51:00.886     Part 3: Part  -  Edit
+  22:51:00.886        Position: -62.50, 40.00, -67.00  -  Edit
+  22:51:00.886        Size: 1.00, 2.00, 10.80  -  Edit
+  22:51:00.886        Bottom Y: 39.00  -  Edit
+  22:51:00.886     Part 4: Detail  -  Edit
+  22:51:00.886        Position: -62.40, 45.10, -60.35  -  Edit
+  22:51:00.886        Size: 1.80, 0.20, 2.70  -  Edit
+  22:51:00.886        Bottom Y: 45.00  -  Edit
+  22:51:00.886     Part 5: Part  -  Edit
+  22:51:00.886        Position: -68.00, 33.50, -60.00  -  Edit
+  22:51:00.886        Size: 2.00, 7.00, 12.00  -  Edit
+  22:51:00.886        Bottom Y: 30.00  -  Edit
+  22:51:00.886     Part 6: Part  -  Edit
+  22:51:00.887        Position: -73.60, 40.01, -60.30  -  Edit
+  22:51:00.887        Size: 2.60, 6.00, 1.40  -  Edit
+  22:51:00.887        Bottom Y: 37.01  -  Edit
+  22:51:00.887     Part 7: Part  -  Edit
+  22:51:00.887        Position: -68.00, 25.00, -79.00  -  Edit
+  22:51:00.887        Size: 20.00, 10.00, 12.00  -  Edit
+  22:51:00.887        Bottom Y: 20.00  -  Edit
+  22:51:00.887     Part 8: Detail  -  Edit
+  22:51:00.887        Position: -73.50, 43.50, -67.00  -  Edit
+  22:51:00.887        Size: 1.60, 0.20, 5.40  -  Edit
+  22:51:00.887        Bottom Y: 43.40  -  Edit
+  22:51:00.888     Part 9: Part  -  Edit
+  22:51:00.888        Position: -73.50, 39.20, -67.00  -  Edit
+  22:51:00.888        Size: 5.20, 8.40, 1.40  -  Edit
+  22:51:00.888        Bottom Y: 35.00  -  Edit
+  22:51:00.888     Part 10: Detail  -  Edit
+  22:51:00.888        Position: -73.60, 43.11, -60.35  -  Edit
+  22:51:00.888        Size: 1.60, 0.20, 2.70  -  Edit
+  22:51:00.888        Bottom Y: 43.01  -  Edit
+  22:51:00.888     Part 11: Part  -  Edit
+  22:51:00.888        Position: -62.50, 45.50, -67.00  -  Edit
+  22:51:00.888        Size: 1.40, 1.00, 5.20  -  Edit
+  22:51:00.888        Bottom Y: 45.00  -  Edit
+  22:51:00.888     Part 12: Part  -  Edit
+  22:51:00.888        Position: -68.00, 15.00, -76.99  -  Edit
+  22:51:00.888        Size: 24.00, 10.00, 12.00  -  Edit
+  22:51:00.888        Bottom Y: 10.00  -  Edit
+  22:51:00.888     Part 13: Part  -  Edit
+  22:51:00.888        Position: -68.00, 34.50, -67.00  -  Edit
+  22:51:00.889        Size: 12.00, 9.00, 12.00  -  Edit
+  22:51:00.889        Bottom Y: 30.00  -  Edit
+  22:51:00.889     Part 14: Detail  -  Edit
+  22:51:00.889        Position: -62.40, 45.10, -73.65  -  Edit
+  22:51:00.889        Size: 1.80, 0.20, 2.70  -  Edit
+  22:51:00.889        Bottom Y: 45.00  -  Edit
+  22:51:00.889     Part 15: Union  -  Edit
+  22:51:00.889        Position: -62.50, 43.00, -67.00  -  Edit
+  22:51:00.889        Size: 1.40, 4.00, 2.40  -  Edit
+  22:51:00.889        Bottom Y: 41.00  -  Edit
+  22:51:00.889     Part 16: Part  -  Edit
+  22:51:00.889        Position: -73.50, 40.00, -67.00  -  Edit
+  22:51:00.889        Size: 10.80, 2.00, 1.00  -  Edit
+  22:51:00.889        Bottom Y: 39.00  -  Edit
+  22:51:00.889     Part 17: Part  -  Edit
+  22:51:00.890        Position: -68.00, 15.00, -61.99  -  Edit
+  22:51:00.890        Size: 6.00, 10.00, 12.00  -  Edit
+  22:51:00.890        Bottom Y: 10.00  -  Edit
+  22:51:00.890     Part 18: Part  -  Edit
+  22:51:00.890        Position: -62.50, 42.00, -63.00  -  Edit
+  22:51:00.890        Size: 2.80, 2.00, 0.60  -  Edit
+  22:51:00.890        Bottom Y: 41.00  -  Edit
+  22:51:00.890     Part 19: Part  -  Edit
+  22:51:00.890        Position: -62.40, 41.00, -60.30  -  Edit
+  22:51:00.890        Size: 1.60, 8.00, 2.60  -  Edit
+  22:51:00.890        Bottom Y: 37.00  -  Edit
+  22:51:00.890     Part 20: Part  -  Edit
+  22:51:00.890        Position: -68.00, 34.50, -81.00  -  Edit
+  22:51:00.890        Size: 16.00, 9.00, 12.00  -  Edit
+  22:51:00.890        Bottom Y: 30.00  -  Edit
+  22:51:00.890     Part 21: Detail  -  Edit
+  22:51:00.890        Position: -62.50, 46.10, -67.00  -  Edit
+  22:51:00.890        Size: 1.60, 0.20, 5.40  -  Edit
+  22:51:00.891        Bottom Y: 46.00  -  Edit
+  22:51:00.891     Part 22: Part  -  Edit
+  22:51:00.891        Position: -62.50, 43.00, -68.90  -  Edit
+  22:51:00.891        Size: 1.40, 4.00, 1.40  -  Edit
+  22:51:00.891        Bottom Y: 41.00  -  Edit
+  22:51:00.891     Part 23: Detail  -  Edit
+  22:51:00.891        Position: -73.60, 43.10, -75.25  -  Edit
+  22:51:00.891        Size: 1.60, 0.20, 5.90  -  Edit
+  22:51:00.891        Bottom Y: 43.00  -  Edit
+  22:51:00.891     Part 24: Part  -  Edit
+  22:51:00.891        Position: -73.60, 40.00, -75.25  -  Edit
+  22:51:00.891        Size: 5.70, 6.00, 1.40  -  Edit
+  22:51:00.891        Bottom Y: 37.00  -  Edit
+  22:51:00.891     Part 25: Part  -  Edit
+  22:51:00.891        Position: -62.40, 41.00, -73.70  -  Edit
+  22:51:00.891        Size: 1.60, 8.00, 2.60  -  Edit
+  22:51:00.891        Bottom Y: 37.00  -  Edit
+  22:51:00.891     Part 26: Wedge  -  Edit
+  22:51:00.892        Position: -74.50, 18.00, -66.99  -  Edit
+  22:51:00.892        Size: 16.00, 16.00, 1.00  -  Edit
+  22:51:00.892        Bottom Y: 10.00  -  Edit
+  22:51:00.892     Part 27: Wedge  -  Edit
+  22:51:00.892        Position: -61.50, 18.00, -73.99  -  Edit
+  22:51:00.892        Size: 30.00, 16.00, 1.00  -  Edit
+  22:51:00.892        Bottom Y: 10.00  -  Edit
+  22:51:00.892     Part 28: Part  -  Edit
+  22:51:00.892        Position: -68.00, 25.00, -64.00  -  Edit
+  22:51:00.892        Size: 10.00, 10.00, 12.00  -  Edit
+  22:51:00.892        Bottom Y: 20.00  -  Edit
+  22:51:00.892     Part 29: Part  -  Edit
+  22:51:00.892        Position: -73.50, 41.50, -67.00  -  Edit
+  22:51:00.892        Size: 10.80, 1.00, 0.60  -  Edit
+  22:51:00.892        Bottom Y: 41.00  -  Edit
+  22:51:00.892     Part 30: Walkway  -  Edit
+  22:51:00.893        Position: -68.00, 39.50, -73.50  -  Edit
+  22:51:00.893        Size: 28.99, 1.00, 10.00  -  Edit
+  22:51:00.893        Bottom Y: 39.00  -  Edit
+  22:51:00.893     Part 31: Part  -  Edit
+  22:51:00.893        Position: -62.50, 38.00, -67.00  -  Edit
+  22:51:00.893        Size: 1.40, 6.00, 5.20  -  Edit
+  22:51:00.893        Bottom Y: 35.00  -  Edit
+  22:51:00.893     Part 32: Part  -  Edit
+  22:51:00.901        Position: -62.40, 41.00, -87.60  -  Edit
+  22:51:00.902        Size: 1.60, 8.00, 3.60  -  Edit
+  22:51:00.902        Bottom Y: 37.00  -  Edit
+  22:51:00.902     Part 33: Detail  -  Edit
+  22:51:00.902        Position: -62.40, 45.10, -87.60  -  Edit
+  22:51:00.902        Size: 1.80, 0.20, 3.80  -  Edit
+  22:51:00.902        Bottom Y: 45.00  -  Edit
+  22:51:00.902     Part 34: Part  -  Edit
+  22:51:00.902        Position: -62.50, 42.00, -84.40  -  Edit
+  22:51:00.902        Size: 2.80, 2.00, 0.60  -  Edit
+  22:51:00.902        Bottom Y: 41.00  -  Edit
+  22:51:00.903     Part 35: Part  -  Edit
+  22:51:00.903        Position: -62.50, 40.00, -80.40  -  Edit
+  22:51:00.903        Size: 1.00, 2.00, 10.80  -  Edit
+  22:51:00.903        Bottom Y: 39.00  -  Edit
+  22:51:00.903     Part 36: Part  -  Edit
+  22:51:00.903        Position: -62.50, 43.00, -82.30  -  Edit
+  22:51:00.903        Size: 1.40, 4.00, 1.40  -  Edit
+  22:51:00.903        Bottom Y: 41.00  -  Edit
+  22:51:00.903     Part 37: Union  -  Edit
+  22:51:00.903        Position: -62.50, 43.00, -80.40  -  Edit
+  22:51:00.903        Size: 1.40, 4.00, 2.40  -  Edit
+  22:51:00.903        Bottom Y: 41.00  -  Edit
+  22:51:00.903     Part 38: Part  -  Edit
+  22:51:00.903        Position: -62.50, 43.00, -78.50  -  Edit
+  22:51:00.903        Size: 1.40, 4.00, 1.40  -  Edit
+  22:51:00.903        Bottom Y: 41.00  -  Edit
+  22:51:00.903     Part 39: Part  -  Edit
+  22:51:00.903        Position: -62.50, 45.50, -80.40  -  Edit
+  22:51:00.903        Size: 1.40, 1.00, 5.20  -  Edit
+  22:51:00.904        Bottom Y: 45.00  -  Edit
+  22:51:00.904     Part 40: Detail  -  Edit
+  22:51:00.904        Position: -62.50, 46.10, -80.40  -  Edit
+  22:51:00.904        Size: 1.60, 0.20, 5.40  -  Edit
+  22:51:00.904        Bottom Y: 46.00  -  Edit
+  22:51:00.904     Part 41: Part  -  Edit
+  22:51:00.904        Position: -62.50, 42.00, -76.40  -  Edit
+  22:51:00.904        Size: 2.80, 2.00, 0.60  -  Edit
+  22:51:00.904        Bottom Y: 41.00  -  Edit
+  22:51:00.904     Part 42: Part  -  Edit
+  22:51:00.904        Position: -82.10, 43.00, -88.50  -  Edit
+  22:51:00.904        Size: 1.40, 4.00, 1.40  -  Edit
+  22:51:00.904        Bottom Y: 41.00  -  Edit
+  22:51:00.905     Part 43: Part  -  Edit
+  22:51:00.905        Position: -88.00, 42.00, -88.50  -  Edit
+  22:51:00.905        Size: 2.80, 2.00, 0.60  -  Edit
+  22:51:00.905        Bottom Y: 41.00  -  Edit
+  22:51:00.905     Part 44: Part  -  Edit
+  22:51:00.905        Position: -84.00, 40.00, -88.50  -  Edit
+  22:51:00.905        Size: 1.00, 2.00, 10.80  -  Edit
+  22:51:00.905        Bottom Y: 39.00  -  Edit
+  22:51:00.905     Part 45: Detail  -  Edit
+  22:51:00.905        Position: -77.35, 45.10, -88.60  -  Edit
+  22:51:00.905        Size: 1.80, 0.20, 2.70  -  Edit
+  22:51:00.905        Bottom Y: 45.00  -  Edit
+  22:51:00.905     Part 46: Part  -  Edit
+  22:51:00.905        Position: -76.00, 34.50, -83.00  -  Edit
+  22:51:00.906        Size: 4.00, 9.00, 12.00  -  Edit
+  22:51:00.906        Bottom Y: 30.00  -  Edit
+  22:51:00.906     Part 47: Part  -  Edit
+  22:51:00.906        Position: -75.75, 40.00, -77.40  -  Edit
+  22:51:00.906        Size: 5.70, 6.00, 1.40  -  Edit
+  22:51:00.906        Bottom Y: 37.00  -  Edit
+  22:51:00.906     Part 48: Part  -  Edit
+  22:51:00.906        Position: -89.00, 25.00, -83.00  -  Edit
+  22:51:00.906        Size: 6.00, 10.00, 12.00  -  Edit
+  22:51:00.906        Bottom Y: 20.00  -  Edit
+  22:51:00.906     Part 49: Detail  -  Edit
+  22:51:00.906        Position: -84.00, 43.50, -77.50  -  Edit
+  22:51:00.906        Size: 1.60, 0.20, 5.40  -  Edit
+  22:51:00.906        Bottom Y: 43.40  -  Edit
+  22:51:00.906     Part 50: Part  -  Edit
+  22:51:00.906        Position: -84.00, 39.20, -77.50  -  Edit
+  22:51:00.906        Size: 5.20, 8.40, 1.40  -  Edit
+  22:51:00.907        Bottom Y: 35.00  -  Edit
+  22:51:00.907     Part 51: Detail  -  Edit
+  22:51:00.907        Position: -75.75, 43.10, -77.40  -  Edit
+  22:51:00.907        Size: 1.60, 0.20, 5.90  -  Edit
+  22:51:00.907        Bottom Y: 43.00  -  Edit
+  22:51:00.907     Part 52: Part  -  Edit
+  22:51:00.907        Position: -84.00, 45.50, -88.50  -  Edit
+  22:51:00.907        Size: 1.40, 1.00, 5.20  -  Edit
+  22:51:00.907        Bottom Y: 45.00  -  Edit
+  22:51:00.907     Part 53: Part  -  Edit
+  22:51:00.907        Position: -87.00, 15.00, -83.00  -  Edit
+  22:51:00.907        Size: 10.00, 10.00, 12.00  -  Edit
+  22:51:00.907        Bottom Y: 10.00  -  Edit
+  22:51:00.907     Part 54: Part  -  Edit
+  22:51:00.907        Position: -84.00, 34.50, -83.00  -  Edit
+  22:51:00.907        Size: 12.00, 9.00, 12.00  -  Edit
+  22:51:00.907        Bottom Y: 30.00  -  Edit
+  22:51:00.907     Part 55: Detail  -  Edit
+  22:51:00.907        Position: -90.65, 45.10, -88.60  -  Edit
+  22:51:00.908        Size: 1.80, 0.20, 2.70  -  Edit
+  22:51:00.908        Bottom Y: 45.00  -  Edit
+  22:51:00.908     Part 56: Union  -  Edit
+  22:51:00.908        Position: -84.00, 43.00, -88.50  -  Edit
+  22:51:00.908        Size: 1.40, 4.00, 2.40  -  Edit
+  22:51:00.908        Bottom Y: 41.00  -  Edit
+  22:51:00.908     Part 57: Part  -  Edit
+  22:51:00.908        Position: -84.00, 40.00, -77.50  -  Edit
+  22:51:00.908        Size: 10.80, 2.00, 1.00  -  Edit
+  22:51:00.908        Bottom Y: 39.00  -  Edit
+  22:51:00.908     Part 58: Part  -  Edit
+  22:51:00.908        Position: -78.00, 15.00, -83.00  -  Edit
+  22:51:00.908        Size: 8.00, 10.00, 12.00  -  Edit
+  22:51:00.908        Bottom Y: 10.00  -  Edit
+  22:51:00.908     Part 59: Part  -  Edit
+  22:51:00.908        Position: -80.00, 42.00, -88.50  -  Edit
+  22:51:00.908        Size: 2.80, 2.00, 0.60  -  Edit
+  22:51:00.908        Bottom Y: 41.00  -  Edit
+  22:51:00.909     Part 60: Part  -  Edit
+  22:51:00.909        Position: -77.30, 41.00, -88.60  -  Edit
+  22:51:00.909        Size: 1.60, 8.00, 2.60  -  Edit
+  22:51:00.909        Bottom Y: 37.00  -  Edit
+  22:51:00.909     Part 61: Part  -  Edit
+  22:51:00.909        Position: -91.00, 33.50, -83.00  -  Edit
+  22:51:00.909        Size: 2.00, 7.00, 12.00  -  Edit
+  22:51:00.909        Bottom Y: 30.00  -  Edit
+  22:51:00.909     Part 62: Detail  -  Edit
+  22:51:00.909        Position: -84.00, 46.10, -88.50  -  Edit
+  22:51:00.909        Size: 1.60, 0.20, 5.40  -  Edit
+  22:51:00.909        Bottom Y: 46.00  -  Edit
+  22:51:00.910     Part 63: Part  -  Edit
+  22:51:00.910        Position: -85.90, 43.00, -88.50  -  Edit
+  22:51:00.910        Size: 1.40, 4.00, 1.40  -  Edit
+  22:51:00.910        Bottom Y: 41.00  -  Edit
+  22:51:00.910     Part 64: Detail  -  Edit
+  22:51:00.910        Position: -90.65, 43.10, -77.40  -  Edit
+  22:51:00.910        Size: 1.60, 0.20, 2.70  -  Edit
+  22:51:00.910        Bottom Y: 43.00  -  Edit
+  22:51:00.910     Part 65: Part  -  Edit
+  22:51:00.910        Position: -90.70, 40.00, -77.40  -  Edit
+  22:51:00.910        Size: 2.60, 6.00, 1.40  -  Edit
+  22:51:00.910        Bottom Y: 37.00  -  Edit
+  22:51:00.910     Part 66: Part  -  Edit
+  22:51:00.910        Position: -90.70, 41.00, -88.60  -  Edit
+  22:51:00.910        Size: 1.60, 8.00, 2.60  -  Edit
+  22:51:00.910        Bottom Y: 37.00  -  Edit
+  22:51:00.911     Part 67: Wedge  -  Edit
+  22:51:00.911        Position: -84.00, 18.00, -76.50  -  Edit
+  22:51:00.911        Size: 16.00, 16.00, 1.00  -  Edit
+  22:51:00.911        Bottom Y: 10.00  -  Edit
+  22:51:00.911     Part 68: Wedge  -  Edit
+  22:51:00.911        Position: -77.00, 18.00, -89.50  -  Edit
+  22:51:00.911        Size: 30.00, 16.00, 1.00  -  Edit
+  22:51:00.911        Bottom Y: 10.00  -  Edit
+  22:51:00.911     Part 69: Part  -  Edit
+  22:51:00.911        Position: -80.00, 25.00, -83.00  -  Edit
+  22:51:00.911        Size: 12.00, 10.00, 12.00  -  Edit
+  22:51:00.911        Bottom Y: 20.00  -  Edit
+  22:51:00.911     Part 70: Part  -  Edit
+  22:51:00.912        Position: -84.00, 41.50, -77.50  -  Edit
+  22:51:00.912        Size: 10.80, 1.00, 0.60  -  Edit
+  22:51:00.912        Bottom Y: 41.00  -  Edit
+  22:51:00.912     Part 71: Walkway  -  Edit
+  22:51:00.912        Position: -77.50, 39.50, -83.00  -  Edit
+  22:51:00.912        Size: 29.00, 1.00, 10.00  -  Edit
+  22:51:00.912        Bottom Y: 39.00  -  Edit
+  22:51:00.912     Part 72: Part  -  Edit
+  22:51:00.912        Position: -84.00, 38.00, -88.50  -  Edit
+  22:51:00.912        Size: 1.40, 6.00, 5.20  -  Edit
+  22:51:00.912        Bottom Y: 35.00  -  Edit
+  22:51:00.913     Part 73: Detail  -  Edit
+  22:51:00.913        Position: -63.40, 45.10, -88.60  -  Edit
+  22:51:00.913        Size: 1.80, 0.20, 3.81  -  Edit
+  22:51:00.913        Bottom Y: 45.00  -  Edit
+  22:51:00.913     Part 74: Part  -  Edit
+  22:51:00.913        Position: -63.40, 41.00, -88.60  -  Edit
+  22:51:00.913        Size: 1.60, 8.00, 3.61  -  Edit
+  22:51:00.913        Bottom Y: 37.00  -  Edit
+  22:51:00.913     Part 75: Part  -  Edit
+  22:51:00.913        Position: -66.61, 42.00, -88.50  -  Edit
+  22:51:00.913        Size: 2.80, 2.00, 0.60  -  Edit
+  22:51:00.913        Bottom Y: 41.00  -  Edit
+  22:51:00.913     Part 76: Part  -  Edit
+  22:51:00.914        Position: -70.61, 40.00, -88.50  -  Edit
+  22:51:00.914        Size: 1.00, 2.00, 10.80  -  Edit
+  22:51:00.914        Bottom Y: 39.00  -  Edit
+  22:51:00.914     Part 77: Part  -  Edit
+  22:51:00.914        Position: -70.61, 38.00, -88.50  -  Edit
+  22:51:00.914        Size: 1.40, 6.00, 5.20  -  Edit
+  22:51:00.914        Bottom Y: 35.00  -  Edit
+  22:51:00.914     Part 78: Part  -  Edit
+  22:51:00.914        Position: -68.71, 43.00, -88.50  -  Edit
+  22:51:00.914        Size: 1.40, 4.00, 1.40  -  Edit
+  22:51:00.914        Bottom Y: 41.00  -  Edit
+  22:51:00.914     Part 79: Part  -  Edit
+  22:51:00.914        Position: -72.50, 43.00, -88.50  -  Edit
+  22:51:00.914        Size: 1.40, 4.00, 1.40  -  Edit
+  22:51:00.914        Bottom Y: 41.00  -  Edit
+  22:51:00.915     Part 80: Part  -  Edit
+  22:51:00.915        Position: -70.60, 45.50, -88.50  -  Edit
+  22:51:00.915        Size: 1.40, 1.00, 5.20  -  Edit
+  22:51:00.915        Bottom Y: 45.00  -  Edit
+  22:51:00.915     Part 81: Detail  -  Edit
+  22:51:00.915        Position: -70.60, 46.10, -88.50  -  Edit
+  22:51:00.915        Size: 1.60, 0.20, 5.40  -  Edit
+  22:51:00.915        Bottom Y: 46.00  -  Edit
+  22:51:00.915     Part 82: Part  -  Edit
+  22:51:00.915        Position: -74.61, 42.00, -88.50  -  Edit
+  22:51:00.915        Size: 2.80, 2.00, 0.60  -  Edit
+  22:51:00.915        Bottom Y: 41.00  -  Edit
+  22:51:00.915     Part 83: Part  -  Edit
+  22:51:00.915        Position: -77.31, 41.00, -88.60  -  Edit
+  22:51:00.915        Size: 1.60, 8.00, 2.60  -  Edit
+  22:51:00.915        Bottom Y: 37.00  -  Edit
+  22:51:00.915     Part 84: Union  -  Edit
+  22:51:00.915        Position: -70.60, 43.00, -88.50  -  Edit
+  22:51:00.916        Size: 1.40, 4.00, 2.40  -  Edit
+  22:51:00.916        Bottom Y: 41.00  -  Edit
+  22:51:00.916
+8. LOWEST POINT:  -  Edit
+  22:51:00.916     Lowest Part: Wedge  -  Edit
+  22:51:00.916     Lowest Y Position: 10.0001220703125  -  Edit
+  22:51:00.916     Pivot to Lowest: 18.101444244384766  -  Edit
+  22:51:00.916
+9. RECOMMENDED DATABASE VALUES:  -  Edit
+  22:51:00.916     width: 32  -  Edit
+  22:51:00.916     height: 37  -  Edit
+  22:51:00.916     depth: 32  -  Edit
+  22:51:00.916
+10. ROTATION TEST (visual check needed):  -  Edit
+  22:51:00.916     Testing 0°, 90°, 180°, 270° rotations...  -  Edit
+  22:51:00.916     After running this script, manually rotate the Corner_Stone_Wall  -  Edit
+  22:51:00.916     in Studio and check if corners align properly at grid intersections.  -  Edit
+  22:51:00.916
+11. CORNER DESIGN NOTES:  -  Edit
+  22:51:00.916     Corner walls should connect at grid intersections.  -  Edit
+  22:51:00.916     At 0° rotation: Should connect West (-X) and North (-Z) walls  -  Edit
+  22:51:00.916     At 90° rotation: Should connect North (-Z) and East (+X) walls  -  Edit
+  22:51:00.916     At 180° rotation: Should connect East (+X) and South (+Z) walls  -  Edit
+  22:51:00.916     At 270° rotation: Should connect South (+Z) and West (-X) walls  -  Edit
+  22:51:00.916
+   Check if the corner geometry faces INWARD or OUTWARD.  -  Edit
+  22:51:00.916
+========================================  -  Edit
+  22:51:00.916  ANALYSIS COMPLETE  -  Edit
+  22:51:00.917  Copy all output above and send to Claude  -  Edit
+  22:51:00.917  ========================================  -  Edit
