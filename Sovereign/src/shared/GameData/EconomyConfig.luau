@@ -9,7 +9,7 @@
 --
 -- Values below mirror the balance that already shipped in the individual
 -- managers (0.1 food/peasant/cycle, 30s consumption cycle, 60s tax cycle,
--- 10% default tax) — do not change one side without checking the loop.
+-- 10% default tax) â€” do not change one side without checking the loop.
 
 export type RationsPolicy = {
 	-- Multiplier applied to total food consumption for this rations level

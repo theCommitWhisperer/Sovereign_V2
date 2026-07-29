@@ -7,7 +7,7 @@
 --   * ProcessReceipt for DevProduct cosmetics (MonetizationConfig catalogs)
 --   * GamePass ownership checks (cached per session)
 --   * Owned/equipped cosmetics per player, persisted via DataStore
---   * applyModelCosmetics(model, ownerId) — hook other systems call after
+--   * applyModelCosmetics(model, ownerId) â€” hook other systems call after
 --     spawning a Lord/unit model to apply the owner's equipped skin
 --   * Hero ability tree unlock/upgrade (Glory-paid, prerequisite-checked)
 --
@@ -50,7 +50,7 @@ do
 	if ok then
 		dataStore = store
 	else
-		MonetizationDebug:warn("DataStore unavailable — monetization data will not persist this session")
+		MonetizationDebug:warn("DataStore unavailable â€” monetization data will not persist this session")
 	end
 end
 
@@ -231,7 +231,7 @@ function MonetizationManager.applyModelCosmetics(model: Model, ownerId: number)
 end
 
 -- ============================================================
--- HERO ABILITY TREE (Glory progression — no base stat changes)
+-- HERO ABILITY TREE (Glory progression â€” no base stat changes)
 -- ============================================================
 
 function MonetizationManager.getAbilityRank(player: Player, nodeId: string): number
@@ -239,7 +239,7 @@ function MonetizationManager.getAbilityRank(player: Player, nodeId: string): num
 	return data and data.abilityRanks[nodeId] or 0
 end
 
--- Full node-id -> rank map for the ability tree UI (copy — callers can't mutate state)
+-- Full node-id -> rank map for the ability tree UI (copy â€” callers can't mutate state)
 function MonetizationManager.getAbilityRanks(player: Player): { [string]: number }
 	local data = playerData[player.UserId]
 	return if data then table.clone(data.abilityRanks) else {}
@@ -277,7 +277,7 @@ function MonetizationManager.purchaseAbilityNode(player: Player, nodeId: string)
 	MonetizationDebug:info(`{player.Name} advanced {nodeId} to rank {currentRank + 1}`)
 
 	-- TODO: notify AbilityManager that the ability is unlocked/upgraded for
-	-- this player (AbilityManager is owned by the hero-hub agent — integrate
+	-- this player (AbilityManager is owned by the hero-hub agent â€” integrate
 	-- via a small "isAbilityUnlocked(player, abilityId)" query on this manager)
 	return true, "OK"
 end
@@ -335,7 +335,7 @@ function MonetizationManager.init()
 		end
 	end
 
-	-- NOTE: ProcessReceipt is a single global callback — if another system
+	-- NOTE: ProcessReceipt is a single global callback â€” if another system
 	-- ever needs receipts, route through a shared dispatcher instead.
 	MarketplaceService.ProcessReceipt = processReceipt
 

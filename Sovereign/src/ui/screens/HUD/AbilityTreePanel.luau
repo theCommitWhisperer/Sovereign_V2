@@ -160,7 +160,7 @@ function AbilityTreePanel:render()
 			buttonText = "?? Locked"
 			buttonColor = UIConfig.HUD.BuildingButtonUnaffordable
 		else
-			buttonText = string.format("%s — %d ??", if currentRank == 0 then "Unlock" else "Upgrade", nextCost)
+			buttonText = string.format("%s â€” %d ??", if currentRank == 0 then "Unlock" else "Upgrade", nextCost)
 			buttonColor = canAfford and UIConfig.HUD.BuildingButtonAffordable
 				or UIConfig.HUD.BuildingButtonUnaffordable
 		end

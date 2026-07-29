@@ -19,8 +19,8 @@
 -- ---------------------------------------------------------------------------
 -- CLIENT-ONLY STATE
 -- ---------------------------------------------------------------------------
--- This lives in ReplicatedStorage.Shared only so any client script — under
--- StarterPlayerScripts.Client OR StarterPlayerScripts.UI — can require it by an
+-- This lives in ReplicatedStorage.Shared only so any client script â€” under
+-- StarterPlayerScripts.Client OR StarterPlayerScripts.UI â€” can require it by an
 -- absolute path. It is NOT replicated and the server must never require it: the
 -- server's authoritative view of a player's mode is the `PlayerFighter`
 -- attribute plus the "ViewModeChanged" remote, not this table.
@@ -120,7 +120,7 @@ ViewMode.TransitionChanged = createSignal("TransitionChanged") :: Signal<boolean
 -- relative path, and having the UI reach across into the camera controller would
 -- couple a view to a system it has no business owning.
 --
--- So the on-screen buttons don't call the camera — they raise a request here and
+-- So the on-screen buttons don't call the camera â€” they raise a request here and
 -- the camera controller, which is already the only writer of this module, decides
 -- whether to honour it. Same path as a keypress, so the button and the V key
 -- cannot drift apart in behaviour.
@@ -132,7 +132,7 @@ ViewMode.FirstPersonToggleRequested = createSignal("FirstPersonToggleRequested")
 
 --- Ask the camera to switch views. Safe to call from anywhere, including the UI
 --- tree. A no-op if the camera is not yet listening (pre-GameStarted), which is
---- the correct behaviour — there is nothing to switch to yet.
+--- the correct behaviour â€” there is nothing to switch to yet.
 function ViewMode.requestToggle()
 	ViewMode.ToggleRequested:fire()
 end
@@ -155,7 +155,7 @@ end
 -- here and HeroCombatController routes it into the SAME sendLight/sendHeavy/
 -- sendBlock/sendDodge/sendRanged functions the mouse and keyboard call. That is
 -- deliberate: the client-side cooldown mirror and the canFight() gate then apply
--- identically on both, and touch cannot drift away from desktop feel — there is
+-- identically on both, and touch cannot drift away from desktop feel â€” there is
 -- only one implementation of each action to drift from.
 --
 -- "Attack" is the tap-vs-hold trigger and is the direct analogue of LMB: Begin
@@ -211,7 +211,7 @@ end
 -- ---------------------------------------------------------------------------
 -- The desktop crosshair dims itself from HeroCombatController's predicted
 -- cooldown state. The touch buttons must dim from the EXACT SAME numbers or the
--- two readouts disagree about whether a swing is legal — the classic "the button
+-- two readouts disagree about whether a swing is legal â€” the classic "the button
 -- looks ready but nothing happens" bug.
 --
 -- This is a plain mutable table rather than a signal on purpose: the controller
@@ -221,7 +221,7 @@ end
 -- per-frame write allocates nothing.
 --
 -- All timestamps are `os.clock()` values. This is a MIRROR of a prediction, not
--- authority — never gate anything that matters on it.
+-- authority â€” never gate anything that matters on it.
 export type HeroStatus = {
 	busyUntil: number, -- no action is legal until this time (state.nextActionAt)
 	dodgeReadyAt: number,
@@ -278,7 +278,7 @@ local transitioning = false
 --
 -- WHY THIS LIVES HERE: PlacementController binds MouseButton2 to "cancel the
 -- ghost" and MovementManager binds MouseButton2 to "issue an order". Both are
--- plain UserInputService.InputBegan listeners, so one right-click ran BOTH — the
+-- plain UserInputService.InputBegan listeners, so one right-click ran BOTH â€” the
 -- ghost vanished and the selected army simultaneously marched to wherever the
 -- cursor happened to be. Neither module can require the other (PlacementController
 -- is a client script, and a Placement -> Movement require would close a cycle
@@ -288,7 +288,7 @@ local transitioning = false
 -- DANGER: a stuck-true value silently disables ALL RTS orders and selection,
 -- which is far worse than the double-fire it fixes. PlacementController must
 -- therefore funnel every write through a single setter that also clears on
--- cancel, successful place, error and character death — see setPlacing() there.
+-- cancel, successful place, error and character death â€” see setPlacing() there.
 local placementActive = false
 
 -- ---------------------------------------------------------------------------
@@ -312,7 +312,7 @@ function ViewMode.getAimMode(): AimMode
 end
 
 --- True only when the player is actively driving the Lord with a locked
---- crosshair — i.e. the exact condition under which hero attack input is legal.
+--- crosshair â€” i.e. the exact condition under which hero attack input is legal.
 function ViewMode.isCombatReady(): boolean
 	return currentMode == "Hero" and currentAim == "Locked" and not transitioning
 end

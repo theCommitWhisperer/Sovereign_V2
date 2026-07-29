@@ -14,7 +14,7 @@
 --      we don't spam the remote.
 -- NOT: authority. Every cooldown here is a DUPLICATE of the server's, kept only
 --      to reduce remote traffic. If the two disagree the server wins and the
---      player sees a swing that did no damage — which is the correct failure
+--      player sees a swing that did no damage â€” which is the correct failure
 --      mode, and much better than trusting the client.
 --
 -- ---------------------------------------------------------------------------
@@ -63,7 +63,7 @@ local HeroCombatController = {}
 -- ---------------------------------------------------------------------------
 --
 -- Leave a slot as "" to use the procedural fallback. Put an
--- "rbxassetid://..." in it and that clip plays instead — Animator:LoadAnimation
+-- "rbxassetid://..." in it and that clip plays instead â€” Animator:LoadAnimation
 -- works normally here because the Lord is a stock R15 rig (unlike the game's
 -- units, which are custom skinned MeshPart rigs where stock ids silently no-op).
 local HERO_ANIMATION_IDS: { [string]: string } = {
@@ -83,13 +83,13 @@ local HERO_ANIMATION_IDS: { [string]: string } = {
 --
 -- These action names are being added to KeybindingsManager by the camera agent.
 -- Until they land, GetKeybinding returns nil for them, so every lookup falls back
--- to the documented default and the feature works today — it just is not
+-- to the documented default and the feature works today â€” it just is not
 -- rebindable yet. Do NOT add the actions here; that file is not ours.
 --
 -- KNOWN CONFLICT to resolve when the actions are added: the default for
 -- HeroRangedAttack is Q, and Q is already RotateLeft in DEFAULT_KEYBINDINGS.
 -- KeybindingsManager.HasConflict will reject setting them both, and in hero mode
--- the RTS rotate keys are inert, so sharing the key is survivable — but it should
+-- the RTS rotate keys are inert, so sharing the key is survivable â€” but it should
 -- be a deliberate decision, not a surprise.
 local KEY_DEFAULTS: { [string]: Enum.KeyCode } = {
 	HeroRangedAttack = Enum.KeyCode.Q,
@@ -215,7 +215,7 @@ local function buildReticle(): Reticle
 	ringStroke.Parent = ring
 
 	-- Four ticks around the centre. Their distance from centre is the "gap", which
-	-- widens while a heavy charges — the standard, wordless way to say "committed".
+	-- widens while a heavy charges â€” the standard, wordless way to say "committed".
 	local ticks: { Frame } = {}
 	for index = 1, 4 do
 		local tick = Instance.new("Frame")
@@ -239,7 +239,7 @@ local function buildReticle(): Reticle
 
 	-- Combo pips: three small marks under the reticle showing chain progress.
 	-- (Stamina is disabled by default in CombatConfig.Hero, so there is no stamina
-	-- bar — adding one for a resource that is always full would be a lie.)
+	-- bar â€” adding one for a resource that is always full would be a lie.)
 	local pips: { Frame } = {}
 	for index = 1, #Hero.lightCombo do
 		local pip = Instance.new("Frame")
@@ -379,7 +379,7 @@ end
 local IDENTITY_POSE: Pose = {}
 
 -- Every clip is authored as shoulder/waist offsets from the rig's rest pose. They
--- are intentionally big: a subtle 15° arm swing reads as nothing at all once the
+-- are intentionally big: a subtle 15Â° arm swing reads as nothing at all once the
 -- camera is 12 studs back behind the character.
 local CLIPS: { [string]: Clip } = {
 	-- Light 1: horizontal slash, right to left, hips lead.
@@ -726,7 +726,7 @@ end
 --
 -- CombatEffectsClient.animateSwing already does the canonical 3-stage
 -- WeaponGrip tween. It is driven by the server's "swing"/"hswing" event, which
--- arrives up to one combat tick (100ms) late — fine for a distant soldier,
+-- arrives up to one combat tick (100ms) late â€” fine for a distant soldier,
 -- far too late for the weapon in your own hands. So the local hero predicts its
 -- own arc here with a per-step amplitude, and CombatEffectsClient skips the
 -- replicated arc for the local character (see its hswing branch).
@@ -892,7 +892,7 @@ end
 -- -- DODGE -------------------------------------------------------------------
 --
 -- The CLIENT moves the character; the SERVER owns the i-frames and the cooldown.
--- See the matching note in server/Combat/HeroCombat.luau — the character has
+-- See the matching note in server/Combat/HeroCombat.luau â€” the character has
 -- client network ownership, so a server-side CFrame write or LinearVelocity
 -- fights this simulation and rubber-bands.
 --
@@ -964,12 +964,12 @@ end
 -- LMB is tap-vs-hold: a tap (released before heavy.holdSeconds) is a light
 -- attack, holding past it commits a heavy. The heavy fires the MOMENT the
 -- threshold passes rather than on release, so the player gets feedback while
--- still holding — waiting for release makes a held button feel broken.
+-- still holding â€” waiting for release makes a held button feel broken.
 
 -- The tap-vs-hold state machine is factored out of the mouse handler so the
 -- on-screen touch attack button can drive the IDENTICAL code path (see the
--- ViewMode.HeroActionRequested subscription below). Sharing the two functions —
--- and, crucially, the same `state.lmbDownAt` / `state.heavyFired` fields — means
+-- ViewMode.HeroActionRequested subscription below). Sharing the two functions â€”
+-- and, crucially, the same `state.lmbDownAt` / `state.heavyFired` fields â€” means
 -- the heavy auto-commit in onPoseStep and the reticle's charge readout work for
 -- touch for free, and mobile can never end up with a different hold threshold
 -- than desktop.
@@ -1009,7 +1009,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		elseif input.KeyCode == keyFor("HeroHeavyAttack") then
 			-- Hold-LMB is the primary heavy trigger, but HeroHeavyAttack is listed
 			-- in the rebindable keybindings UI, so it has to actually do something
-			-- — a key the settings screen advertises and silently ignores reads as
+			-- â€” a key the settings screen advertises and silently ignores reads as
 			-- a bug. Fires immediately (no hold threshold): the whole point of the
 			-- dedicated key is that it skips the charge-up ambiguity.
 			sendHeavy()
@@ -1033,7 +1033,7 @@ end)
 -- ---------------------------------------------------------------------------
 --
 -- The touch HUD cluster (ui/screens/HUD/HeroTouchControls) cannot require this
--- module — it lives in the other client script tree — so it raises requests on
+-- module â€” it lives in the other client script tree â€” so it raises requests on
 -- ViewMode and we route them here. Every branch lands on the same function the
 -- mouse/keyboard path uses, so the client cooldown mirror, the combo prediction
 -- and the canFight() gate are shared rather than reimplemented in the UI.
@@ -1249,7 +1249,7 @@ local function onPoseStep(deltaTime: number)
 	if clip then
 		-- Hit-stop: freeze the swing for a few frames on impact. This is the entire
 		-- reason clipTime is accumulated rather than derived from a start
-		-- timestamp — you cannot pause a `now - startTime` clock.
+		-- timestamp â€” you cannot pause a `now - startTime` clock.
 		if now >= state.hitStopUntil then
 			clipTime += deltaTime
 		end
@@ -1311,7 +1311,7 @@ player.CharacterAdded:Connect(function()
 end)
 
 -- Leaving hero mode must release a held block. Without this, toggling to RTS with
--- RMB down leaves the server-side hero permanently guarding — and because
+-- RMB down leaves the server-side hero permanently guarding â€” and because
 -- InputEnded for that click never arrives while the RTS handler owns the mouse,
 -- nothing would ever clear it.
 table.insert(connectionCleanups, ViewMode.Changed:connect(function(newMode: string)
@@ -1339,7 +1339,7 @@ end))
 --- Drop every ViewMode subscription and unbind the render steps. ViewMode's
 --- `connect` hands back a plain closure rather than an RBXScriptConnection, so
 --- an untracked listener here would keep this whole module (and the character it
---- caches motors for) alive forever — the exact leak pattern this codebase has
+--- caches motors for) alive forever â€” the exact leak pattern this codebase has
 --- been bitten by before. Also releases a held block on the way out, since a
 --- controller that stops listening can no longer send the release itself.
 function HeroCombatController.destroy()

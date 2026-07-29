@@ -14,15 +14,15 @@
 --     EVERY existing order action ("MoveUnit", "MoveUnitsInFormation",
 --     "MoveWorkers", "AttackTarget") is a guaranteed silent no-op for him.
 --
---   * The obvious "fix" — parent the Character into `workspace.Units` so it
---     looks like a normal unit — breaks at least ten systems. This has been
+--   * The obvious "fix" â€” parent the Character into `workspace.Units` so it
+--     looks like a normal unit â€” breaks at least ten systems. This has been
 --     traced; do not try it:
 --       1. The Character is CLIENT-network-owned. A server `Humanoid:MoveTo`
 --          fights the client's own control module ? permanent jitter.
 --       2. Combat/FogOfWarClient reparents non-visible models into
 --          ReplicatedStorage.HiddenByFog. It only skips models owned by ITS
 --          LocalPlayer, so every OTHER client would yank your Character out of
---          Workspace — killing the humanoid/camera and tripping the camera's
+--          Workspace â€” killing the humanoid/camera and tripping the camera's
 --          AncestryChanged "Lord removed" cleanup.
 --       3. EliminationManager.despawnUnitsForOwner sweeps workspace.Units by
 --          OwnerId and DESTROYS matches ? it would destroy the player Character.
@@ -33,7 +33,7 @@
 --       6. AIManager / AbilityManager AoE / FogOfWarManager / MiniMap /
 --          WorkerAssignmentPanel all blanket-iterate workspace.Units.
 --       7. CombatManager.applyGroupMarch rewrites Humanoid.WalkSpeed on every
---          model handed to it even when unregistered — it would clamp the Lord
+--          model handed to it even when unregistered â€” it would clamp the Lord
 --          to the slowest peasant's speed and set Marching, only ever restored
 --          by MovementSystem's arrival logic, which never runs for a Character
 --          outside the Units folder.
@@ -51,7 +51,7 @@
 -- because WASD pans the camera. That only Disable()s the PlayerModule
 -- ControlModule, which is the thing that writes `Humanoid:Move(dir)` each frame.
 -- `Humanoid:MoveTo` sets the humanoid's own walk-to state and is untouched by
--- that — in fact with controls disabled nothing is calling `:Move(0,0,0)` over
+-- that â€” in fact with controls disabled nothing is calling `:Move(0,0,0)` over
 -- the top of us each frame, so pathing here is CLEANER in RTS view than it would
 -- be in hero view.
 
@@ -171,7 +171,7 @@ function LordController.stop()
 	local root = rootPart
 	if h and root then
 		-- MoveTo to where we already are, rather than leaving the humanoid's
-		-- walk-to state pointing at the old goal — otherwise it keeps drifting
+		-- walk-to state pointing at the old goal â€” otherwise it keeps drifting
 		-- for up to 8 seconds after the "stop".
 		h:MoveTo(root.Position)
 	end
@@ -196,7 +196,7 @@ local function startDirect(target: Vector3, generation: number)
 	issueMoveTo(target)
 end
 
---- Computes a path on a worker thread. Falls back to a straight MoveTo — a Lord
+--- Computes a path on a worker thread. Falls back to a straight MoveTo â€” a Lord
 --- that walks into a wall is still better feedback than a click that does
 --- nothing, and PathfindingService::ComputeAsync throws on unloaded terrain.
 local function computePath(target: Vector3, generation: number)
@@ -441,7 +441,7 @@ function LordController.init()
 	-- Entering hero view means the player has taken the wheel. A queued RTS
 	-- click-move that keeps dragging him around mid-fight is the single most
 	-- infuriating failure mode this system has, so kill it the moment the mode
-	-- flips — not when the blend finishes.
+	-- flips â€” not when the blend finishes.
 	table.insert(
 		viewModeDisconnects,
 		ViewMode.Changed:connect(function(newMode: ViewMode.Mode)

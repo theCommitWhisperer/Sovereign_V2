@@ -1,0 +1,24 @@
+# Normalize line endings so Windows editors don't produce whole-file CRLF diffs.
+# Before this, 16 source files showed as fully rewritten (7846 insertions /
+# 7846 deletions) when the only real change was LF -> CRLF.
+* text=auto eol=lf
+
+*.luau  text eol=lf working-tree-encoding=UTF-8
+*.lua   text eol=lf working-tree-encoding=UTF-8
+*.json  text eol=lf
+*.md    text eol=lf
+*.toml  text eol=lf
+
+# Windows-only tooling keeps its native endings
+*.ps1   text eol=crlf
+
+# Binary assets - never touch
+*.png   binary
+*.jpg   binary
+*.rbxl  binary
+*.rbxm  binary
+*.rbxlx binary
+*.rbxmx binary
+*.ogg   binary
+*.mp3   binary
+*.fbx   binary

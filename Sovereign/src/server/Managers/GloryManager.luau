@@ -8,13 +8,13 @@
 --   handleUnitDeath killer-credit block.
 --
 -- SPEND:
---   • Hero active abilities (AbilityManager.useAbility charges glory_cost)
---   • Ability cooldown reduction (AbilityManager.reduceCooldownWithGlory)
---   • Prestige structures: buildings with glory_required in BuildingsData
---     (the three Hero Hubs) unlock at LIFETIME Glory thresholds — spending
+--   â€¢ Hero active abilities (AbilityManager.useAbility charges glory_cost)
+--   â€¢ Ability cooldown reduction (AbilityManager.reduceCooldownWithGlory)
+--   â€¢ Prestige structures: buildings with glory_required in BuildingsData
+--     (the three Hero Hubs) unlock at LIFETIME Glory thresholds â€” spending
 --     Glory never re-locks a hub.
 --
--- REPLICATION: lean by design — a single int pair per player, batched.
+-- REPLICATION: lean by design â€” a single int pair per player, batched.
 --   Dirty players are flushed every REPLICATION_INTERVAL over the existing
 --   RemoteEvents/GameEvent channel as ("GloryUpdate", { glory, lifetime }).
 
@@ -95,7 +95,7 @@ local function flushDirty()
 end
 
 -- ---------------------------------------------------------------------------
--- PUBLIC API — BALANCE
+-- PUBLIC API â€” BALANCE
 -- ---------------------------------------------------------------------------
 
 function GloryManager.getGlory(player: Player): number
@@ -115,7 +115,7 @@ function GloryManager.addGlory(player: Player, amount: number, reason: string?)
 	state.glory += amount
 	state.lifetime += amount
 	markDirty(player.UserId)
-	GloryDebug:info(`{player.Name} earned {amount} Glory ({reason or "unspecified"}) — balance {state.glory}`)
+	GloryDebug:info(`{player.Name} earned {amount} Glory ({reason or "unspecified"}) â€” balance {state.glory}`)
 end
 
 function GloryManager.spendGlory(player: Player, amount: number, reason: string?): boolean
@@ -130,12 +130,12 @@ function GloryManager.spendGlory(player: Player, amount: number, reason: string?
 	end
 	state.glory -= amount
 	markDirty(player.UserId)
-	GloryDebug:info(`{player.Name} spent {amount} Glory ({reason or "unspecified"}) — balance {state.glory}`)
+	GloryDebug:info(`{player.Name} spent {amount} Glory ({reason or "unspecified"}) â€” balance {state.glory}`)
 	return true
 end
 
 -- ---------------------------------------------------------------------------
--- PUBLIC API — EARN (combat kill path)
+-- PUBLIC API â€” EARN (combat kill path)
 -- ---------------------------------------------------------------------------
 
 -- Glory value of a victim, before attack-type multipliers.
@@ -167,7 +167,7 @@ function GloryManager.awardForKill(player: Player, info: KillInfo)
 end
 
 -- ---------------------------------------------------------------------------
--- PUBLIC API — PRESTIGE STRUCTURE GATING
+-- PUBLIC API â€” PRESTIGE STRUCTURE GATING
 -- ---------------------------------------------------------------------------
 
 function GloryManager.getBuildingGloryRequirement(buildingName: string): number
@@ -197,14 +197,14 @@ function GloryManager.create(player: Player)
 end
 
 -- Per-match reset for one player (called from GameManager's LeaveGame
--- teardown — Glory is match-scoped, not account-level, so "Return to Menu"
+-- teardown â€” Glory is match-scoped, not account-level, so "Return to Menu"
 -- clears it the same way disconnecting already does below).
 function GloryManager.resetPlayer(player: Player)
 	gloryData[player.UserId] = { glory = 0, lifetime = 0 }
 	markDirty(player.UserId)
 end
 
--- Full state wipe for every connected player (bulk "last player left" path —
+-- Full state wipe for every connected player (bulk "last player left" path â€”
 -- redundant with per-player LeaveGame resets in the common case, but a clean
 -- safety net for the next match).
 function GloryManager.resetMatch()

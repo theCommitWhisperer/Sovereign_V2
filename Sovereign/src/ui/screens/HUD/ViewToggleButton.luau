@@ -16,8 +16,8 @@
 -- It doesn't, directly. This component lives in the React tree under
 -- StarterPlayerScripts.UI; the camera lives under StarterPlayerScripts.Client.
 -- Neither can require the other by a relative path. So the button raises
--- ViewMode.requestToggle() and the camera controller — the only writer of
--- ViewMode — decides whether to honour it. That routes the tap into the exact
+-- ViewMode.requestToggle() and the camera controller â€” the only writer of
+-- ViewMode â€” decides whether to honour it. That routes the tap into the exact
 -- same method the V key calls, so the two can never drift apart, and the
 -- debounce/mid-transition rules only have to be correct in one place.
 --
@@ -157,7 +157,7 @@ function ViewToggleButton:render()
 		}),
 
 		-- Primary: swap views. Label names the view you'd be GOING to, not the one
-		-- you're in — a button captioned with the current state reads as a status
+		-- you're in â€” a button captioned with the current state reads as a status
 		-- readout and players hesitate to press it.
 		ViewButton = React.createElement("TextButton", {
 			Name = "ViewButton",
@@ -199,7 +199,7 @@ function ViewToggleButton:render()
 	}
 
 	-- Secondary: first/third person. Only meaningful in hero view, so it is not
-	-- rendered at all in RTS rather than being shown disabled — a permanently
+	-- rendered at all in RTS rather than being shown disabled â€” a permanently
 	-- dead button trains players to ignore that corner of the screen.
 	if inHero then
 		children.PerspectiveButton = React.createElement("TextButton", {

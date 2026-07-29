@@ -3,8 +3,8 @@
 --
 -- WHY THIS EXISTS
 -- Roblox's stock walk/idle animations only drive R6/R15 *part* hierarchies
--- ("Torso", "Left Arm", "UpperTorso", …). A skinned MeshPart rig — one MeshPart
--- with a Bone tree, which is what every custom-authored asset is — has none of
+-- ("Torso", "Left Arm", "UpperTorso", â€¦). A skinned MeshPart rig â€” one MeshPart
+-- with a Bone tree, which is what every custom-authored asset is â€” has none of
 -- those parts, so a stock animation loads without error and then moves nothing.
 -- The unit slides across the ground in its bind pose. That is the entire reason
 -- custom models "don't walk".
@@ -15,11 +15,11 @@
 -- clone-and-rename that UnitManager.createUnit performs and the client can read
 -- it off any spawned unit.
 --
--- ADDING A NEW RIG  (the "Peasant_Male_4" pipeline — see StudioTools/RigSetup.lua)
+-- ADDING A NEW RIG  (the "Peasant_Male_4" pipeline â€” see StudioTools/RigSetup.lua)
 --   1. Import the rig + its animations into Studio. The importer drops a
 --      `<Name>_Character_output` Model and a pile of KeyframeSequences in Workspace,
 --      and publishes one Animation asset per clip to your inventory.
---   2. Run `python tools/fetch_anim_ids.py <robloxUserId> --prefix <Name>` — it reads
+--   2. Run `python tools/fetch_anim_ids.py <robloxUserId> --prefix <Name>` â€” it reads
 --      your public inventory and prints a ready-to-paste Set, ids already mapped to
 --      slots by clip name.
 --   3. Paste it below.
@@ -28,7 +28,7 @@
 --      into ReplicatedStorage.Assets.Units.<UnitType> as a variant.
 --
 -- ADDING AN ANIMATION TO AN EXISTING RIG
---   Just fill in the slot. Any slot left nil degrades gracefully — see
+--   Just fill in the slot. Any slot left nil degrades gracefully â€” see
 --   UnitAnimator's `resolve`, which never falls back to a stock animation for a
 --   skinned rig (that's what produced the silent no-op in the first place).
 
@@ -41,7 +41,7 @@ local UnitAnimationsData = {}
 -- same idle breathing in lockstep. The roll is per-entry, not per-unit, so the
 -- same peasant standing around cycles through its idles over time.
 --
--- One string and a one-element list behave identically — existing sets did not
+-- One string and a one-element list behave identically â€” existing sets did not
 -- have to change.
 export type AnimationSlot = string | { string }
 
@@ -61,17 +61,17 @@ export type AnimationSet = {
 	--
 	-- A Humanoid always holds its root a fixed height above the ground, sized for
 	-- a STANDING rig. A seated pose folds the legs up, so the lowest point of the
-	-- body rises — and the unit hovers by exactly that much, because nothing told
+	-- body rises â€” and the unit hovers by exactly that much, because nothing told
 	-- the Humanoid its occupant sat down. This is that correction.
 	--
-	-- Applied via the rig's RootJoint, NOT via HipHeight — see setSeated in
+	-- Applied via the rig's RootJoint, NOT via HipHeight â€” see setSeated in
 	-- IdlePeasantManager for why lowering the Humanoid makes units fight the
 	-- floor instead of sitting.
 	--
 	-- Measure it, don't guess: play the sit clip and the idle clip on the rig and
 	-- take (lowest bone below root while idling) - (lowest bone below root while
 	-- seated). Note this only works in PLAY mode, and only while the track is
-	-- genuinely playing — scrubbing TimePosition at speed 0 does not drive the
+	-- genuinely playing â€” scrubbing TimePosition at speed 0 does not drive the
 	-- skinning, and every bone reads as unanimated.
 	sitHipDrop: number?,
 	-- Combat / lifecycle. `death` is played on Humanoid.Died; `attack` is wired
@@ -93,7 +93,7 @@ export type AnimationSet = {
 UnitAnimationsData.Sets = {
 	-- The Peasant Man rig. Character-Creator skeleton (`CC_Base_*`, 71 bones).
 	--
-	-- RETIRED 2026-07-26 — the model now lives in Assets.UnitsBackup.Peasant and
+	-- RETIRED 2026-07-26 â€” the model now lives in Assets.UnitsBackup.Peasant and
 	-- no longer spawns. It only ever had a walk and a death, so it froze on walk
 	-- frame 0 whenever it stood still (see UnitAnimator's frozen-walk fallback),
 	-- while the PeasantBiped rigs above have a full set. The table stays here
@@ -102,15 +102,15 @@ UnitAnimationsData.Sets = {
 	--
 	-- IMPORTANT: this skeleton shares ZERO bone names with the Celtic rig below,
 	-- so the two sets are NOT interchangeable in either direction. Loading one
-	-- rig's animation on the other fails silently — it plays and moves nothing.
+	-- rig's animation on the other fails silently â€” it plays and moves nothing.
 	-- Always author animations against the rig they'll run on.
 	PeasantMan = {
 		walk = "rbxassetid://132430041531045",
 
-		-- Breathing_Idle (75670874766855) is DISABLED — it collapses the rig.
+		-- Breathing_Idle (75670874766855) is DISABLED â€” it collapses the rig.
 		--
 		-- Measured on the live rig: with the walk playing, head-to-foot is 4.06
-		-- studs (standing). With this idle playing it's 0.57 — the character folds
+		-- studs (standing). With this idle playing it's 0.57 â€” the character folds
 		-- into a heap. Neither animation keys bone POSITIONS (max offset 0.000),
 		-- so it isn't a scale or retarget-displacement problem: the idle's
 		-- ROTATIONS are relative to a different rest pose than the one this model
@@ -119,7 +119,7 @@ UnitAnimationsData.Sets = {
 		--
 		-- TO FIX: re-export the idle against THIS rig (same skeleton, same rest
 		-- pose as PeasantManWalking), re-upload, and put the new id here. Nothing
-		-- in the code needs to change — just un-comment the line.
+		-- in the code needs to change â€” just un-comment the line.
 		idle = nil, -- "rbxassetid://75670874766855",
 
 		-- Verified good: stands upright (head-foot 4.29) and carries real hip root
@@ -146,10 +146,10 @@ UnitAnimationsData.Sets = {
 	-- tool shares this bone tree exactly, so they all share these clips: verified
 	-- by comparing bone sets, Peasant_Male_4 and Peasant_Male_2 differ by zero
 	-- bones in either direction. Point any new model's `AnimSet` here rather than
-	-- duplicating the table — a second copy is a second thing to forget to update.
+	-- duplicating the table â€” a second copy is a second thing to forget to update.
 	--
 	-- Current members: Peasant_Male_2, Peasant_Male_4, Male_Peasant_3,
-	-- Female_Peasant_1, Female_Peasant_2, Female_Peasant_3 — six variants, all
+	-- Female_Peasant_1, Female_Peasant_2, Female_Peasant_3 â€” six variants, all
 	-- verified 22/22 against these clips.
 	--
 	-- Every id below came out of tools/fetch_anim_ids.py against the 2026-07-26
@@ -172,12 +172,12 @@ UnitAnimationsData.Sets = {
 		},
 
 		-- Played instead of `idle` when the unit is stationary AND something has
-		-- set its `Pose` attribute to "sit" — today that's IdlePeasantManager
+		-- set its `Pose` attribute to "sit" â€” today that's IdlePeasantManager
 		-- parking a peasant at the Keep's campfire. See the Pose contract below.
 		sit = "rbxassetid://127140555193167", -- Sitting_At_Campfire (10.0s loop)
 		-- Measured on Peasant_Male_4 in Play mode: the lowest bone sits 2.76 studs
 		-- below the root while idling and 1.13 below it while seated, giving a
-		-- 1.63-stud hover. Raised to 1.90 by eye — the measurement tracks the
+		-- 1.63-stud hover. Raised to 1.90 by eye â€” the measurement tracks the
 		-- lowest BONE, but what should touch the ground is the seated body's
 		-- surface, and there is more mesh below the pelvis bone than below the
 		-- toe bone the standing pose was calibrated against.
@@ -185,11 +185,11 @@ UnitAnimationsData.Sets = {
 		-- One value covers every PeasantBiped rig: the drop comes from the CLIP
 		-- and the skeleton, which they share, not from each model's own height.
 		-- IdlePeasantManager guarantees the full drop is applied even on rigs
-		-- whose HipHeight runs out first — see setSeated.
+		-- whose HipHeight runs out first â€” see setSeated.
 		sitHipDrop = 1.90,
 
-		-- Three melee combos. Unused by the locomotion loop — CombatService drives
-		-- these — but registered so the variant pool exists the moment it's wired.
+		-- Three melee combos. Unused by the locomotion loop â€” CombatService drives
+		-- these â€” but registered so the variant pool exists the moment it's wired.
 		attack = {
 			"rbxassetid://113440818269792", -- Punch_Combo
 			"rbxassetid://87583774456196", -- Punch_Combo_1
@@ -205,7 +205,7 @@ UnitAnimationsData.Sets = {
 		},
 
 		-- UNASSIGNED. The character file's own bind clip: zero-length, holds the
-		-- T-pose. Never assign it to a slot — it exists only as an import artefact.
+		-- T-pose. Never assign it to a slot â€” it exists only as an import artefact.
 		--   rbxassetid://82516295175679  -- Character_output clip0
 		--
 		-- Dropped: rbxassetid://132178834925182 (Idle_11).
@@ -225,14 +225,14 @@ UnitAnimationsData.Sets = {
 		-- Measured: the cycle is 1.03s long and reads naturally at Roblox's
 		-- default 16 studs/sec. Units move at UnitsData.move_speed * 16, so a
 		-- Peasant (1.0) plays at 1.0x, a Knight (2.0) at 2.0x, and a Celtic
-		-- Champion (3.8) pins to the clamp — see the note on SPEED_CLAMP.
+		-- Champion (3.8) pins to the clamp â€” see the note on SPEED_CLAMP.
 		walkBaseSpeed = 16,
 		allowStockFallback = false,
 	} :: AnimationSet,
 }
 
 -- ---------------------------------------------------------------------------
--- STOCK ROBLOX FALLBACK — for real R6/R15 part rigs only
+-- STOCK ROBLOX FALLBACK â€” for real R6/R15 part rigs only
 -- ---------------------------------------------------------------------------
 
 UnitAnimationsData.Stock = {
@@ -258,28 +258,28 @@ UnitAnimationsData.WALK_THRESHOLD = 0.6
 --
 -- Run is a decision the SERVER makes, not something the client infers from how
 -- fast a unit happens to be moving. A unit runs when it is charging an enemy or
--- hurrying home — never because it's walking somewhere at its normal speed.
+-- hurrying home â€” never because it's walking somewhere at its normal speed.
 --
 -- This replaced a `speed >= 0.85 * BaseWalkSpeed` heuristic, which was wrong in
 -- the most basic case: a unit walking anywhere at its ordinary speed IS at 100%
 -- of its base speed, so it played the run cycle for every ordinary move order
--- and the walk cycle was effectively dead. No threshold fixes that — normal
+-- and the walk cycle was effectively dead. No threshold fixes that â€” normal
 -- walking and running are the same speed, so speed cannot distinguish them.
 --
 -- The attribute holds the REASON, so that two independent systems can each
 -- clear only what they set and never stomp each other:
 --
 --   nil        walking (or standing)
---   "charge"   closing on an enemy — set/cleared by CombatService from
+--   "charge"   closing on an enemy â€” set/cleared by CombatService from
 --              `isCharging`, which is itself gated on the stance's `canCharge`
---   "hurry"    ordered back to the Keep — set by GameManager's ReturnToKeep,
+--   "hurry"    ordered back to the Keep â€” set by GameManager's ReturnToKeep,
 --              cleared by MovementSystem when the unit arrives
 --
 -- Any non-nil value means run. Add new reasons freely; the animator doesn't
 -- care which one it is, only that the server asked for a run.
 --
 -- Replication cost is one attribute written on a STATE TRANSITION, not per
--- frame — a charging unit writes once when it starts and once when it stops.
+-- frame â€” a charging unit writes once when it starts and once when it stops.
 UnitAnimationsData.GAIT_ATTRIBUTE = "Gait"
 
 -- -- THE `Pose` ATTRIBUTE: what a STATIONARY unit is doing -------------------
@@ -287,13 +287,13 @@ UnitAnimationsData.GAIT_ATTRIBUTE = "Gait"
 -- Same shape as `Gait`, and deliberately separate from it. `Gait` answers "how
 -- is this unit travelling"; `Pose` answers "what is it doing while stopped".
 -- A unit that starts moving plays its walk regardless of Pose, so nothing has
--- to remember to clear the pose before issuing a move order — the peasant
+-- to remember to clear the pose before issuing a move order â€” the peasant
 -- simply stands up and walks.
 --
 --   nil      ordinary idle
---   "sit"    seated — set by IdlePeasantManager when a peasant reaches its
+--   "sit"    seated â€” set by IdlePeasantManager when a peasant reaches its
 --            campfire slot, cleared when it's re-tasked or leaves
---   "work"   at a workplace — set by WorkerManager while a worker is producing,
+--   "work"   at a workplace â€” set by WorkerManager while a worker is producing,
 --            cleared when it stops or is unassigned
 --
 -- Unknown values fall back to the ordinary idle rather than freezing the rig,
@@ -311,7 +311,7 @@ UnitAnimationsData.POSE_SLOTS = { "sit", "work" }
 -- and cavalry doesn't vibrate.
 --
 -- NOTE: UnitsData.move_speed is multiplied by 16 to get WalkSpeed, so a Celtic
--- Champion (move_speed 3.8) travels at 60.8 studs/sec — nearly 4x the speed the
+-- Champion (move_speed 3.8) travels at 60.8 studs/sec â€” nearly 4x the speed the
 -- walk cycle was authored for. It pins to `max` and still under-strides, i.e.
 -- the fast units will look like they're skating a little. That's a game-tuning
 -- question (move_speed values) rather than an animation one, so it's left alone.

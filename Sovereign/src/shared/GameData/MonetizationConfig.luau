@@ -3,19 +3,19 @@
 --
 -- ROBLOX POLICY COMPLIANCE: everything sold here is cosmetic (skins, banner
 -- styles) or progression-shaped (ability tree unlocks paid with the in-game
--- Glory currency). Nothing modifies base unit stats — no pay-to-win.
+-- Glory currency). Nothing modifies base unit stats â€” no pay-to-win.
 --
 -- TODO: replace every `productId = 0` / `gamePassId = 0` placeholder with the
 -- real IDs from the Creator Dashboard before shipping.
 
 export type CosmeticSkin = {
-	id: string, -- stable internal id (persisted — never rename)
+	id: string, -- stable internal id (persisted â€” never rename)
 	name: string, -- player-facing name
 	description: string,
 	-- How the skin is obtained:
-	--   "Free"      — everyone owns it (defaults)
-	--   "GamePass"  — owned while the gamepass is owned (gamePassId)
-	--   "DevProduct"— one-time purchase, persisted (productId)
+	--   "Free"      â€” everyone owns it (defaults)
+	--   "GamePass"  â€” owned while the gamepass is owned (gamePassId)
+	--   "DevProduct"â€” one-time purchase, persisted (productId)
 	acquisition: "Free" | "GamePass" | "DevProduct",
 	gamePassId: number?, -- TODO real id
 	productId: number?, -- TODO real id
@@ -48,7 +48,7 @@ export type AbilityNode = {
 local MonetizationConfig = {}
 
 -- ============================================================
--- LORD SKINS (cosmetic only — swaps/tints the Lord character rig)
+-- LORD SKINS (cosmetic only â€” swaps/tints the Lord character rig)
 -- ============================================================
 MonetizationConfig.LordSkins = {
 	{
@@ -76,7 +76,7 @@ MonetizationConfig.LordSkins = {
 }
 
 -- ============================================================
--- UNIT SKINS (cosmetic only — applied per unit type across the army)
+-- UNIT SKINS (cosmetic only â€” applied per unit type across the army)
 -- ============================================================
 MonetizationConfig.UnitSkins = {
 	{
@@ -104,7 +104,7 @@ MonetizationConfig.UnitSkins = {
 }
 
 -- ============================================================
--- BANNER STYLES (cosmetic — Keep/estate flag patterns, stacks with lobby color)
+-- BANNER STYLES (cosmetic â€” Keep/estate flag patterns, stacks with lobby color)
 -- ============================================================
 MonetizationConfig.BannerStyles = {
 	{
@@ -134,7 +134,7 @@ MonetizationConfig.BannerStyles = {
 -- ============================================================
 -- HERO ABILITY TREE
 -- Nodes unlock/upgrade hero ABILITIES (cast effects, cooldowns, durations).
--- Base hero stats are never touched — progression, not power-selling.
+-- Base hero stats are never touched â€” progression, not power-selling.
 -- Costs are paid in Glory (earned in-game; see GloryManager).
 -- ============================================================
 MonetizationConfig.HeroAbilityTree = {

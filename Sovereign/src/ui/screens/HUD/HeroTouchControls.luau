@@ -8,7 +8,7 @@
 -- ViewToggleButton made hero view REACHABLE without a keyboard, but hero combat
 -- was still bound entirely to LMB / RMB / Q / LeftControl. A touch player could
 -- enter third person, walk around with the PlayerModule thumbstick, and then do
--- nothing at all — no attack, no block, no dodge. This is the missing half.
+-- nothing at all â€” no attack, no block, no dodge. This is the missing half.
 --
 -- ---------------------------------------------------------------------------
 -- HOW IT TALKS TO COMBAT
@@ -35,7 +35,7 @@
 -- THE STUCK BLOCK
 -- ---------------------------------------------------------------------------
 -- Block is hold-to-guard. A Begin with no matching End leaves the server-side
--- hero guarding forever — he takes 65% reduced damage and never lowers the
+-- hero guarding forever â€” he takes 65% reduced damage and never lowers the
 -- shield, and nothing in the game will ever clear it because the finger that
 -- would have sent the release is long gone. Touch makes this much easier to hit
 -- than mouse does: a finger can be dragged off the button, lifted outside the
@@ -54,7 +54,7 @@
 -- that a GuiObject has sunk, so a drag that STARTS on one of these buttons never
 -- reaches the camera and pressing a button cannot rotate the view.
 --
--- The converse — a look-drag sliding over a button and triggering it — is
+-- The converse â€” a look-drag sliding over a button and triggering it â€” is
 -- prevented because these are GuiButtons: their InputBegan only fires for a
 -- touch that BEGINS inside them, and a touch that began on empty screen keeps
 -- its capture for its whole lifetime.
@@ -62,7 +62,7 @@
 -- The remaining hole was the gaps BETWEEN the buttons: a thumb landing in the
 -- 12px space between Attack and Block would fall through to the RTS HUD behind
 -- (on a narrow viewport that can be the building menu) and to the camera. The
--- Backdrop frame below is `Active = true` for exactly that reason — it sinks
+-- Backdrop frame below is `Active = true` for exactly that reason â€” it sinks
 -- every touch inside the cluster footprint without doing anything with it.
 
 local React = require(game.ReplicatedStorage.Packages.react)
@@ -92,7 +92,7 @@ local ATTACK_SIZE = 88 -- biggest: it is pressed the most and held for heavies
 local SECONDARY_SIZE = 64
 local GAP = 12
 -- The cluster box is sized so that with every child anchored to its bottom-right
--- corner, nothing spills outside it — which matters because the Backdrop below
+-- corner, nothing spills outside it â€” which matters because the Backdrop below
 -- is exactly this size and is what stops touches falling through.
 local CLUSTER_SIZE = ATTACK_SIZE + GAP + SECONDARY_SIZE -- 164
 local EDGE_MARGIN = 18
@@ -139,7 +139,7 @@ type State = {
 	rangedReady: boolean,
 	-- Pressed state for the two hold buttons. Kept in state (not just in _held) so
 	-- the press lights up on the same frame as the touch instead of waiting for
-	-- the next poll — 16ms of dead button is very noticeable under a thumb.
+	-- the next poll â€” 16ms of dead button is very noticeable under a thumb.
 	blocking: boolean,
 	attackHeld: boolean,
 	-- 0..1 heavy charge, quantised so a held attack does not re-render the HUD
@@ -175,7 +175,7 @@ function HeroTouchControls:init()
 	-- wants to update the pressed-state visuals. Writing state to a component
 	-- React is already tearing down is a warning at best, so the release path
 	-- routes through here and simply skips the cosmetic half once we are going
-	-- away. The remote release itself is NOT skipped — that is the whole point.
+	-- away. The remote release itself is NOT skipped â€” that is the whole point.
 	self._unmounting = false
 end
 
@@ -195,7 +195,7 @@ function HeroTouchControls:_beginHeld(action: string, input: InputObject)
 		return
 	end
 	-- A second finger on the same button while the first is still down would
-	-- overwrite the tracked InputObject and orphan the first one — releasing the
+	-- overwrite the tracked InputObject and orphan the first one â€” releasing the
 	-- old one first keeps the begin/end pairing exact.
 	if self._held[action] then
 		self:_releaseHeld(action)
@@ -312,7 +312,7 @@ function HeroTouchControls:_poll()
 	local state = self.state :: State
 
 	-- RELEASE PATH 2/5 (watchdog): the InputObject we are holding has gone to the
-	-- End state but no InputEnded reached us — a system gesture, an app switch, or
+	-- End state but no InputEnded reached us â€” a system gesture, an app switch, or
 	-- the touch being cancelled by Roblox. Also covers the case where hero view is
 	-- exited by a path that somehow did not fire ViewMode.Changed.
 	for action, held in pairs(self._held) do
@@ -377,7 +377,7 @@ end
 -- ---------------------------------------------------------------------------
 
 --- One combat button. `held` keeps a button interactive while a finger is on it
---- even if it has just gone on cooldown mid-press — flipping Active to false
+--- even if it has just gone on cooldown mid-press â€” flipping Active to false
 --- under a live touch is how an InputEnded goes missing, and for Block that is
 --- the stuck-shield bug.
 function HeroTouchControls:_button(config: {
@@ -426,7 +426,7 @@ function HeroTouchControls:_button(config: {
 	-- happily parse but is a well-known way to write something you did not mean.
 	-- Defaulted to no-ops rather than left nil so the handlers are non-optional
 	-- function values here: an optional captured in a closure does not narrow, and
-	-- a `nil` slipping into a React.Event slot silently drops the binding — which
+	-- a `nil` slipping into a React.Event slot silently drops the binding â€” which
 	-- for Block would mean a press with no release.
 	local noopInput: (InputObject) -> () = function(_input: InputObject) end
 	local onBegan: (InputObject) -> () = config.onBegan or noopInput
@@ -460,7 +460,7 @@ function HeroTouchControls:_button(config: {
 			onEnded(input)
 		end,
 		-- RELEASE PATH 1b: the finger slid off the button while still down. Roblox
-		-- fires MouseLeave for a dragging touch, and this is the common one — thumbs
+		-- fires MouseLeave for a dragging touch, and this is the common one â€” thumbs
 		-- wander during a fight.
 		[React.Event.MouseLeave] = function()
 			onLeave()
@@ -471,7 +471,7 @@ end
 function HeroTouchControls:render()
 	local state = self.state :: State
 
-	-- Desktop with no touchscreen renders nothing at all — no frame, no listener,
+	-- Desktop with no touchscreen renders nothing at all â€” no frame, no listener,
 	-- no input absorber anywhere near the mouse. On a hybrid device (Surface, iPad
 	-- + keyboard) these DO render, and every keyboard/mouse binding stays live
 	-- because they are owned by HeroCombatController and this component never
@@ -576,7 +576,7 @@ function HeroTouchControls:render()
 			size = SECONDARY_SIZE,
 			position = UDim2.new(1, 0, 1, -(ATTACK_SIZE + GAP)),
 			color = COLOR_DODGE,
-			glyph = "»",
+			glyph = "Â»",
 			label = "DODGE",
 			ready = state.dodgeReady,
 			held = false,

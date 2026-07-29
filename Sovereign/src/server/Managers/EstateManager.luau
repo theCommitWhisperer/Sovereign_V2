@@ -2,7 +2,7 @@
 -- EstateManager: Capturable neutral territory (estates).
 --
 -- STUDIO SETUP: place Models (or lone BaseParts) named "EstateFlagpole"
--- (EconomyConfig.Estates.flagpoleName) anywhere under Workspace — convention
+-- (EconomyConfig.Estates.flagpoleName) anywhere under Workspace â€” convention
 -- is an "Estates" folder inside the map folder. Each flagpole becomes one
 -- capturable estate. Parts named "Flag"/"Banner" inside the model are tinted
 -- to the owner's banner color; if none exist the flagpole part itself is tinted.
@@ -130,7 +130,7 @@ function EstateManager.rescan()
 					tintEstate(estate, Config.neutralColor)
 				end
 			else
-				EstateDebug:warn(`{Config.flagpoleName} '{inst:GetFullName()}' has no BasePart — skipped`)
+				EstateDebug:warn(`{Config.flagpoleName} '{inst:GetFullName()}' has no BasePart â€” skipped`)
 			end
 		end
 	end
@@ -155,7 +155,7 @@ function EstateManager.getEstatesForOwner(ownerId: number): { EstateState }
 end
 
 -- Revert every estate an owner holds back to neutral (player left, or their
--- kingdom was eliminated). Works for AI ownerIds exactly like real players —
+-- kingdom was eliminated). Works for AI ownerIds exactly like real players â€”
 -- ownerId is just a number either way. Safe to call with no matching estates.
 function EstateManager.releaseEstatesForOwner(ownerId: number)
 	for _, estate in estates do
@@ -171,7 +171,7 @@ end
 
 -- Full state wipe for a new match: every estate reverts to neutral and any
 -- in-flight supply carts are cleared. Flagpole discovery (estates table
--- membership) is untouched — rescan()/startLoop() re-establish it.
+-- membership) is untouched â€” rescan()/startLoop() re-establish it.
 function EstateManager.resetMatch()
 	for _, estate in estates do
 		estate.ownerId = nil
@@ -183,7 +183,7 @@ function EstateManager.resetMatch()
 	if cartFolder and cartFolder.Parent then
 		cartFolder:ClearAllChildren()
 	end
-	EstateDebug:info("EstateManager match state reset — all estates neutral")
+	EstateDebug:info("EstateManager match state reset â€” all estates neutral")
 end
 
 -- ============================================================

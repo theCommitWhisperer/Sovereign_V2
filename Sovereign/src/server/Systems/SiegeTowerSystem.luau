@@ -9,14 +9,14 @@
 --     tower (FERRY_RADIUS) are lifted over: they're pivoted to the far side of
 --     the wall (opposite the tower), ground-snapped, and given a short
 --     per-unit cooldown so they aren't ping-ponged back.
---   * Cavalry, siege engines and workers do NOT ferry — infantry only.
+--   * Cavalry, siege engines and workers do NOT ferry â€” infantry only.
 --
 -- Honest limitations / TODOs:
 --   * Units teleport rather than visibly climb (no climb animation, no ladder
 --     traversal in the pathfinding grid).
 --   * The drop position is a fixed clearance past the wall; if an enemy
 --     building occupies that exact spot the ground raycast still lands units
---     on top of it, which reads as "jumping down off the wall" — acceptable.
+--     on top of it, which reads as "jumping down off the wall" â€” acceptable.
 --   * Walls are identified by their BuildingType/WallPieceType attributes
 --     (see WallSystemServer.placeWallPiece) plus a name fallback.
 
@@ -51,7 +51,7 @@ local FERRYABLE_SUBTYPES: { [string]: boolean } = {
 local function isWallPiece(building: Instance): boolean
 	local buildingType = building:GetAttribute("BuildingType")
 	if typeof(buildingType) == "string" and string.find(buildingType, "Wall", 1, true) then
-		-- Gates are meant to be broken, not ferried over — still allow: a tower
+		-- Gates are meant to be broken, not ferried over â€” still allow: a tower
 		-- against a gate is fine flavor-wise.
 		return true
 	end

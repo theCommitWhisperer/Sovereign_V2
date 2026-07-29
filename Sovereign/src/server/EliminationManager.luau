@@ -5,14 +5,14 @@
 -- "Regicide" lobby victory modes; "Score" keeps the old economic conditions in
 -- VictoryConditionManager and the Lord's 10-second respawn):
 --
---   (a) DIRECT SLAY — the Lord (the player's King character) is slain while a
+--   (a) DIRECT SLAY â€” the Lord (the player's King character) is slain while a
 --       military mode is active. DESIGN DECISION: the existing 10s respawn in
 --       GameManager is a Score-mode convenience; in military modes the Lord's
 --       death is FINAL (permadeath, no respawn). GameManager consults
 --       EliminationManager.onLordSlain() in its Died handler and skips the
 --       respawn when it returns true.
 --
---   (b) KEEP CAPTURE — enemy units hold the area around a player's Keep,
+--   (b) KEEP CAPTURE â€” enemy units hold the area around a player's Keep,
 --       uncontested by any of the owner's (or their allies') units, for
 --       CAPTURE_SECONDS. Progress decays at double speed while contested or
 --       vacated. Capture is paused during lobby peace time.
@@ -27,22 +27,22 @@
 -- gets a "Victory" GameEvent (VictoryScreen).
 --
 -- AI KINGDOMS: participants are tracked generically by ownerId (a real UserId
--- for players, AI's negative pseudo-ownerId for AI — see LobbyManager.addAI).
+-- for players, AI's negative pseudo-ownerId for AI â€” see LobbyManager.addAI).
 -- AI kingdoms get BOTH elimination paths:
---   * Keep Capture / Keep Destroyed — the 70-stud sweep and the "Keep gone"
+--   * Keep Capture / Keep Destroyed â€” the 70-stud sweep and the "Keep gone"
 --     check already key off numeric OwnerId attributes, so they generalize
 --     for free; AI records just carry their Keep instance directly (no
 --     PlayerManager/PlayerData backing AI).
---   * Direct Slay — AI kingdoms are spawned with a real "King" NPC combat
+--   * Direct Slay â€” AI kingdoms are spawned with a real "King" NPC combat
 --     unit (UnitManager.createUnit("King", ...), same data-driven path as any
---     other AI unit — no Player character, so none of the camera/first-person
+--     other AI unit â€” no Player character, so none of the camera/first-person
 --     hooks that key off IsKing/CanFirstPerson ever run for it). Its death is
 --     caught via CombatManager.onUnitKilled (unitType == "King") instead of
 --     the Humanoid.Died handler GameManager uses for the human Lord.
 --
 -- Full elimination sequence (both AI and human): staged Keep collapse, then
 -- despawn remaining units, release held estates to neutral, and neutralize
--- remaining buildings — all batched over multiple frames.
+-- remaining buildings â€” all batched over multiple frames.
 --
 -- On leave/return-to-menu the caller (GameManager LeaveGame) calls
 -- cleanupPlayer(ownerId); resetMatch() wipes all state for a fresh match.
@@ -120,7 +120,7 @@ local function getRecordKeep(record: Record): Instance?
 end
 
 -- Whether a record is still an active participant in capture sweeps (not yet
--- eliminated, still "in the match" — connected + InGame for players, still
+-- eliminated, still "in the match" â€” connected + InGame for players, still
 -- tracked by AIManager for AI).
 local function isRecordActive(record: Record): boolean
 	if record.eliminated then
@@ -170,7 +170,7 @@ local function playKeepDestruction(keep: Instance)
 		return
 	end
 
-	-- Stage 1 (t=0): the Keep catches fire — flames on the largest parts
+	-- Stage 1 (t=0): the Keep catches fire â€” flames on the largest parts
 	table.sort(parts, function(a, b)
 		return a.Size.Magnitude > b.Size.Magnitude
 	end)
@@ -191,7 +191,7 @@ local function playKeepDestruction(keep: Instance)
 		end
 	end)
 
-	-- Stage 3 (t=4.5s): collapse — the whole structure sinks and fades
+	-- Stage 3 (t=4.5s): collapse â€” the whole structure sinks and fades
 	task.delay(4.5, function()
 		if not model.Parent then
 			return
@@ -257,7 +257,7 @@ end
 
 -- One kingdom/team standing (human or AI) ? fire the victory flow for every
 -- surviving HUMAN (AI has no client to notify). A human only wins once every
--- OTHER kingdom — AI or human — is eliminated; there is no team/alliance
+-- OTHER kingdom â€” AI or human â€” is eliminated; there is no team/alliance
 -- system beyond "same faction name" (FactionManager.areEnemies), so this is
 -- inherently free-for-all unless two kingdoms happen to share a faction.
 local function checkForWinner()
@@ -282,7 +282,7 @@ local function checkForWinner()
 		end
 	end
 
-	-- Solo matches never had an opponent to conquer — don't declare instant victory
+	-- Solo matches never had an opponent to conquer â€” don't declare instant victory
 	local totalRegistered = 0
 	for _ in records do
 		totalRegistered += 1
@@ -308,7 +308,7 @@ local function checkForWinner()
 end
 
 -- ---------------------------------------------------------------------------
--- FULL ELIMINATION SEQUENCE — territory cleanup (both AI and human)
+-- FULL ELIMINATION SEQUENCE â€” territory cleanup (both AI and human)
 -- ---------------------------------------------------------------------------
 -- Despawn the eliminated kingdom's remaining units, release held estates to
 -- neutral, and neutralize remaining buildings (the Keep itself is handled by
@@ -410,7 +410,7 @@ local function eliminate(record: Record, reason: string)
 
 	EliminationDebug:warn(`{record.ownerName} ELIMINATED: {reason}`)
 
-	-- Torch the Keep (skip if it's already gone — e.g. KeepDestroyed path)
+	-- Torch the Keep (skip if it's already gone â€” e.g. KeepDestroyed path)
 	local keep = getRecordKeep(record)
 	if keep and keep.Parent then
 		playKeepDestruction(keep)
@@ -418,7 +418,7 @@ local function eliminate(record: Record, reason: string)
 
 	-- Mark the player out of the running. "Eliminated" stops InGame-gated
 	-- loops (economy ticks, victory checks) without kicking them from the
-	-- server — they can spectate. AI kingdoms have no equivalent flag; their
+	-- server â€” they can spectate. AI kingdoms have no equivalent flag; their
 	-- AIManager state is torn down by the cleanup sweep below instead.
 	if record.player then
 		local playerData = PlayerManager.get(record.player)
@@ -553,8 +553,8 @@ local function sweepCaptures()
 		local player = record.player
 
 		-- Keep destroyed outright ? elimination through the same funnel.
-		-- (A record with no Keep at all — e.g. a human who hasn't placed one
-		-- yet — has nothing to capture or destroy; skip silently.)
+		-- (A record with no Keep at all â€” e.g. a human who hasn't placed one
+		-- yet â€” has nothing to capture or destroy; skip silently.)
 		local keep = getRecordKeep(record)
 		if keep ~= nil and not keep.Parent then
 			eliminate(record, "KeepDestroyed")
@@ -580,11 +580,11 @@ local function sweepCaptures()
 			local message: string? = nil
 			if quarter > record.lastNotifiedQuarter then
 				record.lastNotifiedQuarter = quarter
-				message = `Enemies are seizing your Keep! ({percent}%) — defend it!`
+				message = `Enemies are seizing your Keep! ({percent}%) â€” defend it!`
 			end
 
 			-- HUD countdown banner: every sweep (1 Hz, only while actively contested)
-			-- to BOTH sides — the defender (if a real player; AI has no client to
+			-- to BOTH sides â€” the defender (if a real player; AI has no client to
 			-- notify) and every attacking player.
 			if gameEvent then
 				if player then
@@ -654,7 +654,7 @@ function EliminationManager.setup(victoryMode: string, peaceSeconds: number)
 	matchStartTime = tick()
 	matchEnded = false
 	EliminationDebug:info(
-		`Elimination setup — mode: {victoryMode}, enabled: {eliminationEnabled}, peace: {peaceTimeSeconds}s`
+		`Elimination setup â€” mode: {victoryMode}, enabled: {eliminationEnabled}, peace: {peaceTimeSeconds}s`
 	)
 end
 
@@ -672,7 +672,7 @@ function EliminationManager.registerPlayer(player: Player)
 	EliminationDebug:info(`Registered {player.Name} for elimination tracking`)
 end
 
--- Register an AI kingdom (no Player instance — ownerId is AIManager's
+-- Register an AI kingdom (no Player instance â€” ownerId is AIManager's
 -- negative pseudo-UserId, see LobbyManager.addAI). `keep` is the AI's Keep
 -- Instance if one was spawned (GameManager's spawnAIInitialSetup return),
 -- used for Keep Capture/Keep Destroyed exactly like a human's playerData.Keep.
@@ -721,7 +721,7 @@ function EliminationManager.onLordSlain(player: Player): boolean
 	return true
 end
 
--- Remove a single participant's record (they left the match — either
+-- Remove a single participant's record (they left the match â€” either
 -- disconnected or returned to the menu mid/post-match). Treated as an
 -- elimination for last-standing purposes before the record is dropped, same
 -- as the existing quitter handling below.

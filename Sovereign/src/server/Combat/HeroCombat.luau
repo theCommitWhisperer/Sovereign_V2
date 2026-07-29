@@ -7,8 +7,8 @@
 -- Third-person hero combat: a 3-hit light combo chain, a committed heavy, a
 -- shield block with a parry window, a dodge roll with i-frames, and a bow shot.
 -- The client reports INTENT ("I pressed light, I'm aiming here") and plays
--- feedback; every legality question — is that transition legal, is the cooldown
--- up, is the aim vector real, how much damage lands, did the parry connect — is
+-- feedback; every legality question â€” is that transition legal, is the cooldown
+-- up, is the aim vector real, how much damage lands, did the parry connect â€” is
 -- answered here.
 --
 -- All tuning lives in CombatConfig.Hero. Nothing in this file is a magic number.
@@ -20,10 +20,10 @@
 -- of units. Hero state is per-PLAYER, so adding it to that tick would be a waste
 -- and adding a second Heartbeat would be worse. Instead:
 --
---   • every timing field is an ABSOLUTE os.clock() timestamp,
---   • `refresh()` lapses whatever has expired, and is called at the top of every
+--   â€¢ every timing field is an ABSOLUTE os.clock() timestamp,
+--   â€¢ `refresh()` lapses whatever has expired, and is called at the top of every
 --     public entry point (a request, or a hit landing on the hero),
---   • the only scheduled work is the windup?active?recovery progression of an
+--   â€¢ the only scheduled work is the windup?active?recovery progression of an
 --     in-flight swing, because a swing's damage has to land whether or not the
 --     player touches the mouse again.
 --
@@ -57,7 +57,7 @@
 -- THE DODGE OWNERSHIP SPLIT (deliberate tradeoff)
 -- ---------------------------------------------------------------------------
 -- The CLIENT owns the roll MOVEMENT; the SERVER owns the i-frame window and the
--- cooldown. This is not laziness — the player's character has client network
+-- cooldown. This is not laziness â€” the player's character has client network
 -- ownership, so a server-side CFrame write or LinearVelocity fights the client's
 -- own physics simulation and produces the rubber-banding this project already
 -- fought once in MovementSystem. The exploit surface is bounded and acceptable:
@@ -97,7 +97,7 @@ local heroes: { [number]: HeroState } = {}
 local byCharacter: { [Model]: HeroState } = {}
 
 -- Per-player tuning overrides (arena vs normal game). Kept alongside the state
--- so unregister() drops both together — this codebase has a history of leaking
+-- so unregister() drops both together â€” this codebase has a history of leaking
 -- per-player tables, so every table keyed by UserId in this file is cleared in
 -- exactly one place: `dropPlayer`.
 export type HeroOptions = {
@@ -115,7 +115,7 @@ local initialized = false
 --
 -- NaN needs an explicit test: NaN ~= NaN, so `magnitude > 1e-3` is FALSE for NaN
 -- and a naive guard lets it through as "too short", but `Vector3.Unit` on a NaN
--- vector produces NaN and every downstream dot product silently becomes false —
+-- vector produces NaN and every downstream dot product silently becomes false â€”
 -- which reads in-game as "my sword stopped working" rather than as an error.
 local function sanitizeDirection(value: any): Vector3?
 	if typeof(value) ~= "Vector3" then
@@ -179,7 +179,7 @@ local function schedule(state: HeroState, token: number, delay: number, callback
 end
 
 --- True while the hero's shield is actually up. Distinguishes INTENT
---- (`state.blocking` — the client is holding RMB) from POSTURE (you cannot be
+--- (`state.blocking` â€” the client is holding RMB) from POSTURE (you cannot be
 --- guarding while your own sword is mid-swing). Without this split, holding RMB
 --- and spamming LMB would give permanent 65% damage reduction for free.
 local function isGuarding(state: HeroState): boolean
@@ -212,7 +212,7 @@ local function refresh(state: HeroState, now: number)
 		state.comboIndex = 0
 	end
 
-	-- Stamina (default OFF — see CombatConfig.Hero.stamina)
+	-- Stamina (default OFF â€” see CombatConfig.Hero.stamina)
 	local staminaCfg = Hero.stamina
 	if staminaCfg.enabled then
 		local dt = now - state.lastRefreshAt
@@ -313,7 +313,7 @@ local function beginMelee(state: HeroState, aim: Vector3, shape: MeleeShape, ste
 
 	-- Attacking drops the shield. Intent is preserved (`state.blocking` stays
 	-- true) so the posture comes back on its own in refresh() once recovery ends
-	-- — the player should not have to re-press RMB after every swing.
+	-- â€” the player should not have to re-press RMB after every swing.
 	local token = enterState(state, "Windup", shape.windup)
 	state.nextActionAt = now + shape.windup + shape.activeWindow + shape.recovery
 
@@ -335,7 +335,7 @@ local function beginMelee(state: HeroState, aim: Vector3, shape: MeleeShape, ste
 end
 
 -- ---------------------------------------------------------------------------
--- PUBLIC API — LIFECYCLE
+-- PUBLIC API â€” LIFECYCLE
 -- ---------------------------------------------------------------------------
 
 --- Drop every trace of a player. The ONE place per-player state is freed, so
@@ -360,7 +360,7 @@ local function dropPlayer(userId: number)
 end
 
 --- Register the player's character with the hero state machine. Call this
---- alongside CombatService.registerPlayerFighter — the fighter registration owns
+--- alongside CombatService.registerPlayerFighter â€” the fighter registration owns
 --- health/damage/faction, this owns actions.
 function HeroCombat.register(player: Player, character: Model, opts: HeroOptions?): boolean
 	if not character.Parent then
@@ -427,7 +427,7 @@ function HeroCombat.isRegistered(player: Player): boolean
 	return heroes[player.UserId] ~= nil
 end
 
---- Read-only snapshot for HUD/debug. Returns the live table — callers must not
+--- Read-only snapshot for HUD/debug. Returns the live table â€” callers must not
 --- mutate it (Luau cannot express that here without a copy per call, and this is
 --- on the hot path of nothing, so the convention is enforced by review).
 function HeroCombat.getState(player: Player): HeroState?
@@ -439,7 +439,7 @@ function HeroCombat.getState(player: Player): HeroState?
 end
 
 -- ---------------------------------------------------------------------------
--- PUBLIC API — ACTIONS
+-- PUBLIC API â€” ACTIONS
 -- ---------------------------------------------------------------------------
 
 --- Light attack. Chains to the next combo step if the previous one's
@@ -475,7 +475,7 @@ function HeroCombat.requestLight(player: Player, aim: any): boolean
 	local step = steps[nextIndex]
 
 	-- Riposte: a parry within the last parryRiposteWindow seconds makes THIS
-	-- swing hit far harder. Consumed whether or not it connects — the opening was
+	-- swing hit far harder. Consumed whether or not it connects â€” the opening was
 	-- spent the moment the player chose to swing into it.
 	local damageMult = step.damageMult
 	if now < state.riposteUntil then
@@ -599,8 +599,8 @@ function HeroCombat.requestRanged(player: Player, aim: any): boolean
 
 	local token = enterState(state, "Windup", ranged.windup)
 	schedule(state, token, ranged.windup, function()
-		-- A bow release is instantaneous — there is no active hitbox window to
-		-- hold open the way a sword arc has — so Windup goes straight to Recovery
+		-- A bow release is instantaneous â€” there is no active hitbox window to
+		-- hold open the way a sword arc has â€” so Windup goes straight to Recovery
 		-- and the arrow's travel time is ProjectileSystem's problem.
 		if getFighter(state) then
 			CombatService.playerBowShot(
@@ -718,7 +718,7 @@ function HeroCombat.requestDodge(player: Player, direction: any): boolean
 	state.invulnUntil = now + dodge.invulnSeconds
 	state.dodgeReadyAt = now + dodge.cooldown
 	state.nextActionAt = now + travelTime + dodge.recovery
-	-- Rolling drops the shield entirely (both intent and posture) — you cannot
+	-- Rolling drops the shield entirely (both intent and posture) â€” you cannot
 	-- come out of a roll already guarding.
 	state.blocking = false
 	state.blockStartedAt = -math.huge
@@ -743,7 +743,7 @@ end
 -- ---------------------------------------------------------------------------
 
 --- Installed on CombatService as the incoming-damage hook, so it runs inside
---- applyDamageToUnit — the single funnel every unit-vs-unit damage source in the
+--- applyDamageToUnit â€” the single funnel every unit-vs-unit damage source in the
 --- engine passes through. Returns the damage that should actually land; 0 means
 --- fully negated.
 ---
@@ -841,7 +841,7 @@ function HeroCombat.onIncomingDamage(attacker: CombatUnit, defender: CombatUnit,
 end
 
 --- True while the given character has active dodge i-frames. Exposed for other
---- systems (e.g. an ability that wants to skip an invulnerable target) — the
+--- systems (e.g. an ability that wants to skip an invulnerable target) â€” the
 --- damage pipeline itself goes through onIncomingDamage, not this.
 function HeroCombat.isInvulnerable(character: Model): boolean
 	local state = byCharacter[character]
