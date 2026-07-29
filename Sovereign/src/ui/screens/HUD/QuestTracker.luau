@@ -1,5 +1,13 @@
 --!strict
--- QuestTracker: Side panel showing active quests with progress
+-- QuestTracker: Side panel showing active quests with progress.
+--
+-- Presentational: `quests` comes in as a prop (HUDStore.activeQuests, kept
+-- current by the "QuestsData"/"QuestProgress"/"QuestCompleted" GameEvent
+-- handling in HUDStore.init()) instead of this panel independently fetching
+-- and listening to GameEvent itself. It used to ignore the `quests` prop
+-- entirely and self-fetch, which meant HUD.luau's own activeQuests state was
+-- dead code -- see the migration report for the full list of panels with the
+-- same pre-existing mismatch.
 
 local React = require(game.ReplicatedStorage.Packages.react)
 local UIConfig = require(script.Parent.Parent.Parent.UIConfig)
@@ -9,46 +17,12 @@ local QuestTracker = React.Component:extend("QuestTracker")
 
 function QuestTracker:init()
 	self:setState({
-		quests = {},
 		collapsed = false,
 	})
 end
 
-function QuestTracker:didMount()
-	-- Request quest data from server
-	local ReplicatedStorage = game:GetService("ReplicatedStorage")
-	local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
-	local GameEvent = RemoteEvents:WaitForChild("GameEvent")
-
-	GameEvent:FireServer("GetQuests")
-
-	-- Listen for quest updates
-	self.questConnection = GameEvent.OnClientEvent:Connect(function(action, data)
-		if action == "QuestsData" then
-			self:setState({
-				quests = data.activeQuests or {},
-			})
-		elseif action == "QuestProgress" then
-			-- Refresh quest data
-			GameEvent:FireServer("GetQuests")
-		elseif action == "QuestCompleted" then
-			-- Refresh quest data
-			GameEvent:FireServer("GetQuests")
-		elseif action == "QuestUnlocked" then
-			-- Refresh quest data
-			GameEvent:FireServer("GetQuests")
-		end
-	end)
-end
-
-function QuestTracker:willUnmount()
-	if self.questConnection then
-		self.questConnection:Disconnect()
-	end
-end
-
 function QuestTracker:render()
-	local quests = self.state.quests or {}
+	local quests = self.props.quests or {}
 	local collapsed = self.state.collapsed
 
 	-- Calculate total height based on quests

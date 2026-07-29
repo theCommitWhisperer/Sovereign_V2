@@ -1,7 +1,7 @@
 --!strict
 -- HUDStore: extracted game state + remote-event wiring for the HUD, per
 -- docs/EconomyRedesign.md section 8 ("HUD decomposition"). HUD.luau
--- (src/ui/screens/HUD/HUD.luau, 1,989 lines) owns ~30 pieces of state and
+-- (src/ui/screens/HUD/HUD.luau, 1,989 lines) owned ~30 pieces of state and
 -- every remote connection inside one React class component. This pulls the
 -- STATE and the WIRING out into a plain-Lua observable store so panels can be
 -- presentational (props in, no remote access, no direct state) and the two
@@ -9,15 +9,12 @@
 -- owning it.
 --
 -- ---------------------------------------------------------------------------
--- RUNS ALONGSIDE HUD.luau, NOT INSTEAD OF IT (for now)
+-- THIS IS NOW THE SOURCE OF TRUTH
 -- ---------------------------------------------------------------------------
--- HUD.luau is still the live "hud" route in App.luau and still has its own
--- copy of these connections. This module is the foundation for AdaptiveHUD,
--- which is not yet wired into the router. Once mounted, this opens a SECOND
--- set of listeners on the same RemoteEvents -- Roblox remotes support any
--- number of listeners, so that's an extra table write per event, not a
--- correctness problem. Do not treat this as the source of truth until
--- HUD.luau is retired.
+-- HUD.luau has been deleted; AdaptiveHUD (via DesktopShell/MobileShell) is the
+-- only thing that calls HUDStore.init()/destroy(). Every remote connection,
+-- BindableEvent hookup and piece of derived state HUD.luau used to own lives
+-- here now -- see the per-action comments below for where each one moved from.
 --
 -- ---------------------------------------------------------------------------
 -- WHY A PLAIN MODULE, NOT A REACT CONTEXT
@@ -34,8 +31,10 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
 local React = require(game.ReplicatedStorage.Packages.react)
+local GameData = require(ReplicatedStorage.Shared.GameData)
 
 export type State = {
 	-- Resources / economy
@@ -50,6 +49,7 @@ export type State = {
 	economySnapshot: any?,
 
 	-- Session / match
+	gameStartData: any?, -- raw payload from App.luau's "hud" route props
 	peaceTimeRemaining: number,
 	victoryCondition: string,
 	cameraMode: string, -- "RTS" | "King"
@@ -61,15 +61,55 @@ export type State = {
 	-- Selection (from SelectionManager, src/client/Selection)
 	selectedUnits: { Model },
 	selectedStance: string,
+	selectedFormation: string,
 
-	-- Building / training
+	-- Building placement
+	isPlacingBuilding: boolean,
+	selectedBuilding: string?,
+	currentWallPiece: string,
+	isPlacingWall: boolean,
+
+	-- Building / training / production selection
+	selectedTrainingBuilding: Model?,
+	selectedProductionBuilding: Model?,
 	trainingQueue: { any },
 	selectedCategory: string, -- which building-menu category tab/drawer is active
+	buildingUpgradeInfo: any?, -- never populated server-side today; kept for structural parity
+
+	-- Delete mode
+	isDeleteMode: boolean,
+	showDeleteConfirmation: boolean,
+	buildingToDelete: any?,
+	showMultiDeleteConfirmation: boolean,
+	buildingsToDelete: { any },
+	multiDeleteRefund: string?,
+	deletionHistory: { any },
+
+	-- Modals
+	showPoliciesModal: boolean,
+	showTechTreeModal: boolean,
+	showAbilityTree: boolean,
+	showHeroAbilities: boolean,
+	showMenuModal: boolean,
+	showStatsModal: boolean,
+
+	-- Tutorial
+	tutorialEnabled: boolean,
+	showKeepModal: boolean,
+	tutorialStep: number,
+	buildingsCompleted: { [string]: boolean },
+	tutorialModalHidden: boolean,
 
 	-- Quests / hero abilities / achievements
 	activeQuests: { any },
 	heroAbilities: { any },
 	achievementData: any?,
+
+	-- Misc HUD chrome
+	armySize: number, -- never updated today; kept for Stats modal parity
+	stats: any?,
+	battleLogMessages: { any },
+	battleLogExpanded: boolean,
 }
 
 local function defaultState(): State
@@ -83,6 +123,7 @@ local function defaultState(): State
 		weather = "Clear",
 		date = "Y1 M1",
 		economySnapshot = nil,
+		gameStartData = nil,
 		peaceTimeRemaining = 0,
 		victoryCondition = "Score",
 		cameraMode = "RTS",
@@ -92,21 +133,66 @@ local function defaultState(): State
 		estateCapture = false,
 		selectedUnits = {},
 		selectedStance = "March",
+		selectedFormation = "Line",
+		isPlacingBuilding = false,
+		selectedBuilding = nil,
+		currentWallPiece = "Wall Segment",
+		isPlacingWall = false,
+		selectedTrainingBuilding = nil,
+		selectedProductionBuilding = nil,
 		trainingQueue = {},
 		selectedCategory = "Defense",
+		buildingUpgradeInfo = nil,
+		isDeleteMode = false,
+		showDeleteConfirmation = false,
+		buildingToDelete = nil,
+		showMultiDeleteConfirmation = false,
+		buildingsToDelete = {},
+		multiDeleteRefund = nil,
+		deletionHistory = {},
+		showPoliciesModal = false,
+		showTechTreeModal = false,
+		showAbilityTree = false,
+		showHeroAbilities = false,
+		showMenuModal = false,
+		showStatsModal = false,
+		tutorialEnabled = false,
+		showKeepModal = true,
+		tutorialStep = 1,
+		buildingsCompleted = {},
+		tutorialModalHidden = false,
 		activeQuests = {},
 		heroAbilities = {},
 		achievementData = nil,
+		armySize = 0,
+		stats = nil,
+		battleLogMessages = {},
+		battleLogExpanded = false,
 	}
 end
 
 local HUDStore = {}
+
+--- Sentinel for HUDStore.setState: a plain `{ key = nil }` table literal never
+--- contains `key` at all (Lua drops nil-valued fields at construction), so the
+--- merge loop below would never see it and could never null a field out. This
+--- mirrors React.None for exactly that reason -- HUD.luau's own `{ achievementData
+--- = nil }` calls had the same bug and were silent no-ops; every clearing call in
+--- this file now goes through HUDStore.None instead.
+HUDStore.None = setmetatable({}, { __tostring = function()
+	return "HUDStore.None"
+end })
 
 local state: State = defaultState()
 local listeners: { [(State) -> ()]: true } = {}
 local connections: { RBXScriptConnection } = {}
 local started = false
 local gameEvent: RemoteEvent? = nil
+local getStatsEvent: RemoteEvent? = nil
+local deleteModeEventRef: BindableEvent? = nil
+local resetWallPieceFuncRef: BindableFunction? = nil
+local pollingBuildingId: string? = nil
+local selectionManagerRef: any = nil
 
 function HUDStore.get(): State
 	return state
@@ -127,10 +213,15 @@ end
 --- Shallow-merges `partial` into the store and notifies every subscriber.
 --- Shallow on purpose: nested tables (e.g. `resources`) are always replaced
 --- wholesale by the event handlers below, mirroring how HUD.luau's setState
---- already treats them (never patches Wood/Stone individually).
+--- already treated them (never patches Wood/Stone individually). Pass
+--- HUDStore.None as a value to explicitly null out a field -- see its comment.
 function HUDStore.setState(partial: { [string]: any })
 	for key, value in partial do
-		(state :: any)[key] = value
+		if value == HUDStore.None then
+			(state :: any)[key] = nil
+		else
+			(state :: any)[key] = value
+		end
 	end
 	notify()
 end
@@ -154,10 +245,9 @@ end
 --- comparison, so a replaced-but-equal table still counts as unchanged only if
 --- it's the same reference -- fine here since every writer replaces the whole
 --- value rather than mutating in place). This is the point of extracting state
---- at all: HUD.luau re-renders its entire 1,989-line tree on every setState
---- because it is one component with one state table, so a Gold tick would also
---- re-render the building menu. A panel that only cares about `resources`
---- should not re-render when `selectedUnits` changes.
+--- at all: a single component re-rendering its entire tree on every setState
+--- would re-render the building menu on a Gold tick. A panel that only cares
+--- about `resources` should not re-render when `selectedUnits` changes.
 local function select<T>(key: string, callback: (T) -> ()): () -> ()
 	local lastValue = (state :: any)[key]
 	return HUDStore.subscribe(function(newState)
@@ -196,6 +286,30 @@ local function trackConnection(connection: RBXScriptConnection)
 	table.insert(connections, connection)
 end
 
+-- ---------------------------------------------------------------------------
+-- SESSION / GAME START
+-- ---------------------------------------------------------------------------
+
+--- Seeds resources + tutorial flag from App.luau's gameStartData prop, same as
+--- HUD.luau's :init() reading self.props.gameStartData before the first
+--- "GameStarted" remote event arrives. Also records the raw payload so shells
+--- can derive Battle Arena mode (`gameStartData.mode == "BattleArena"`).
+function HUDStore.setGameStartData(data: any?)
+	if not data then
+		return
+	end
+	local tutorialEnabled = if data.showTutorial ~= nil then data.showTutorial else true
+	local partial: { [string]: any } = { gameStartData = data, tutorialEnabled = tutorialEnabled }
+	if data.resources then
+		partial.resources = data.resources
+	end
+	HUDStore.setState(partial)
+end
+
+-- ---------------------------------------------------------------------------
+-- BUILDING PLACEMENT
+-- ---------------------------------------------------------------------------
+
 --- Ask the server to start placing a building. The one write panels are
 --- allowed to trigger directly through the store, rather than reaching for
 --- RemoteEvents themselves -- see the "panels never touch remotes" rule this
@@ -205,17 +319,471 @@ function HUDStore.startPlacement(buildingName: string)
 		warn(`[HUDStore] startPlacement({buildingName}) called before init() (or after destroy()); dropped`)
 		return
 	end
+	HUDStore.setState({ isPlacingBuilding = true, selectedBuilding = buildingName })
 	gameEvent:FireServer("StartPlacement", buildingName)
 end
 
---- Ask the server to assign/unassign a worker on the currently selected
---- production building. Mirrors HUD.luau's WorkerAssignmentPanel wiring.
+-- ---------------------------------------------------------------------------
+-- CATEGORY / TRAINING / PRODUCTION SELECTION
+-- ---------------------------------------------------------------------------
+
+--- Switching building-menu category. Moved from HUD:createCategoryButton's
+--- OnClick. Deliberately also force-clears selectedUnits: HUD.luau did this so
+--- the content area always shows the building menu when a category tab is
+--- clicked even if units are still selected in the world -- SelectionManager
+--- will repopulate it on the next real selection change.
+function HUDStore.selectCategory(category: string)
+	if resetWallPieceFuncRef then
+		pcall(function()
+			(resetWallPieceFuncRef :: BindableFunction):Invoke()
+		end)
+	end
+	pollingBuildingId = nil
+	HUDStore.setState({
+		selectedCategory = category,
+		selectedTrainingBuilding = HUDStore.None,
+		selectedProductionBuilding = HUDStore.None,
+		trainingQueue = {},
+		selectedUnits = {},
+	})
+end
+
+--- A building click (see src/ui/input/HUDInput.luau) resolved to a
+--- trainable building. Starts polling GetTrainingQueue for it.
+function HUDStore.selectTrainingBuilding(building: Model)
+	pollingBuildingId = building.Name
+	HUDStore.setState({
+		selectedTrainingBuilding = building,
+		selectedProductionBuilding = HUDStore.None,
+		trainingQueue = {},
+	})
+	if gameEvent then
+		gameEvent:FireServer("GetTrainingQueue", { buildingId = building.Name })
+	end
+end
+
+--- A building click resolved to a resource-producing building.
+function HUDStore.selectProductionBuilding(building: Model)
+	pollingBuildingId = nil
+	HUDStore.setState({
+		selectedProductionBuilding = building,
+		selectedTrainingBuilding = HUDStore.None,
+		trainingQueue = {},
+	})
+end
+
+--- Clicked on nothing / a non-training-non-production building.
+function HUDStore.clearBuildingSelection()
+	pollingBuildingId = nil
+	HUDStore.setState({
+		selectedTrainingBuilding = HUDStore.None,
+		selectedProductionBuilding = HUDStore.None,
+		trainingQueue = {},
+	})
+end
+
+function HUDStore.startTraining(buildingId: string, unitType: string)
+	if gameEvent then
+		gameEvent:FireServer("StartTraining", { buildingId = buildingId, unitType = unitType })
+	end
+end
+
+function HUDStore.closeTrainingPanel()
+	pollingBuildingId = nil
+	HUDStore.setState({ selectedTrainingBuilding = HUDStore.None, trainingQueue = {} })
+end
+
+function HUDStore.assignWorker(buildingId: string)
+	if gameEvent then
+		gameEvent:FireServer("AssignWorker", { buildingId = buildingId })
+	end
+end
+
+function HUDStore.unassignWorker(buildingId: string)
+	if gameEvent then
+		gameEvent:FireServer("UnassignWorker", { buildingId = buildingId })
+	end
+end
+
+function HUDStore.closeProductionPanel()
+	HUDStore.setState({ selectedProductionBuilding = HUDStore.None })
+end
+
+-- ---------------------------------------------------------------------------
+-- UNITS: STANCE / FORMATION / CIVILIAN ORDERS
+-- ---------------------------------------------------------------------------
+
+--- Low-level stance remote call. Prefer HUDStore.selectStance below, which
+--- also updates the highlighted stance button; this is kept for callers that
+--- already have a unit-id list on hand.
 function HUDStore.setStance(unitIds: { string }, stanceName: string)
 	if not gameEvent or #unitIds == 0 then
 		return
 	end
 	gameEvent:FireServer("SetStance", { UnitIDs = unitIds, Stance = stanceName })
 end
+
+--- UnitSelectionPanel's onStanceSelected. Derives unit ids from the current
+--- selection so the panel itself never has to.
+function HUDStore.selectStance(stanceName: string)
+	HUDStore.setState({ selectedStance = stanceName })
+	local unitIds = {}
+	for _, unit in state.selectedUnits do
+		table.insert(unitIds, unit:GetAttribute("UnitId") or unit.Name)
+	end
+	HUDStore.setStance(unitIds, stanceName)
+end
+
+--- UnitSelectionPanel's onFormationSelected. Ported from HUD.luau's render():
+--- updates SelectionManager's formation type (so future spawns/orders use it)
+--- and, for 2+ selected units, immediately re-arranges them at a point offset
+--- from their average position in the camera's facing direction.
+function HUDStore.selectFormation(formationType: string)
+	HUDStore.setState({ selectedFormation = formationType })
+	if selectionManagerRef then
+		selectionManagerRef.setFormationType(formationType)
+	end
+
+	local selectedUnits = state.selectedUnits
+	if #selectedUnits < 2 or not gameEvent then
+		return
+	end
+
+	local unitIds = {}
+	local avgPosition = Vector3.new(0, 0, 0)
+	for _, unit in selectedUnits do
+		table.insert(unitIds, unit:GetAttribute("UnitId") or unit.Name)
+		if unit.PrimaryPart then
+			avgPosition = avgPosition + unit.PrimaryPart.Position
+		end
+	end
+	avgPosition = avgPosition / #selectedUnits
+
+	local camera = Workspace.CurrentCamera
+	if not camera then
+		return
+	end
+	local cameraLook = camera.CFrame.LookVector
+	local horizontalLook = Vector3.new(cameraLook.X, 0, cameraLook.Z).Unit
+	local targetPosition = avgPosition + horizontalLook * 8 -- forward offset so units don't collide forming up
+
+	gameEvent:FireServer("MoveUnitsInFormation", {
+		unitIds = unitIds,
+		targetPosition = targetPosition,
+		formationType = formationType,
+	})
+end
+
+--- ReturnToKeep / UnassignWorkers for the civilian (peasant/worker) subset of
+--- a selection. Moved out of UnitSelectionPanel.luau, which used to reach into
+--- RemoteEvents directly -- see the "panels never touch remotes" rule.
+function HUDStore.civilianOrder(selectedUnits: { Model }, action: string)
+	if not gameEvent then
+		return
+	end
+	local ids = {}
+	for _, unit in selectedUnits do
+		table.insert(ids, unit:GetAttribute("UnitId") or unit.Name)
+	end
+	gameEvent:FireServer(action, { unitIds = ids })
+end
+
+-- ---------------------------------------------------------------------------
+-- DELETE MODE
+-- ---------------------------------------------------------------------------
+
+--- Turning delete mode on cancels any in-flight placement (matches HUD.luau's
+--- DeleteButton.OnClick) and fires DeleteModeChanged for
+--- DeletionInputHandler's visual feedback (src/client), the same BindableEvent
+--- HUD.luau fired.
+function HUDStore.setDeleteMode(enabled: boolean)
+	HUDStore.setState({ isDeleteMode = enabled })
+	if enabled and gameEvent then
+		gameEvent:FireServer("PlacementEnded")
+	end
+	if deleteModeEventRef then
+		deleteModeEventRef:Fire(enabled)
+	end
+end
+
+function HUDStore.toggleDeleteMode()
+	HUDStore.setDeleteMode(not state.isDeleteMode)
+end
+
+function HUDStore.confirmDelete()
+	local target = state.buildingToDelete
+	if target and gameEvent then
+		gameEvent:FireServer("DeleteBuilding", { buildingId = target.name })
+	end
+	HUDStore.setState({ showDeleteConfirmation = false, buildingToDelete = HUDStore.None })
+end
+
+function HUDStore.cancelDelete()
+	HUDStore.setState({ showDeleteConfirmation = false, buildingToDelete = HUDStore.None })
+end
+
+--- Confirms a multi-select deletion (drag-select -> Delete). Ported verbatim
+--- from HUD.luau's MultiDeleteConfirmationModal.onConfirm: walls go through
+--- RemoveWallPiece, buildings through DeleteBuilding, and the whole batch is
+--- recorded as ONE undo-history entry.
+function HUDStore.confirmMultiDelete(selectedBuildings: { any })
+	local remoteEvents = ReplicatedStorage:FindFirstChild("RemoteEvents")
+	local removePieceEvent = remoteEvents and remoteEvents:FindFirstChild("RemoveWallPiece")
+
+	local deletionBatch = {}
+	for _, buildingInfo in selectedBuildings do
+		local wallPieceType = nil
+		if buildingInfo.isWall then
+			wallPieceType = buildingInfo.name:match("^([^_]+)")
+		end
+		table.insert(deletionBatch, {
+			type = wallPieceType or buildingInfo.type,
+			name = buildingInfo.name,
+			position = buildingInfo.model.PrimaryPart and buildingInfo.model.PrimaryPart.Position
+				or Vector3.new(0, 0, 0),
+			rotation = buildingInfo.model.PrimaryPart and buildingInfo.model.PrimaryPart.Orientation
+				or Vector3.new(0, 0, 0),
+			isWall = buildingInfo.isWall or false,
+		})
+	end
+	if #deletionBatch > 0 then
+		task.defer(function()
+			HUDStore.addToDeletionHistory(deletionBatch)
+		end)
+	end
+
+	for _, buildingInfo in selectedBuildings do
+		if buildingInfo.isWall then
+			if removePieceEvent then
+				(removePieceEvent :: RemoteEvent):FireServer(buildingInfo.model)
+			else
+				warn("[HUDStore] RemoveWallPiece event not found!")
+			end
+		elseif gameEvent then
+			gameEvent:FireServer("DeleteBuilding", { buildingId = buildingInfo.name })
+		end
+	end
+
+	HUDStore.setState({
+		showMultiDeleteConfirmation = false,
+		buildingsToDelete = {},
+		multiDeleteRefund = HUDStore.None,
+	})
+end
+
+function HUDStore.cancelMultiDelete()
+	HUDStore.setState({
+		showMultiDeleteConfirmation = false,
+		buildingsToDelete = {},
+		multiDeleteRefund = HUDStore.None,
+	})
+end
+
+--- Records one deletion (or a whole multi-delete batch as a single entry) for
+--- Ctrl+U / the Undo button. Trims to the last 5, same cap HUD.luau used.
+function HUDStore.addToDeletionHistory(buildingDataOrBatch: any)
+	local history = table.clone(state.deletionHistory)
+	local isBatch = buildingDataOrBatch[1] ~= nil and type(buildingDataOrBatch[1]) == "table"
+
+	if isBatch then
+		local batch = {}
+		for _, buildingData in buildingDataOrBatch do
+			table.insert(batch, {
+				buildingType = buildingData.type,
+				buildingName = buildingData.name,
+				position = buildingData.position,
+				rotation = buildingData.rotation,
+				isWall = buildingData.isWall,
+			})
+		end
+		table.insert(history, { batch = batch, timestamp = os.time() })
+	else
+		table.insert(history, {
+			buildingType = buildingDataOrBatch.type,
+			buildingName = buildingDataOrBatch.name,
+			position = buildingDataOrBatch.position,
+			rotation = buildingDataOrBatch.rotation,
+			isWall = buildingDataOrBatch.isWall,
+			timestamp = os.time(),
+		})
+	end
+
+	while #history > 5 do
+		table.remove(history, 1)
+	end
+	HUDStore.setState({ deletionHistory = history })
+end
+
+--- Undo the most recent deletion (Ctrl+U or the Undo button -- both routes go
+--- through this single implementation now. HUD.luau had two: this smart,
+--- wall/batch-aware version for Ctrl+U, and a naive `FireServer("UndoDeletion",
+--- lastDeletion)` wired to the Undo button's onClick that did not handle walls
+--- or batches at all. Consolidating avoids reproducing that button-vs-hotkey
+--- inconsistency.
+function HUDStore.undoLastDeletion()
+	local history = state.deletionHistory
+	if #history == 0 then
+		return
+	end
+	local lastDeletion = history[#history]
+	local remoteEvents = ReplicatedStorage:FindFirstChild("RemoteEvents")
+
+	if lastDeletion.batch then
+		local placePathEvent = remoteEvents and remoteEvents:FindFirstChild("PlaceWallPath")
+		for _, item in lastDeletion.batch do
+			if item.isWall then
+				if placePathEvent then
+					local yRotationRadians = math.rad(item.rotation and item.rotation.Y or 0)
+					(placePathEvent :: RemoteEvent):FireServer({
+						{ type = item.buildingType, position = item.position, rotation = yRotationRadians },
+					})
+				end
+			elseif gameEvent then
+				gameEvent:FireServer("UndoDeletion", {
+					buildingType = item.buildingType,
+					position = item.position,
+					rotation = item.rotation,
+				})
+			end
+		end
+	elseif lastDeletion.isWall then
+		local placePathEvent = remoteEvents and remoteEvents:FindFirstChild("PlaceWallPath")
+		if placePathEvent then
+			local yRotationRadians = math.rad(lastDeletion.rotation and lastDeletion.rotation.Y or 0)
+			(placePathEvent :: RemoteEvent):FireServer({
+				{ type = lastDeletion.buildingType, position = lastDeletion.position, rotation = yRotationRadians },
+			})
+		else
+			warn("[HUDStore] PlaceWallPath event not found!")
+		end
+	elseif gameEvent then
+		gameEvent:FireServer("UndoDeletion", {
+			buildingType = lastDeletion.buildingType,
+			position = lastDeletion.position,
+			rotation = lastDeletion.rotation,
+		})
+	end
+
+	local newHistory = table.clone(history)
+	table.remove(newHistory)
+	HUDStore.setState({ deletionHistory = newHistory })
+end
+
+-- ---------------------------------------------------------------------------
+-- MODALS
+-- ---------------------------------------------------------------------------
+
+function HUDStore.togglePoliciesModal()
+	HUDStore.setState({ showPoliciesModal = not state.showPoliciesModal })
+end
+
+function HUDStore.toggleAbilityTree()
+	HUDStore.setState({ showAbilityTree = not state.showAbilityTree })
+end
+
+function HUDStore.setTechTreeModal(visible: boolean)
+	HUDStore.setState({ showTechTreeModal = visible })
+end
+
+function HUDStore.setMenuModal(visible: boolean)
+	HUDStore.setState({ showMenuModal = visible })
+end
+
+function HUDStore.setStatsModal(visible: boolean)
+	HUDStore.setState({ showStatsModal = visible })
+end
+
+function HUDStore.dismissAchievement()
+	HUDStore.setState({ achievementData = HUDStore.None })
+end
+
+-- ---------------------------------------------------------------------------
+-- HERO ABILITIES / BUILDING UPGRADES / RESEARCH
+-- ---------------------------------------------------------------------------
+
+function HUDStore.useAbility(abilityId: string)
+	if gameEvent then
+		gameEvent:FireServer("UseAbility", abilityId)
+	end
+end
+
+function HUDStore.upgradeBuilding(buildingId: string)
+	if gameEvent then
+		gameEvent:FireServer("UpgradeBuilding", buildingId)
+	end
+end
+
+function HUDStore.closeUpgradePanel()
+	HUDStore.setState({ buildingUpgradeInfo = HUDStore.None })
+end
+
+function HUDStore.startResearch(techId: string)
+	if gameEvent then
+		gameEvent:FireServer("StartResearch", techId)
+	end
+end
+
+-- ---------------------------------------------------------------------------
+-- TUTORIAL
+-- ---------------------------------------------------------------------------
+
+--- Tutorial step machine, ported from HUD:onBuildingPlaced. Advances
+--- Keep -> Storehouse -> Granary as each is placed; disabling `tutorialEnabled`
+--- is what makes the modal stop rendering once the sequence finishes.
+local function handleBuildingPlaced(buildingType: string)
+	local tutorialBuildings = { "Keep", "Storehouse", "Granary" }
+	local currentRequiredBuilding = tutorialBuildings[state.tutorialStep]
+	if buildingType ~= currentRequiredBuilding then
+		return
+	end
+
+	local newCompleted = table.clone(state.buildingsCompleted)
+	newCompleted[buildingType] = true
+
+	if state.tutorialStep == 1 then
+		if state.tutorialEnabled then
+			HUDStore.setState({
+				buildingsCompleted = newCompleted,
+				tutorialStep = 2,
+				tutorialModalHidden = false,
+				showKeepModal = false,
+			})
+		else
+			HUDStore.setState({
+				buildingsCompleted = newCompleted,
+				showKeepModal = false,
+				tutorialModalHidden = false,
+			})
+		end
+	elseif state.tutorialStep >= #tutorialBuildings then
+		HUDStore.setState({
+			buildingsCompleted = newCompleted,
+			tutorialEnabled = false,
+			tutorialModalHidden = false,
+			showKeepModal = false,
+		})
+	else
+		HUDStore.setState({
+			buildingsCompleted = newCompleted,
+			tutorialStep = state.tutorialStep + 1,
+			tutorialModalHidden = false,
+		})
+	end
+end
+
+--- TutorialModal's onBuildRequested. Manual clicks hide the modal so it isn't
+--- covering the placement preview; auto-triggered steps keep it visible so the
+--- player can keep reading instructions while placing.
+function HUDStore.requestTutorialBuild(buildingType: string, isAutoTriggered: boolean?)
+	if not isAutoTriggered then
+		HUDStore.setState({ tutorialModalHidden = true })
+	end
+	HUDStore.startPlacement(buildingType)
+end
+
+-- ---------------------------------------------------------------------------
+-- INIT / DESTROY
+-- ---------------------------------------------------------------------------
 
 --- Wires every remote-driven piece of HUD state. Safe to call more than once;
 --- a second call before destroy() is a no-op so a re-mounting AdaptiveHUD
@@ -239,7 +807,7 @@ function HUDStore.init()
 
 	local event = remoteEvents:WaitForChild("GameEvent", 10) :: RemoteEvent?
 	if not event then
-		warn("[HUDStore] GameEvent not found after 10s")
+		warn("[HUDStore] GameEvent not found after 10s; economy/selection/combat state will not update")
 		return
 	end
 	if not started then
@@ -247,11 +815,153 @@ function HUDStore.init()
 	end
 	gameEvent = event
 
+	-- GetStats is a SEPARATE remote from GameEvent. HUD.luau's :init() treated a
+	-- missing GetStats as fatal for the WHOLE HUD (it returned before wiring
+	-- gameEvent at all if either lookup failed) -- exactly the "silently skips
+	-- later setup" failure this migration was told to stop reproducing. Here a
+	-- missing GetStats only disables the Stats modal; everything else still wires.
+	local statsEvent = remoteEvents:WaitForChild("GetStats", 10) :: RemoteEvent?
+	if statsEvent then
+		getStatsEvent = statsEvent
+		trackConnection(statsEvent.OnClientEvent:Connect(function(stats)
+			HUDStore.setState({ stats = stats })
+		end))
+	else
+		warn("[HUDStore] GetStats not found after 10s; Stats modal will show stale/no data")
+	end
+	if not started then
+		return
+	end
+
+	-- Delete-mode visual feedback BindableEvent, shared with DeletionInputHandler
+	-- (src/client). Found-or-created, same as HUD.luau did.
+	local deleteModeEvent = ReplicatedStorage:FindFirstChild("DeleteModeChanged") :: BindableEvent?
+	if not deleteModeEvent then
+		deleteModeEvent = Instance.new("BindableEvent")
+		deleteModeEvent.Name = "DeleteModeChanged"
+		deleteModeEvent.Parent = ReplicatedStorage
+	end
+	deleteModeEventRef = deleteModeEvent
+
+	-- Drag-select multi-delete request, fired by src/client's selection box.
+	local multiDeleteEvent = ReplicatedStorage:FindFirstChild("MultiDeleteRequested") :: BindableEvent?
+	if not multiDeleteEvent then
+		multiDeleteEvent = Instance.new("BindableEvent")
+		multiDeleteEvent.Name = "MultiDeleteRequested"
+		multiDeleteEvent.Parent = ReplicatedStorage
+	end
+	trackConnection((multiDeleteEvent :: BindableEvent).Event:Connect(function(buildings: { Model })
+		local totalRefund: { [string]: number } = {}
+		local buildingInfoList = {}
+
+		for _, building in buildings do
+			local buildingType = building:GetAttribute("BuildingType")
+			local isWall = building:FindFirstChild("PlacedPiece") ~= nil
+			local actualType = buildingType
+			if isWall and not buildingType then
+				actualType = "Stone_Wall"
+			end
+
+			if actualType or isWall then
+				table.insert(buildingInfoList, {
+					name = building.Name,
+					type = actualType or "Stone_Wall",
+					model = building,
+					isWall = isWall,
+				})
+
+				if buildingType and not isWall then
+					local buildingInfo = GameData.Buildings[buildingType]
+					if buildingInfo and buildingInfo.cost then
+						for resourceType, cost in pairs(buildingInfo.cost) do
+							local refund = math.floor(cost * 0.5)
+							if refund > 0 then
+								totalRefund[resourceType] = (totalRefund[resourceType] or 0) + refund
+							end
+						end
+					end
+				end
+			end
+		end
+
+		local refundText = nil
+		if next(totalRefund) then
+			local refundParts = {}
+			for resourceType, amount in pairs(totalRefund) do
+				table.insert(refundParts, string.format("%d %s", amount, resourceType))
+			end
+			refundText = table.concat(refundParts, ", ")
+		end
+
+		HUDStore.setState({
+			showMultiDeleteConfirmation = true,
+			buildingsToDelete = buildingInfoList,
+			multiDeleteRefund = refundText or HUDStore.None,
+		})
+	end))
+
+	-- Wall-piece selector state, published by PlacementController (src/client).
+	local wallPieceEvent = ReplicatedStorage:FindFirstChild("WallPieceChanged") :: BindableEvent?
+	if not wallPieceEvent then
+		wallPieceEvent = Instance.new("BindableEvent")
+		wallPieceEvent.Name = "WallPieceChanged"
+		wallPieceEvent.Parent = ReplicatedStorage
+	end
+	trackConnection((wallPieceEvent :: BindableEvent).Event:Connect(function(data)
+		HUDStore.setState({ currentWallPiece = data.currentPiece, isPlacingWall = data.isPlacingWalls })
+	end))
+
+	resetWallPieceFuncRef = ReplicatedStorage:FindFirstChild("ResetWallPiece") :: BindableFunction?
+
+	-- Request initial quest data + Glory balance (server also pushes GloryUpdate
+	-- batches, but the HUD may mount after the initial flush)
+	task.delay(0.5, function()
+		if started and gameEvent then
+			gameEvent:FireServer("GetQuests")
+			gameEvent:FireServer("GetGlory")
+		end
+	end)
+
+	-- Capture banners auto-expire if the server stops sending updates (the
+	-- progress events only flow while a capture is actively running). Gated on
+	-- `started` so this loop actually stops on destroy() instead of accumulating
+	-- one live loop per init()/destroy() cycle the way HUD.luau's did.
+	task.spawn(function()
+		while started do
+			task.wait(2)
+			if not started then
+				break
+			end
+			local now = os.clock()
+			local keepCapture = state.keepCapture
+			if keepCapture and now - (keepCapture.receivedAt or 0) > 4 then
+				HUDStore.setState({ keepCapture = false })
+			end
+			local estateCapture = state.estateCapture
+			if estateCapture and now - (estateCapture.receivedAt or 0) > 4 then
+				HUDStore.setState({ estateCapture = false })
+			end
+		end
+	end)
+
+	-- Poll the selected training building's queue every 0.5s, same cadence
+	-- HUD.luau used. Also gated on `started` for the same reason as above.
+	task.spawn(function()
+		while started do
+			task.wait(0.5)
+			if started and pollingBuildingId and gameEvent then
+				gameEvent:FireServer("GetTrainingQueue", { buildingId = pollingBuildingId })
+			end
+		end
+	end)
+
 	trackConnection(event.OnClientEvent:Connect(function(action: string, data: any)
 		if action == "GameStarted" and data.resources then
 			local peaceTimeSecs = data.peaceTimeSeconds or 0
+			local tutorialEnabled = if data.showTutorial ~= nil then data.showTutorial else true
 			HUDStore.setState({
 				resources = data.resources,
+				tutorialEnabled = tutorialEnabled,
 				peaceTimeRemaining = peaceTimeSecs,
 				victoryCondition = data.victoryCondition or "Score",
 			})
@@ -268,8 +978,12 @@ function HUDStore.init()
 					end
 				end)
 			end
+		elseif action == "BuildingPlaced" and data.buildingType then
+			handleBuildingPlaced(data.buildingType)
 		elseif action == "UpdateResources" and data.resources then
 			HUDStore.setState({ resources = data.resources })
+		elseif action == "StartPlacement" and typeof(data) == "string" then
+			HUDStore.setState({ isPlacingBuilding = true, selectedBuilding = data })
 		elseif action == "TrainingQueueUpdate" and data.buildingId and data.queue then
 			HUDStore.setState({ trainingQueue = data.queue })
 		elseif action == "UpdateHappiness" and data.happiness then
@@ -289,7 +1003,7 @@ function HUDStore.init()
 		elseif action == "KingHealthUpdate" and data.health and data.maxHealth then
 			HUDStore.setState({ kingHealth = data.health, kingMaxHealth = data.maxHealth })
 		elseif action == "CameraModeChanged" and typeof(data) == "string" then
-			HUDStore.setState({ cameraMode = data })
+			HUDStore.setState({ cameraMode = data, showHeroAbilities = data == "King" })
 			if data == "King" and gameEvent then
 				gameEvent:FireServer("GetAbilities")
 			end
@@ -327,7 +1041,7 @@ function HUDStore.init()
 			HUDStore.setState({ achievementData = data })
 			task.delay(6, function()
 				if started and HUDStore.get().achievementData == data then
-					HUDStore.setState({ achievementData = nil })
+					HUDStore.dismissAchievement()
 				end
 			end)
 		elseif action == "QuestsData" then
@@ -354,13 +1068,6 @@ function HUDStore.init()
 		end
 	end))
 
-	task.delay(0.5, function()
-		if started and gameEvent then
-			gameEvent:FireServer("GetQuests")
-			gameEvent:FireServer("GetGlory")
-		end
-	end)
-
 	-- Selection lives under StarterPlayerScripts.Client, a different script
 	-- tree than this one (StarterPlayerScripts.UI); neither can require the
 	-- other by a relative path, same split ViewToggleButton documents. Yielded
@@ -386,6 +1093,7 @@ function HUDStore.init()
 		if not started then
 			return -- destroyed while we were yielding above
 		end
+		selectionManagerRef = SelectionManager
 		local connection = (SelectionManager :: any).SelectionChanged:Connect(function(selectedUnits: { Model })
 			local firstStance = nil
 			if selectedUnits[1] then
@@ -402,11 +1110,15 @@ end
 
 --- Disconnects every connection this store opened and resets state to
 --- defaults. Safe to call multiple times. After this, init() can run again --
---- this is what makes the store safe across an AdaptiveHUD remount, unlike
---- HUD.luau's willUnmount (see HUD.luau's header comment).
+--- this is what makes the store safe across an AdaptiveHUD remount.
 function HUDStore.destroy()
 	started = false
 	gameEvent = nil
+	getStatsEvent = nil
+	deleteModeEventRef = nil
+	resetWallPieceFuncRef = nil
+	pollingBuildingId = nil
+	selectionManagerRef = nil
 	for _, connection in connections do
 		connection:Disconnect()
 	end

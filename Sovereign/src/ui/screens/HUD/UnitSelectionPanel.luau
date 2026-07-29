@@ -14,20 +14,6 @@ local function isCivilianUnit(unit: Instance): boolean
 	return data ~= nil and data.subtype == "Worker"
 end
 
--- Fire a civilian order (ReturnToKeep / UnassignWorkers) for the selection.
-local function fireCivilianOrder(selectedUnits, action: string)
-	local remotes = game.ReplicatedStorage:FindFirstChild("RemoteEvents")
-	local gameEvent = remotes and remotes:FindFirstChild("GameEvent")
-	if not gameEvent then
-		return
-	end
-	local ids = {}
-	for _, unit in selectedUnits do
-		table.insert(ids, unit:GetAttribute("UnitId") or unit.Name)
-	end
-	gameEvent:FireServer(action, { unitIds = ids })
-end
-
 -- Formation types (must match FormationManager names)
 local FORMATIONS = {
 	{ name = "Line", icon = "━━━", tooltip = "Line Formation" },
@@ -289,7 +275,9 @@ function UnitSelectionPanel:render()
 				TextSize = 14,
 				TextColor3 = UIConfig.HUD.PanelTextColor,
 				[React.Event.MouseButton1Click] = function()
-					fireCivilianOrder(selectedUnits, "ReturnToKeep")
+					if self.props.onCivilianOrder then
+						self.props.onCivilianOrder("ReturnToKeep")
+					end
 				end,
 			}),
 
@@ -304,7 +292,9 @@ function UnitSelectionPanel:render()
 				TextSize = 14,
 				TextColor3 = UIConfig.HUD.PanelTextColor,
 				[React.Event.MouseButton1Click] = function()
-					fireCivilianOrder(selectedUnits, "UnassignWorkers")
+					if self.props.onCivilianOrder then
+						self.props.onCivilianOrder("UnassignWorkers")
+					end
 				end,
 			}),
 		}) or nil,
