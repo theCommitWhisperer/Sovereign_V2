@@ -46,46 +46,35 @@ export type Props = {
 -- sized for mobile's horizontal chip STRIP height, not a vertical rail's
 -- width), so this is a local layout constant, same convention MobileShell
 -- uses for its own shell-specific offsets.
-local RAIL_WIDTH = 96
-local TILE_WIDTH = 168
-local TILE_HEIGHT = 128
+-- Two columns of icon tiles rather than one tall list: there are 8 rail entries
+-- (6 categories + delete + abilities) and only ~140px of usable height in the
+-- compact bar, so a single column would give each one 17px.
+local RAIL_WIDTH = 104
+local RAIL_CELL = 44
+local TILE_WIDTH = Theme.Metrics.BuildTileWidth
+local TILE_HEIGHT = Theme.Metrics.BuildTileHeight
 
+-- Icon only. A 44px cell cannot legibly carry an icon AND a label, and the
+-- label would be redundant anyway: the active category's name is printed as the
+-- header above the tile row, so there is exactly one place to read it.
 local function railButton(icon: string, label: string, active: boolean, layoutOrder: number, onClick: () -> ())
 	return React.createElement("TextButton", {
 		Name = label .. "RailButton",
-		Size = UDim2.new(1, 0, 0, Theme.Metrics.DesktopTarget + 20),
 		BackgroundColor3 = if active then Theme.Color.Accent else Theme.Color.SurfaceRaised,
 		BackgroundTransparency = if active then Theme.Transparency.CardActive else Theme.Transparency.Card,
 		AutoButtonColor = true,
-		Text = "",
+		Text = icon,
+		FontFace = Theme.FontFace.Body,
+		TextSize = Theme.TextSize.Title,
+		TextColor3 = if active then Theme.Color.Accent else Theme.Color.TextSecondary,
 		LayoutOrder = layoutOrder,
 		[React.Event.Activated] = onClick,
 	}, {
 		Corner = React.createElement("UICorner", { CornerRadius = Theme.corner() }),
-		Stroke = React.createElement("UIStroke", Theme.strokeProps()),
-		Layout = React.createElement("UIListLayout", {
-			FillDirection = Enum.FillDirection.Vertical,
-			HorizontalAlignment = Enum.HorizontalAlignment.Center,
-			VerticalAlignment = Enum.VerticalAlignment.Center,
-			Padding = UDim.new(0, 2),
-		}),
-		Icon = React.createElement("TextLabel", {
-			Size = UDim2.new(1, 0, 0, 20),
-			BackgroundTransparency = 1,
-			Text = icon,
-			FontFace = Theme.FontFace.Body,
-			TextSize = Theme.TextSize.Heading,
-			TextColor3 = if active then Theme.Color.Surface else Theme.Color.TextPrimary,
-			LayoutOrder = 1,
-		}),
-		Label = React.createElement("TextLabel", {
-			Size = UDim2.new(1, 0, 0, 14),
-			BackgroundTransparency = 1,
-			Text = label,
-			FontFace = Theme.FontFace.Body,
-			TextSize = Theme.TextSize.Caption,
-			TextColor3 = if active then Theme.Color.Surface else Theme.Color.TextSecondary,
-			LayoutOrder = 2,
+		Stroke = React.createElement("UIStroke", {
+			Color = if active then Theme.Color.Accent else Theme.Color.Border,
+			Transparency = if active then 0 else Theme.Transparency.Border,
+			Thickness = 1,
 		}),
 	})
 end
@@ -276,9 +265,9 @@ local function DesktopBuildingGrid(props: Props)
 	end)
 
 	local railChildren: { [string]: any } = {
-		Layout = React.createElement("UIListLayout", {
-			FillDirection = Enum.FillDirection.Vertical,
-			Padding = UDim.new(0, Theme.Metrics.GapTight),
+		Layout = React.createElement("UIGridLayout", {
+			CellSize = UDim2.fromOffset(RAIL_CELL, RAIL_CELL),
+			CellPadding = UDim2.fromOffset(Theme.Metrics.GapTight, Theme.Metrics.GapTight),
 			SortOrder = Enum.SortOrder.LayoutOrder,
 		}),
 	}
@@ -300,14 +289,8 @@ local function DesktopBuildingGrid(props: Props)
 	-- utility column; the spec's top bar only names Menu/Stats/Policies/
 	-- TechTree, so these two ride along at the bottom of the category rail
 	-- instead of losing their only on-screen control.
-	railOrder += 1
-	railChildren.DeleteDivider = React.createElement("Frame", {
-		Size = UDim2.new(1, 0, 0, 1),
-		BackgroundColor3 = Theme.Color.Border,
-		BackgroundTransparency = Theme.Transparency.Border,
-		BorderSizePixel = 0,
-		LayoutOrder = railOrder,
-	})
+	-- No divider between categories and the utility toggles: a UIGridLayout gives
+	-- every child a full cell, so a 1px separator would occupy a whole 44px slot.
 	railOrder += 1
 	railChildren.DeleteMode = railButton("🗑", "Delete", isDeleteMode, railOrder, function()
 		HUDStore.toggleDeleteMode()
@@ -317,11 +300,20 @@ local function DesktopBuildingGrid(props: Props)
 		HUDStore.toggleAbilityTree()
 	end)
 
+	-- ONE ROW, SCROLLING SIDEWAYS.
+	--
+	-- This was a UIGridLayout that wrapped onto new rows and scrolled vertically,
+	-- which only made sense while the bottom bar was 330px tall. Now that the bar
+	-- is a compact 164px there is room for exactly one row, and a vertical
+	-- scrollbar that reveals one row at a time is worse than a horizontal one
+	-- that reveals the next few buildings -- an RTS build menu is a shelf, not a
+	-- grid you page through.
 	local tileChildren: { [string]: any } = {
-		Layout = React.createElement("UIGridLayout", {
-			CellSize = UDim2.fromOffset(TILE_WIDTH, TILE_HEIGHT),
-			CellPadding = UDim2.fromOffset(Theme.Metrics.Gap, Theme.Metrics.Gap),
+		Layout = React.createElement("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			Padding = UDim.new(0, Theme.Metrics.Gap),
 			SortOrder = Enum.SortOrder.LayoutOrder,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
 		}),
 	}
 	for i, entry in BuildingCatalog.getCategory(selectedCategory) do
@@ -339,19 +331,29 @@ local function DesktopBuildingGrid(props: Props)
 			BackgroundTransparency = 1,
 		}, railChildren),
 
-		-- UIGridLayout's default FillDirection (Horizontal) fills a row left to
-		-- right and wraps to a new row once it runs out of WIDTH, so overflow
-		-- within the fixed bottom-bar height grows downward -- hence a
-		-- vertical scroll here, not horizontal.
-		Grid = React.createElement("ScrollingFrame", {
-			Name = "BuildingGrid",
-			Size = UDim2.new(1, -RAIL_WIDTH - Theme.Metrics.Gap, 1, 0),
+		-- The rail is icon-only, so this is the one place the active category is
+		-- named. Also states the count, which tells you whether the row scrolls.
+		Header = React.createElement("TextLabel", {
+			Name = "CategoryHeader",
+			Size = UDim2.new(1, -RAIL_WIDTH - Theme.Metrics.Gap, 0, 16),
 			Position = UDim2.new(0, RAIL_WIDTH + Theme.Metrics.Gap, 0, 0),
 			BackgroundTransparency = 1,
+			Text = ("%s  ·  %d buildings"):format(selectedCategory, #BuildingCatalog.getCategory(selectedCategory)),
+			FontFace = Theme.FontFace.BodyBold,
+			TextSize = Theme.TextSize.Small,
+			TextColor3 = Theme.Color.TextSecondary,
+			TextXAlignment = Enum.TextXAlignment.Left,
+		}),
+
+		Grid = React.createElement("ScrollingFrame", {
+			Name = "BuildingGrid",
+			Size = UDim2.new(1, -RAIL_WIDTH - Theme.Metrics.Gap, 1, -20),
+			Position = UDim2.new(0, RAIL_WIDTH + Theme.Metrics.Gap, 0, 20),
+			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
-			ScrollingDirection = Enum.ScrollingDirection.Y,
+			ScrollingDirection = Enum.ScrollingDirection.X,
 			ScrollBarThickness = 4,
-			AutomaticCanvasSize = Enum.AutomaticSize.Y,
+			AutomaticCanvasSize = Enum.AutomaticSize.X,
 			CanvasSize = UDim2.fromScale(0, 0),
 		}, tileChildren),
 	})

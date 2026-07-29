@@ -29,8 +29,13 @@ local Theme = {}
 Theme.Color = {
 	-- Surfaces. Translucency is carried in the matching *Transparency values
 	-- below, because Roblox has no alpha channel on Color3.
-	Surface = Color3.fromRGB(15, 19, 25), -- panel/base
-	SurfaceRaised = Color3.fromRGB(22, 28, 36), -- drawer, cards
+	--
+	-- Lightened from 15,19,25. Combined with the near-opaque panel transparency
+	-- this used to read as a solid black slab across the bottom third of the
+	-- screen -- the world behind it was completely hidden, which is the opposite
+	-- of what a translucent overlay is for.
+	Surface = Color3.fromRGB(26, 32, 41), -- panel/base
+	SurfaceRaised = Color3.fromRGB(36, 44, 56), -- drawer, cards
 	Overlay = Color3.fromRGB(255, 255, 255), -- used at high transparency as a wash
 
 	Accent = Color3.fromRGB(239, 159, 39), -- gold
@@ -79,14 +84,18 @@ end
 -- TRANSPARENCY
 -- Flat translucent panels over the world, rather than opaque artwork.
 -- ============================================================
+-- These were far too opaque. Panel at 0.08 is 92% solid, which turned the HUD
+-- into black bars rather than glass over the battlefield. An RTS overlay has to
+-- let you see the ground it covers, otherwise the playable viewport is only
+-- whatever is left in the middle.
 Theme.Transparency = {
-	Panel = 0.08, -- top strip, action bar
-	Card = 0.94, -- building cards: a faint wash over the world
-	CardActive = 0.86,
-	Drawer = 0.04, -- must be readable while scrolling a list
-	Border = 0.9,
-	BorderStrong = 0.75,
-	Ghost = 0.88, -- placement preview fill
+	Panel = 0.32, -- top strip, bottom bar: glass, not a slab
+	Card = 0.82, -- building tiles: a faint wash
+	CardActive = 0.62,
+	Drawer = 0.18, -- denser than Panel: it holds a scrolling list that must stay legible
+	Border = 0.82,
+	BorderStrong = 0.62,
+	Ghost = 0.8, -- placement preview fill
 }
 
 -- ============================================================
@@ -150,9 +159,20 @@ Theme.Metrics = {
 	MinimapMobile = 64,
 	MinimapDesktop = 84,
 
+	-- Mobile drawer. Tall is acceptable here: the drawer is transient, you open
+	-- it to choose a building and it closes again.
 	DrawerMaxHeight = 330,
 	CategoryRailHeight = 46,
 	ActionBarHeight = 46,
+
+	-- Desktop bottom bar. DELIBERATELY MUCH SHORTER than the mobile drawer.
+	-- It was originally reusing DrawerMaxHeight (330px), but unlike the drawer
+	-- this bar is permanently on screen -- 330px is a third of a 1080p display
+	-- given up forever. The build grid is a compact single scrolling row instead
+	-- of a multi-row wall of large tiles.
+	BottomBarDesktop = 164,
+	BuildTileWidth = 132,
+	BuildTileHeight = 116,
 }
 
 -- ============================================================

@@ -76,11 +76,12 @@ export type Props = {
 	navigate: ((string) -> ())?,
 }
 
--- Bottom bar height. Reused from Theme rather than invented fresh: it is the
--- same token MobileShell's drawer is capped at, and this shell's bottom bar
--- serves the identical function (the build-menu surface), just permanently
--- open instead of collapsible.
-local BOTTOM_BAR_HEIGHT = Theme.Metrics.DrawerMaxHeight
+-- Bottom bar height. This used to reuse the mobile drawer's 330px on the
+-- reasoning that both surfaces host the build menu -- but the drawer is
+-- TRANSIENT (opened to pick a building, then dismissed) whereas this bar is
+-- permanent. 330px of permanent chrome is a third of a 1080p screen handed over
+-- for good, and it read as a black slab across the bottom of the battlefield.
+local BOTTOM_BAR_HEIGHT = Theme.Metrics.BottomBarDesktop
 
 -- Width of the contextual panel dock when one of Training/Production/Hero
 -- Abilities/Upgrade/Unit Selection is active. No Theme token models "one

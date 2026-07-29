@@ -44,7 +44,7 @@ export type Entry = {
 -- `subtype` because the categories are a UI grouping decision (the Smelter is
 -- Industry by function but sits under Military because that is where players
 -- look for the weapons chain), not a property of the building.
-local CATEGORY_ORDER = { "Food", "Industry", "Military", "Defence", "Housing", "Prestige" }
+local CATEGORY_ORDER = { "Food", "Industry", "Military", "Defense", "Housing", "Prestige" }
 
 local CATEGORIES: { [string]: { string } } = {
 	Food = {
@@ -59,7 +59,11 @@ local CATEGORIES: { [string]: { string } } = {
 		"Barracks", "Archery Range", "Stables", "Training Ground",
 		"Guard House", "Smelter", "Weaponsmith", "Armory", "Siege Workshop",
 	},
-	Defence = {
+	-- "Defense", not "Defence": HUDStore's default selectedCategory and every
+	-- other reference in the codebase use the American spelling. A silent
+	-- mismatch here made the lookup return an empty list, so the build bar
+	-- opened on a category containing zero buildings.
+	Defense = {
 		"Stone Wall", "Short Tower", "Round Tower", "Wall Gatehouse",
 		"Wall Ladder", "Wooden Palisade", "Arrow Tower", "Moat", "Fire Pit",
 	},
@@ -79,7 +83,7 @@ local CATEGORY_ICON: { [string]: string } = {
 	Food = "🌾",
 	Industry = "⛏",
 	Military = "⚔",
-	Defence = "🛡",
+	Defense = "🛡",
 	Housing = "🏠",
 	Prestige = "👑",
 }
@@ -216,6 +220,13 @@ end
 --- Entries for one category, skipping any name that is not in BuildingsData
 --- (so a typo in the list above degrades to a missing card, not an error).
 function BuildingCatalog.getCategory(category: string): { Entry }
+	-- Loud on an unknown category. A "Defence"/"Defense" spelling mismatch
+	-- against HUDStore silently produced an empty build bar, which looks like a
+	-- broken menu rather than a bad key.
+	if not CATEGORIES[category] then
+		warn(("[BuildingCatalog] unknown category %q -- no buildings will show"):format(tostring(category)))
+	end
+
 	local out: { Entry } = {}
 	for _, name in CATEGORIES[category] or {} do
 		local entry = BuildingCatalog.get(name)
