@@ -42,6 +42,14 @@ export type WorkSpec = {
 	inputs: { [string]: number }, -- consumed per cycle
 	outputs: { [string]: number }, -- produced per cycle
 	gathersFromNodes: boolean, -- Gatherer: walks to world ResourceNodes
+	-- WHICH resource a gatherer harvests from world nodes. Must be explicit:
+	-- the engine previously picked it with next(outputs), and Lua gives no
+	-- iteration-order guarantee, so a two-output building's behaviour came down
+	-- to hash order. A building that produced Food and Grain would, depending on
+	-- the run, either gather Food from nodes and never make Grain, or find no
+	-- Grain nodes and fall back to producing both -- and the whole
+	-- Grain -> Flour -> Bread chain lived or died on that coin flip.
+	gathers: string?,
 }
 
 export type Spec = {
@@ -130,20 +138,53 @@ local ROLE_ALIASES: { [string]: string } = {
 
 local cache: { [string]: Spec } = {}
 
+-- Resolves which resource a gatherer harvests. Explicit `gathers` wins; failing
+-- that, a single output is unambiguous. Two outputs with no explicit choice is
+-- a config error, so say so rather than silently coin-flipping.
+local function resolveGathers(name: string, work: any, outputs: { [string]: number }): string?
+	if work and work.gathers then
+		return work.gathers
+	end
+	local only: string? = nil
+	local count = 0
+	for resource in outputs do
+		only = resource
+		count += 1
+	end
+	if count == 1 then
+		return only
+	end
+	if count > 1 then
+		warn(
+			("[BuildingSpec] %s gathers from nodes but has %d outputs and no explicit `gathers` field; node harvesting disabled")
+				:format(name, count)
+		)
+	end
+	return nil
+end
+
 local function normalizeWork(name: string, data: any): WorkSpec?
 	-- New shape wins if present.
 	local work = data.work
 	if type(work) == "table" then
 		local role = work.role or "Peasant"
+		local outputs = work.outputs or {}
+		-- `gathersFromNodes` must be explicitly false-able, so test for nil
+		-- rather than falling back with `or` (which would turn false into the
+		-- role default and send every farm walking off to look for nodes).
+		local gathersFromNodes = work.gathersFromNodes
+		if gathersFromNodes == nil then
+			gathersFromNodes = WorkerRoles.getBehaviour(role) == "Gatherer"
+		end
 		return {
 			role = role,
 			behaviour = WorkerRoles.getBehaviour(role),
 			slots = work.slots or 1,
 			cycle = work.cycle or DEFAULT_TIER.interval,
 			inputs = work.inputs or {},
-			outputs = work.outputs or {},
-			gathersFromNodes = work.gathersFromNodes
-				or (WorkerRoles.getBehaviour(role) == "Gatherer"),
+			outputs = outputs,
+			gathersFromNodes = gathersFromNodes,
+			gathers = gathersFromNodes and resolveGathers(name, work, outputs) or nil,
 		}
 	end
 
@@ -177,6 +218,8 @@ local function normalizeWork(name: string, data: any): WorkSpec?
 		behaviour = "Server"
 	end
 
+	local gathersFromNodes = data.worker_gathers_from_nodes or GATHERER_BUILDINGS[name] or false
+
 	return {
 		role = role,
 		behaviour = behaviour,
@@ -184,9 +227,8 @@ local function normalizeWork(name: string, data: any): WorkSpec?
 		cycle = data.production_time or tier.interval,
 		inputs = inputs,
 		outputs = outputs,
-		gathersFromNodes = data.worker_gathers_from_nodes
-			or GATHERER_BUILDINGS[name]
-			or false,
+		gathersFromNodes = gathersFromNodes,
+		gathers = gathersFromNodes and produces or nil,
 	}
 end
 

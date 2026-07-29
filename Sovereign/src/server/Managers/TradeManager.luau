@@ -35,6 +35,12 @@ local BASE_PRICES: { [string]: number } = ResourcesData.getBasePrices()
 -- Price volatility factors
 local PRICE_VOLATILITY = 0.15 -- Prices can fluctuate ±15%
 
+-- Bounds on the glut-free market price (supply, season, volatility).
+local MARKET = {
+	floor = 0.6,
+	ceiling = 1.5,
+}
+
 -- ============================================================
 -- MARKET GLUT
 --
@@ -91,13 +97,29 @@ function TradeManager.get(player: Player): TradeData?
 end
 
 -- Get current price for a resource
+-- The market price before glut. This is what supply, season and volatility
+-- produce; it is stored, and glut is layered on at read time.
+local function getMarketPrice(data, resource: string): number
+	return data.prices[resource] or BASE_PRICES[resource] or 1.0
+end
+
+local function glutFactor(data, resource: string): number
+	return math.clamp(1 - (data.pressure[resource] or 0), GLUT.floor, GLUT.ceiling)
+end
+
+-- Glut is applied HERE, on read, and nowhere else.
+--
+-- It used to be baked into data.prices by updatePrices AND multiplied in again
+-- by sellResource, so the discount landed twice and getPrice() disagreed with
+-- what a sale actually paid. Keeping the stored price glut-free means there is
+-- exactly one place the player's own oversupply is priced in.
 function TradeManager.getPrice(player: Player, resource: string): number
 	local data = tradeData[player.UserId]
 	if not data then
 		return BASE_PRICES[resource] or 1.0
 	end
 
-	return data.prices[resource] or BASE_PRICES[resource] or 1.0
+	return getMarketPrice(data, resource) * glutFactor(data, resource)
 end
 
 -- Update prices based on supply/demand and season
@@ -156,10 +178,12 @@ function TradeManager.updatePrices(player: Player)
 		end
 		data.pressure[resource] = pressure
 
-		local gluttFactor = math.clamp(1 - pressure, GLUT.floor, GLUT.ceiling)
+		-- NOTE: glut is deliberately NOT applied here. data.prices holds the
+		-- glut-free market price; TradeManager.getPrice layers pressure on at
+		-- read time, so the discount is applied exactly once.
 
 		-- Calculate new price
-		local targetPrice = basePrice * supplyFactor * seasonalFactor * randomFactor * gluttFactor
+		local targetPrice = basePrice * supplyFactor * seasonalFactor * randomFactor
 
 		-- Smooth price changes (don't jump instantly)
 		local newPrice = currentPrice * 0.7 + targetPrice * 0.3
@@ -167,7 +191,11 @@ function TradeManager.updatePrices(player: Player)
 		-- Clamp relative to THIS resource's base, not a global 0.5-15 window.
 		-- The old absolute clamp silently capped Manuscripts (base 10) and
 		-- would have crushed any future high-value good against the ceiling.
-		data.prices[resource] = math.clamp(newPrice, basePrice * GLUT.floor, basePrice * GLUT.ceiling)
+		--
+		-- These bounds cover supply + season + volatility only. Glut has its own,
+		-- separate bounds applied at read time, so the worst realistic combined
+		-- price is MARKET.floor * GLUT.floor = 0.24x base.
+		data.prices[resource] = math.clamp(newPrice, basePrice * MARKET.floor, basePrice * MARKET.ceiling)
 	end
 
 	data.lastPriceUpdate = tick()
@@ -249,10 +277,11 @@ function TradeManager.sellResource(player: Player, resource: string, amount: num
 	-- so dumping a big stack walks the price down as it goes. Selling 1000 in
 	-- one click and selling 1000 one at a time now earn the same -- neither is
 	-- a way to dodge the glut.
-	local basePrice = BASE_PRICES[resource] or 1.0
-	local pressure = data.pressure[resource] or 0
 	local marketFee = 0.8 -- 20% market fee
-	local unitPrice = TradeManager.getPrice(player, resource)
+	-- The glut-free market price. Glut is applied per unit inside the loop, so
+	-- taking it from getPrice() here would discount the sale twice over.
+	local unitPrice = getMarketPrice(data, resource)
+	local pressure = data.pressure[resource] or 0
 
 	local totalRevenue = 0
 	for _ = 1, amount do
@@ -261,15 +290,10 @@ function TradeManager.sellResource(player: Player, resource: string, amount: num
 		pressure = math.min(GLUT.maxPressure, pressure + GLUT.perUnitSold)
 	end
 	totalRevenue = math.floor(totalRevenue)
-	data.pressure[resource] = pressure
 
-	-- Reflect the new glut in the displayed price immediately, so the player
-	-- can see what their own sale just did rather than finding out next tick.
-	data.prices[resource] = math.clamp(
-		basePrice * math.clamp(1 - pressure, GLUT.floor, GLUT.ceiling),
-		basePrice * GLUT.floor,
-		basePrice * GLUT.ceiling
-	)
+	-- Storing the pressure is all that is needed for the player to see the new,
+	-- worse price immediately: getPrice reads it live.
+	data.pressure[resource] = pressure
 
 	-- Execute trade
 	PlayerManager.deductResources(player, { [resource] = amount })

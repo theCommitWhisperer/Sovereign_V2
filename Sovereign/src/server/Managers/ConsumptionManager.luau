@@ -10,6 +10,7 @@ local BuildingManager = require(script.Parent.BuildingManager)
 local SeasonManager = require(script.Parent.SeasonManager)
 local GameData = require(ReplicatedStorage.Shared.GameData)
 local EconomyConfig = require(ReplicatedStorage.Shared.GameData.EconomyConfig)
+local BuildingSpec = require(ReplicatedStorage.Shared.GameData.BuildingSpec)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 
 local ConsumptionDebug = DebugManager.createChannel("ConsumptionManager", false)
@@ -87,8 +88,20 @@ function ConsumptionManager.getBuildingConsumption(player: Player): number
 			local buildingType = building:GetAttribute("BuildingType")
 			local buildingData = GameData.Buildings[buildingType]
 
-			-- Check if building consumes resources
-			if buildingData and buildingData.consumes_resource == "Food" then
+			-- Buildings with a `work` block have their inputs consumed properly by
+			-- WorkerService, out of the building's OWN storage, once per
+			-- production cycle. Charging them here as well would bill the same
+			-- consumption twice, against two different stockpiles.
+			--
+			-- This became live-fire the moment WorkerService started setting the
+			-- HasWorker attribute -- nothing had ever set it, so this whole branch
+			-- was dead code. The four mills/bakery/brewery still carry a legacy
+			-- `consumes_resource = "Food"` from before they were rewritten to take
+			-- Grain and Flour, so without this guard, staffing one would silently
+			-- drain the player's global Food on top of the correct Grain draw.
+			local hasWorkBlock = BuildingSpec.getWork(buildingType) ~= nil
+
+			if not hasWorkBlock and buildingData and buildingData.consumes_resource == "Food" then
 				local consumptionRate = buildingData.consumption_rate or 0
 
 				-- Only consume if building has a worker assigned

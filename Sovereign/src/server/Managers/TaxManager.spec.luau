@@ -4,6 +4,7 @@
 return function()
 	local TaxManager = require(script.Parent.TaxManager)
 	local PlayerManager = require(script.Parent.PlayerManager)
+	local EconomyConfig = require(game:GetService("ReplicatedStorage").Shared.GameData.EconomyConfig)
 
 	local fakePlayer = { UserId = 777005, Name = "TaxTestPlayer" } :: any
 
@@ -41,9 +42,20 @@ return function()
 			expect(TaxManager.get(fakePlayer).taxRate).to.equal(1.0)
 		end)
 
-		it("clamps tax rate to a minimum of 0.0 (0%)", function()
-			TaxManager.setTaxRate(fakePlayer, -0.5)
-			expect(TaxManager.get(fakePlayer).taxRate).to.equal(0.0)
+		-- The floor is no longer 0: "Generous Gifts" is a negative-rate policy
+		-- where the crown pays its subjects to buy popularity back. The floor is
+		-- the most generous rate in EconomyConfig.TaxPolicies, so an absurd
+		-- value still clamps, just not to zero.
+		it("clamps tax rate to the most generous policy rate", function()
+			local minPolicyRate = 0
+			for _, policy in EconomyConfig.TaxPolicies do
+				if policy.rate < minPolicyRate then
+					minPolicyRate = policy.rate
+				end
+			end
+
+			TaxManager.setTaxRate(fakePlayer, -5)
+			expect(TaxManager.get(fakePlayer).taxRate).to.equal(minPolicyRate)
 		end)
 
 		it("0% tax rate stores correctly", function()

@@ -16,6 +16,15 @@ local TaxManager = {}
 
 local taxData = {}
 
+-- Derived from the policy table rather than hardcoded, so adding a more
+-- generous policy cannot silently get clamped away.
+local MIN_TAX_RATE = 0
+for _, policy in EconomyConfig.TaxPolicies do
+	if policy.rate < MIN_TAX_RATE then
+		MIN_TAX_RATE = policy.rate
+	end
+end
+
 function TaxManager.create(player: Player)
     local playerData = PlayerManager.get(player)
     if playerData then
@@ -35,7 +44,11 @@ end
 function TaxManager.setTaxRate(player: Player, newRate: number)
     local taxInfo = taxData[player.UserId]
     if taxInfo then
-        taxInfo.taxRate = math.clamp(newRate, 0, 1) -- Clamp between 0% and 100%
+        -- Lower bound is negative to allow the "Generous Gifts" policy, where the
+        -- crown PAYS its subjects to buy popularity back. Clamping at 0 silently
+        -- turned that policy into "No Tax": the UI showed -5%, the player picked
+        -- it, and nothing happened.
+        taxInfo.taxRate = math.clamp(newRate, MIN_TAX_RATE, 1)
         TaxDebug:info(`Set tax rate for {player.Name} to {newRate * 100}%`)
     end
 end

@@ -816,6 +816,23 @@ function WorkerService.setState(worker: Model, nextState: WorkerState, ctx: Tran
 		clearPresentation(record)
 	end
 
+	-- Restore visibility whenever a worker stops working.
+	--
+	-- Buildings that author a "TeleportIntoBuilding" point hide their worker
+	-- inside (Transparency = 1, CanCollide = false) on arrival. Only the hauler
+	-- unload path ever undid that, so a Producer/Server worker that was
+	-- unassigned, manually moved, or whose building was destroyed by siege was
+	-- left permanently invisible and non-colliding -- alive, idle, and
+	-- unclickable. The old WorkerManager un-hid on both release paths; this puts
+	-- that guarantee in the one place every transition already goes through.
+	if nextState == "Idle" and prevState ~= "Idle" then
+		for _, part in record.unit:GetDescendants() do
+			if part:IsA("BasePart") then
+				part.Transparency = 0
+			end
+		end
+	end
+
 	if c.ownerId then
 		record.ownerId = c.ownerId
 	end
@@ -967,8 +984,10 @@ local function tickGathererWorking(record: WorkerRecord)
 		return
 	end
 
+	-- `work.gathers` is resolved by BuildingSpec and is deterministic. This used
+	-- to be next(work.outputs), whose order Lua does not guarantee.
 	if not record.resourceType then
-		record.resourceType = next(work.outputs)
+		record.resourceType = work.gathers
 	end
 	local resourceType = record.resourceType
 
@@ -1558,6 +1577,26 @@ function WorkerService.update(_dt: number)
 					tickWorker(record)
 				end
 			elseif unit then
+				-- The unit is gone (killed, despawned). Drop EVERY reference to
+				-- it, not just its roster slot.
+				--
+				-- Records is keyed by the Model, so leaving the entry behind
+				-- keeps the destroyed Instance reachable forever -- a real leak,
+				-- not just stale data. It also makes the game get slower the
+				-- longer a match runs, because getAssignedCount() walks the whole
+				-- Records table on every state transition. The old WorkerManager
+				-- pruned dead tasks in its update loop; this restores that.
+				local dead = Records[unit]
+				if dead then
+					-- clearPresentation also drops it from IdleByOwner.
+					clearPresentation(dead)
+					local employer = dead.building
+					Records[unit] = nil
+					if employer and employer.Parent then
+						-- Free the slot so the building can hire a replacement.
+						syncBuildingWorkerAttrs(employer)
+					end
+				end
 				rosterRemove(unit)
 			end
 		end

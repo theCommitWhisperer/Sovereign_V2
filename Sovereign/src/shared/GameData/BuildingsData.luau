@@ -1166,28 +1166,38 @@ BuildingsData["Celtic Cross"] = {
 
 local CHAIN_WORK: { [string]: any } = {
 	-- ---- FOOD: fast and edible, or slow and worth three times as much ----
+	--
+	-- Farms are PASSIVE producers, not node gatherers: they work their own land
+	-- rather than walking off to find a resource node, which is both how
+	-- Stronghold behaves and the only way a building can produce two outputs.
+	-- A node gatherer harvests exactly one resource, so a farm left as a
+	-- gatherer would haul Food home and never produce its Grain or Hide at all.
 	["Potato Farm"] = {
 		role = "Farmer",
 		slots = 3,
 		cycle = 4,
+		gathersFromNodes = false,
 		outputs = { Food = 2, Grain = 2 },
 	},
 	["Sheep Farm"] = {
 		role = "Shepherd",
 		slots = 2,
 		cycle = 5,
+		gathersFromNodes = false,
 		outputs = { Food = 1, Hide = 1 },
 	},
 	["Cow Farm"] = {
 		role = "Shepherd",
 		slots = 2,
 		cycle = 5,
+		gathersFromNodes = false,
 		outputs = { Food = 2, Hide = 1 },
 	},
 	["Fishermans Hut"] = {
 		role = "Fisherman",
 		slots = 2,
 		cycle = 5,
+		gathersFromNodes = false,
 		outputs = { Fish = 2 },
 	},
 
@@ -1283,10 +1293,40 @@ local CHAIN_WORK: { [string]: any } = {
 	},
 
 	-- ---- GATHERERS: walk out to world ResourceNodes ----
-	Lumberjack = { role = "Woodcutter", slots = 3, cycle = 4, outputs = { Wood = 2 } },
-	["Stone Quarry"] = { role = "Stonemason", slots = 3, cycle = 5, outputs = { Stone = 2 } },
-	["Iron Mine"] = { role = "Miner", slots = 3, cycle = 5, outputs = { Iron_Ore = 1 } },
-	["Coal Mine"] = { role = "Miner", slots = 3, cycle = 5, outputs = { Coal = 1 } },
+	-- Exactly one output each, and `gathers` names it explicitly, because a
+	-- gatherer harvests a single resource per trip.
+	Lumberjack = {
+		role = "Woodcutter",
+		slots = 3,
+		cycle = 4,
+		gathersFromNodes = true,
+		gathers = "Wood",
+		outputs = { Wood = 2 },
+	},
+	["Stone Quarry"] = {
+		role = "Stonemason",
+		slots = 3,
+		cycle = 5,
+		gathersFromNodes = true,
+		gathers = "Stone",
+		outputs = { Stone = 2 },
+	},
+	["Iron Mine"] = {
+		role = "Miner",
+		slots = 3,
+		cycle = 5,
+		gathersFromNodes = true,
+		gathers = "Iron_Ore",
+		outputs = { Iron_Ore = 1 },
+	},
+	["Coal Mine"] = {
+		role = "Miner",
+		slots = 3,
+		cycle = 5,
+		gathersFromNodes = true,
+		gathers = "Coal",
+		outputs = { Coal = 1 },
+	},
 }
 
 for buildingName, work in CHAIN_WORK do
