@@ -1,5 +1,6 @@
 local React = require(game.ReplicatedStorage.Packages.react)
 local UIConfig = require(script.Parent.Parent.Parent.UIConfig)
+local Platform = require(script.Parent.Parent.Parent.Platform)
 local GameData = require(game.ReplicatedStorage.Shared.GameData)
 local UserInputService = game:GetService("UserInputService")
 
@@ -98,10 +99,20 @@ function BuildingMenu:render()
 		["Ladder Wall Segment"] = "Ladder_Wall_Segment",
 	}
 
+	local tokens = Platform.tokens
+	-- Buttons are already 60px, bigger than either device's hitTarget minimum
+	-- (28 desktop / 44 mobile), so math.max is a no-op today on both -- it's
+	-- here so a future icon-size change can't silently shrink mobile below the
+	-- touch-target floor without anyone noticing. Cell padding grows on mobile
+	-- only: `paddingDelta` is 0 at the Desktop token value (8), so the 17/15
+	-- numbers below are exactly what this file always hardcoded.
+	local buttonSize = math.max(60, tokens.hitTarget)
+	local paddingDelta = tokens.padding - 8
+
 	local buildingButtons = {}
 	buildingButtons.Layout = React.createElement("UIGridLayout", {
-		CellSize = UDim2.fromOffset(60, 60),
-		CellPadding = UDim2.fromOffset(17, 15),
+		CellSize = UDim2.fromOffset(buttonSize, buttonSize),
+		CellPadding = UDim2.fromOffset(17 + paddingDelta, 15 + paddingDelta),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		FillDirectionMaxCells = 3,
 		FillDirection = Enum.FillDirection.Horizontal,
@@ -155,7 +166,7 @@ function BuildingMenu:render()
 					BorderColor3 = UIConfig.HUD.UtilityButtonBorder,
 					Text = buildingName:gsub("_", " "),
 					TextColor3 = isGloryLocked and Color3.fromRGB(140, 140, 140) or UIConfig.HUD.PanelTextColor,
-					TextSize = 11,
+					TextSize = 11 * tokens.fontScale,
 					Font = Enum.Font.GothamBold,
 					TextWrapped = true,
 				})
@@ -198,7 +209,7 @@ function BuildingMenu:render()
 
 			buildingButtons[buildingName] = React.createElement("ImageButton", {
 				ref = buttonRef,
-				Size = UDim2.fromOffset(60, 60),
+				Size = UDim2.fromOffset(buttonSize, buttonSize),
 				BackgroundTransparency = 1,
 				BorderSizePixel = 0,
 				LayoutOrder = i,

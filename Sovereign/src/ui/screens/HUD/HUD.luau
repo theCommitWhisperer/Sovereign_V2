@@ -1,3 +1,19 @@
+-- ---------------------------------------------------------------------------
+-- MIGRATION NOTICE (docs/EconomyRedesign.md section 8, "UI - one adaptive HUD")
+-- ---------------------------------------------------------------------------
+-- This 1,989-line class component is being replaced by a decomposed tree:
+--   src/ui/Platform.luau              -- device/layout tokens
+--   src/ui/state/HUDStore.luau        -- extracted state + remote wiring
+--   src/ui/layouts/DesktopShell.luau  -- chrome, visual parity with this file
+--   src/ui/layouts/MobileShell.luau   -- chrome, touch/compact layout
+--   src/ui/AdaptiveHUD.luau           -- picks a shell from Platform, mounts it
+-- That tree is NOT yet wired into App.luau's router -- this file is still the
+-- live "hud" route and still owns all of its own state and connections. Do
+-- not add new state or remote listeners here; add them to HUDStore and a
+-- presentational panel instead, and port the corresponding read out of this
+-- file once the panel is ready. See AdaptiveHUD.luau's header for the cutover
+-- plan.
+
 local React = require(game.ReplicatedStorage.Packages.react)
 local UIConfig = require(script.Parent.Parent.Parent.UIConfig)
 local Players = game:GetService("Players")
