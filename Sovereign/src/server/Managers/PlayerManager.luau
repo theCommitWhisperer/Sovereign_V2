@@ -3,6 +3,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
+local ResourcesData = require(ReplicatedStorage.Shared.GameData.ResourcesData)
 local channel = DebugManager.createChannel("PlayerManager", false)
 
 local PlayerManager = {}
@@ -33,17 +34,12 @@ function PlayerManager.create(player: Player): PlayerData
 		Faction = nil,
 		SpawnPoint = nil,
 		GameState = "MainMenu",
-		Resources = {
-			Wood = 0,
-			Stone = 0,
-			Gold = 0,
-			Food = 0,
-			Weapons = 0,
-			Iron_Bars = 0,
-			Iron_Ore = 0,
-			Bread = 0,
-			Ale = 0,
-		},
+		-- Seeded from the resource registry so EVERY resource key exists and is
+		-- zeroed. addResources below only credits keys that are already present;
+		-- when this was a hand-written literal, six resources (Flour, Leather,
+		-- Furniture, Coal, Manuscripts, Siege_Equipment) were missing from it and
+		-- every attempt to credit them was silently discarded.
+		Resources = ResourcesData.buildStartingTable(),
 		Buildings = {},
 		Units = {},
 		Keep = nil,
@@ -132,8 +128,17 @@ function PlayerManager.addResources(player: Player, resources: { [string]: numbe
 	end
 
 	for resource, amount in pairs(resources) do
-		if data.Resources[resource] then
+		if data.Resources[resource] ~= nil then
 			data.Resources[resource] = data.Resources[resource] + amount
+		elseif ResourcesData.isValid(resource) then
+			-- Registry knows it but this player's table predates it (e.g. a
+			-- session that started before a hot-reload added the resource).
+			data.Resources[resource] = amount
+		else
+			-- Genuinely unknown key: loud, because the old behaviour was to
+			-- silently drop it and that hid six broken production chains.
+			warn(("[PlayerManager] addResources: unknown resource %q (+%d) discarded")
+				:format(tostring(resource), amount))
 		end
 	end
 end
