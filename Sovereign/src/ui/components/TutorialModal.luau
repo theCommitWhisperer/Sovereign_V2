@@ -83,7 +83,7 @@ function TutorialModal:render()
 		visible = true,
 		title = currentStep.title,
 		onClose = nil, -- No close button for required tutorial
-		size = UDim2.fromScale(0.4, 0.5), -- Smaller modal
+		size = self.props.size or UDim2.fromScale(0.4, 0.5), -- Smaller modal; MobileShell overrides for a full-screen sheet
 	}, {
 		Content = React.createElement("Frame", {
 			Size = UDim2.new(1, 0, 1, -80),

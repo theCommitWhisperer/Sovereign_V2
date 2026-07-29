@@ -17,7 +17,10 @@ local TopBar = require(script.Parent.Parent.screens.HUD.TopBar)
 local MiniMap = require(script.Parent.Parent.screens.HUD.MiniMap)
 local FogOverlay = require(script.Parent.Parent.screens.HUD.FogOverlay)
 local BuildingMenu = require(script.Parent.Parent.screens.HUD.BuildingMenu)
-local SelectionPanel = require(script.Parent.Parent.screens.HUD.SelectionPanel)
+-- NOTE: SelectionPanel is deliberately NOT imported. HUD.luau required it but
+-- never rendered it -- UnitSelectionPanel handles the selected-units case and
+-- TopBar draws resources inline. Carrying the dead import forward would have
+-- made it look load-bearing during the next refactor.
 local UnitSelectionPanel = require(script.Parent.Parent.screens.HUD.UnitSelectionPanel)
 local TrainingPanel = require(script.Parent.Parent.screens.HUD.TrainingPanel)
 local WorkerAssignmentPanel = require(script.Parent.Parent.screens.HUD.WorkerAssignmentPanel)

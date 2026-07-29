@@ -8,7 +8,7 @@ local AppDebug = DebugManager.createChannel("App", false)
 local MainMenu = require(script.Parent.screens.MainMenu.MainMenu)
 local Settings = require(script.Parent.screens.Settings.Settings)
 local Lobby = require(script.Parent.screens.Lobby.Lobby)
-local HUD = require(script.Parent.screens.HUD.HUD)
+local AdaptiveHUD = require(script.Parent.AdaptiveHUD)
 local VictoryScreen = require(script.Parent.screens.PostGame.VictoryScreen)
 local DefeatScreen = require(script.Parent.screens.PostGame.DefeatScreen)
 local Keybindings = require(script.Parent.screens.Keybindings.Keybindings)
@@ -35,7 +35,7 @@ function App:init()
 		mainMenu = MainMenu,
 		settings = Settings,
 		lobby = Lobby,
-		hud = HUD,
+		hud = AdaptiveHUD,
 		victory = VictoryScreen,
 		defeat = DefeatScreen,
 		keybindings = Keybindings,

@@ -19,6 +19,7 @@ export type Props = {
 	visible: boolean,
 	onClose: () -> (),
 	navigate: ((screen: string) -> ())?,
+	size: UDim2?, -- forwarded to Modal; MobileShell passes a near-fullscreen size, desktop leaves it nil
 }
 
 -- Menu options
@@ -147,7 +148,7 @@ function Menu:render()
 		title = "Game Menu",
 		visible = self.props.visible,
 		onClose = self.props.onClose,
-		size = UDim2.fromScale(0.45, 0.65),
+		size = self.props.size or UDim2.fromScale(0.45, 0.65),
 	}, {
 		MenuButtons = React.createElement("Frame", {
 			Size = UDim2.new(1, 0, 0, 0),

@@ -121,7 +121,12 @@ function QuestTracker:render()
 	return React.createElement(Panel, {
 		medieval = true,
 		Size = UDim2.new(0, 280, 0, totalHeight),
-		Position = UDim2.new(1, -290, 0, UIConfig.HUD.TopBarHeight + 10),
+		-- Desktop leaves `position` nil and keeps the original top-right spot.
+		-- MobileShell passes one that clears its display-only top strip: this
+		-- panel's own ToggleButton is interactive, so it cannot be allowed to
+		-- land inside the top-60px no-interactive zone the hardcoded desktop
+		-- offset would put it in.
+		Position = self.props.position or UDim2.new(1, -290, 0, UIConfig.HUD.TopBarHeight + 10),
 		BackgroundColor3 = UIConfig.HUD.PanelBackground,
 	}, {
 		Header = React.createElement("Frame", {

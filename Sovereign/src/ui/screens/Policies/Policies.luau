@@ -14,6 +14,7 @@ export type Props = {
 	visible: boolean,
 	onClose: () -> (),
 	happiness: number?, -- current kingdom happiness (drives the tax popularity tier readout)
+	size: UDim2?, -- forwarded to Modal; MobileShell passes a near-fullscreen size, desktop leaves it nil
 }
 
 -- Per-policy numeric effect line, pulled straight from EconomyConfig so the
@@ -281,6 +282,7 @@ function Policies:render()
 		title = "Kingdom Policies",
 		visible = self.props.visible,
 		onClose = self.props.onClose,
+		size = self.props.size,
 	}, policyContent)
 end
 

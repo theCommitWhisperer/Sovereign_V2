@@ -89,7 +89,13 @@ local function keyHint(action: string): string
 	return `  [{(keyCode :: Enum.KeyCode).Name}]`
 end
 
-type Props = {}
+type Props = {
+	-- Desktop leaves this nil and gets the original hardcoded offset (pixel
+	-- parity with the pre-migration layout). MobileShell passes its own value
+	-- so the cluster clears the display-only top strip's 60px no-interactive
+	-- zone instead of sitting right at its edge.
+	topOffset: number?,
+}
 
 type State = {
 	mode: string,
@@ -247,7 +253,7 @@ function ViewToggleButton:render()
 		-- the building menu (bottom). AnchorPoint on the right keeps it pinned to
 		-- the edge across every aspect ratio instead of drifting on ultrawide.
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -14, 0, UIConfig.HUD.TopBarHeight + 14),
+		Position = UDim2.new(1, -14, 0, self.props.topOffset or (UIConfig.HUD.TopBarHeight + 14)),
 		Size = UDim2.new(0, width, 0, height * 2 + 8),
 		BackgroundTransparency = 1,
 		ZIndex = 60,

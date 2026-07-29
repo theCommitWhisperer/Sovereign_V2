@@ -21,6 +21,7 @@ export type Props = {
 	visible: boolean,
 	onClose: () -> (),
 	tooltip: any?,
+	size: UDim2?, -- forwarded to Modal; MobileShell passes a near-fullscreen size, desktop leaves it nil
 }
 
 -- Depth in the prerequisite chain (root = 1); memoised per render pass.
@@ -242,6 +243,7 @@ function AbilityTreePanel:render()
 		title = "?? Hero Ability Tree",
 		visible = self.props.visible,
 		onClose = self.props.onClose,
+		size = self.props.size,
 	}, content)
 end
 

@@ -267,7 +267,9 @@ function TechTree:render()
 		title = "🔬 Technology Research",
 		visible = self.props.visible,
 		onClose = self.props.onClose,
-		size = UDim2.fromScale(0.85, 0.9),
+		-- Desktop leaves `size` nil and keeps this default; MobileShell passes a
+		-- near-fullscreen size for the "modals are full-screen sheets" rule.
+		size = self.props.size or UDim2.fromScale(0.85, 0.9),
 	}, {
 		CategoryBar = React.createElement("Frame", {
 			Size = UDim2.new(1, 0, 0, 40),

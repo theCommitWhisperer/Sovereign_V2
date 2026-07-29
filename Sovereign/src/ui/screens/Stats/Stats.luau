@@ -16,6 +16,7 @@ export type Props = {
 	glory: number?,
 	happiness: number?,
 	economySnapshot: any?,
+	size: UDim2?, -- forwarded to Modal; MobileShell passes a near-fullscreen size, desktop leaves it nil
 }
 
 -- Helper function to get health color based on value
@@ -248,7 +249,7 @@ function Stats:render()
 		title = "🏰 Kingdom Statistics",
 		visible = self.props.visible,
 		onClose = self.props.onClose,
-		size = UDim2.new(0, 700, 0, 750),
+		size = self.props.size or UDim2.new(0, 700, 0, 750),
 	}, {
 		Container = React.createElement("ScrollingFrame", {
 			Size = UDim2.fromScale(1, 1),
