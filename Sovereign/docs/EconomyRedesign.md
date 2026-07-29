@@ -297,11 +297,37 @@ Each step is a commit that leaves the game runnable.
 
 1. ~~Encoding + `.gitattributes`~~ ✅
 2. ~~Dead-module removal~~ ✅
-3. Resource registry + config schema + migration shim
-4. `WorkerRoles` data + unified `WorkerService` state machine
-5. Wire cleanup signal, delete virtual workers, staggered scheduler
-6. Fix chains, retune economy, market glut, wire `RevoltSystem`
-7. `Platform` module + `HUDStore` extraction
-8. Desktop shell on new store (parity, no visual change)
-9. Mobile shell
-10. Verification pass
+3. ~~Resource registry + config schema + migration shim~~ ✅
+4. ~~`WorkerRoles` data + unified `WorkerService` state machine~~ ✅
+5. ~~Wire cleanup signal, delete virtual workers, staggered scheduler~~ ✅
+6. ~~Fix chains, retune economy, market glut, wire `RevoltSystem`~~ ✅
+7. ~~`Platform` module + `HUDStore` extraction~~ ✅
+8. ~~Desktop shell on new store (parity, no visual change)~~ ✅
+9. ~~Mobile shell~~ ✅
+10. ~~Verification pass~~ ✅ — adversarial review found six real bugs, all fixed
+
+---
+
+## 10. Still open
+
+Nothing here blocks play; these are the honest loose ends.
+
+- **Seven panels bypass `HUDStore`.** `TechTree`, `AbilityTreePanel`, `Policies`,
+  `Menu`, `MiniMap`, `HeroAbilitiesPanel` and `UpgradePanel` still reach for
+  `RemoteEvents` directly. Pre-existing, carried through the migration rather
+  than introduced by it, but it undercuts the "panels are presentational" rule.
+- **Nothing has been run.** There is no Roblox runtime in the environment this
+  was written in. `tools/check_luau.py` proves the tree is wired and encoded
+  correctly; it does not prove the game plays. The economy and worker changes
+  need a Studio session.
+- **`UnitType` is overwritten with the trade name** when a peasant takes a job,
+  and `getCurrentPopulation` counts only `"Peasant"`/`"Ox"` — so employed
+  villagers stop counting toward population. Pre-existing, predates this work,
+  but it interacts badly with taxation now that income scales with population.
+- **Orphans left deliberately:** `MiniMapEnhanced` (richer than the `MiniMap` in
+  use — consolidate or delete), `StanceController` (complete feature, never
+  wired to the HUD), `SelectionPanel`, `Textbox`, `EditorToolbar`.
+- **`RevoltManager.recordUnitLoss` is effectively a no-op** — the next periodic
+  `calculateRevoltRisk()` overwrites its risk bump, and that function does not
+  consider unit-loss history. Now visible for the first time because revolts
+  actually run.
