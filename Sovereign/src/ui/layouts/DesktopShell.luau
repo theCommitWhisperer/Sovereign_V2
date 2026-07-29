@@ -1,26 +1,56 @@
 --!strict
--- DesktopShell: chrome for the mouse/keyboard layout. Positions panels; owns no
--- game state itself (HUDStore does). Per docs/EconomyRedesign.md section 8,
--- this is required to be VISUAL PARITY with HUD.luau's former desktop layout,
--- not a redesign -- every position/size below is copied from HUD.luau's
--- render() (top bar, bottom bar, minimap frame, category button positions,
--- content area, meter panel, modals) rather than re-derived.
+-- DesktopShell: chrome for the mouse/keyboard layout.
 --
--- HUD.luau has been deleted; this + MobileShell are now the only "hud" route.
+-- ---------------------------------------------------------------------------
+-- REBUILT, NOT PORTED
+-- ---------------------------------------------------------------------------
+-- The previous version of this file was a pixel-copy of HUD.luau's old brown
+-- PNG chrome (a 300px ImageLabel bottom bar, image-button category tabs at
+-- hardcoded pixel positions, a 210px minimap in a hand-drawn ring). The user
+-- rejected that look outright. This version keeps only the FEATURE inventory
+-- the old file proved out -- which HUDStore fields exist, which panels and
+-- modals get mounted, and the same selection-priority order for the
+-- contextual panel -- and draws all of it in Theme's flat dark vocabulary
+-- instead: Frames with BackgroundTransparency + UIStroke, no ImageLabel
+-- chrome, no rbxassetid:// backgrounds anywhere DesktopShell itself draws.
+--
+-- The legacy per-panel screens under screens/HUD (Policies, Stats, TechTree,
+-- TrainingPanel, UnitSelectionPanel, MiniMap, BattleLog, ...) still draw with
+-- UIConfig's old palette internally -- migrating THEIR insides to Theme is a
+-- separate task from rebuilding the shell that hosts them, so they are
+-- mounted here unchanged. Two things this shell used to draw itself have been
+-- replaced with new Theme-based components instead of ported: the top status
+-- row (screens/HUD/TopBar.luau, an ImageLabel stretched over a fixed PNG) is
+-- now panels/DesktopTopBar.luau, and the category tabs + bare-icon build grid
+-- (screens/HUD/BuildingMenu.luau) are now panels/DesktopBuildingGrid.luau,
+-- which draws from BuildingCatalog instead of raw GameData so every tile can
+-- show cost/output/staffing text the old grid never had.
+--
+-- ---------------------------------------------------------------------------
+-- WHY THE BUILDING GRID IS ALWAYS ON SCREEN
+-- ---------------------------------------------------------------------------
+-- Mobile's drawer (tap a category, a panel opens, one thing visible at a
+-- time) exists because thumb-zone screen space is scarce. Desktop has no such
+-- constraint, so the design brief calls for "everything visible at once": the
+-- building grid for the active category renders continuously in the bottom
+-- bar's centre, and a contextual panel (Training/Production/Hero Abilities/
+-- Upgrade/Unit Selection -- the same priority order the old contentAreaChild
+-- switch used) docks to its right ONLY while one of those is active, rather
+-- than replacing the grid outright the way the old single content-area slot
+-- did. See `contextualPanel` below for the exact chain, and `showGrid` for
+-- the one case (Battle Arena) where the grid is suppressed entirely so the
+-- panel can have the whole bar.
 
 local React = require(game.ReplicatedStorage.Packages.react)
 
-local UIConfig = require(script.Parent.Parent.UIConfig)
+local Theme = require(script.Parent.Parent.Theme)
 local HUDStore = require(script.Parent.Parent.state.HUDStore)
 
-local TopBar = require(script.Parent.Parent.screens.HUD.TopBar)
+local DesktopTopBar = require(script.Parent.Parent.panels.DesktopTopBar)
+local DesktopBuildingGrid = require(script.Parent.Parent.panels.DesktopBuildingGrid)
+
 local MiniMap = require(script.Parent.Parent.screens.HUD.MiniMap)
 local FogOverlay = require(script.Parent.Parent.screens.HUD.FogOverlay)
-local BuildingMenu = require(script.Parent.Parent.screens.HUD.BuildingMenu)
--- NOTE: SelectionPanel is deliberately NOT imported. HUD.luau required it but
--- never rendered it -- UnitSelectionPanel handles the selected-units case and
--- TopBar draws resources inline. Carrying the dead import forward would have
--- made it look load-bearing during the next refactor.
 local UnitSelectionPanel = require(script.Parent.Parent.screens.HUD.UnitSelectionPanel)
 local TrainingPanel = require(script.Parent.Parent.screens.HUD.TrainingPanel)
 local WorkerAssignmentPanel = require(script.Parent.Parent.screens.HUD.WorkerAssignmentPanel)
@@ -38,62 +68,32 @@ local MultiDeleteModal = require(script.Parent.Parent.screens.HUD.MultiDeleteMod
 local UndoButton = require(script.Parent.Parent.screens.HUD.UndoButton)
 local BattleLog = require(script.Parent.Parent.screens.HUD.BattleLog)
 local TutorialModal = require(script.Parent.Parent.components.TutorialModal)
-local IconButton = require(script.Parent.Parent.components.IconButton)
+local ViewToggleButton = require(script.Parent.Parent.screens.HUD.ViewToggleButton)
+local HeroTouchControls = require(script.Parent.Parent.screens.HUD.HeroTouchControls)
 
 export type Props = {
 	tooltip: any?,
 	navigate: ((string) -> ())?,
 }
 
--- Same six tabs and pixel positions as HUD.luau's createCategoryButton /
--- UIConfig.HUD.CategoryButtonPositions. Desktop tabs are image buttons (see
--- UIConfig.HUD.CategoryButtonImages) -- no text icons needed here, unlike
--- MobileShell's chips.
-local CATEGORIES = { "Defense", "Military", "Industry", "Food", "Housing", "Prestige" }
+-- Bottom bar height. Reused from Theme rather than invented fresh: it is the
+-- same token MobileShell's drawer is capped at, and this shell's bottom bar
+-- serves the identical function (the build-menu surface), just permanently
+-- open instead of collapsible.
+local BOTTOM_BAR_HEIGHT = Theme.Metrics.DrawerMaxHeight
 
--- Ported from HUD:createExpandedMeter -- one row of the expanded meter panel.
-local function createExpandedMeter(label: string, icon: string, value: number, maxValue: number, layoutOrder: number)
-	local percentage = math.clamp(value / maxValue, 0, 1)
-	return React.createElement("Frame", {
-		Size = UDim2.new(1, 0, 0, 28),
-		BackgroundTransparency = 1,
-		LayoutOrder = layoutOrder,
-	}, {
-		Icon = React.createElement("TextLabel", {
-			Size = UDim2.fromOffset(28, 28),
-			BackgroundTransparency = 1,
-			Text = icon,
-			Font = Enum.Font.GothamBold,
-			TextSize = 18,
-			TextXAlignment = Enum.TextXAlignment.Center,
-			TextYAlignment = Enum.TextYAlignment.Center,
-		}),
-		BarContainer = React.createElement("Frame", {
-			Size = UDim2.new(1, -65, 0, 20),
-			Position = UDim2.fromOffset(32, 4),
-			BackgroundColor3 = Color3.fromRGB(40, 40, 40),
-			BorderSizePixel = 1,
-			BorderColor3 = UIConfig.HUD.MeterBorder,
-		}, {
-			FillBar = React.createElement("Frame", {
-				Size = UDim2.fromScale(percentage, 1),
-				BackgroundColor3 = UIConfig.HUD.CategoryButtonSelected,
-				BorderSizePixel = 0,
-			}),
-		}),
-		ValueText = React.createElement("TextLabel", {
-			Size = UDim2.fromOffset(30, 28),
-			Position = UDim2.new(1, -30, 0, 0),
-			BackgroundTransparency = 1,
-			Text = tostring(value),
-			Font = Enum.Font.GothamBold,
-			TextSize = 12,
-			TextColor3 = UIConfig.HUD.PanelTextColor,
-			TextXAlignment = Enum.TextXAlignment.Right,
-			TextYAlignment = Enum.TextYAlignment.Center,
-		}),
-	})
-end
+-- Width of the contextual panel dock when one of Training/Production/Hero
+-- Abilities/Upgrade/Unit Selection is active. No Theme token models "one
+-- side panel's width" -- this is a shell-specific layout constant, same
+-- convention MobileShell uses for its own DETAIL_HEIGHT/SHEET_SIZE.
+local CONTEXT_DOCK_WIDTH = 360
+
+-- Minimap + view-toggle dock, bottom-right, sized to hold ViewToggleButton's
+-- stacked two-button cluster (44px tall each + 8px gap on desktop) beside the
+-- minimap without either clipping.
+local MINIMAP_SIZE = Theme.Metrics.MinimapDesktop
+local TOGGLE_SLOT_WIDTH = 150
+local DOCK_HEIGHT = 96
 
 local function DesktopShell(props: Props)
 	local resources = HUDStore.useHUDState(function(s)
@@ -105,29 +105,11 @@ local function DesktopShell(props: Props)
 	local glory = HUDStore.useHUDState(function(s)
 		return s.glory
 	end)
-	local gloryLifetime = HUDStore.useHUDState(function(s)
-		return s.gloryLifetime
-	end)
 	local population = HUDStore.useHUDState(function(s)
 		return s.population
 	end)
-	local date = HUDStore.useHUDState(function(s)
-		return s.date
-	end)
-	local weather = HUDStore.useHUDState(function(s)
-		return s.weather
-	end)
-	local peaceTimeRemaining = HUDStore.useHUDState(function(s)
-		return s.peaceTimeRemaining
-	end)
-	local victoryCondition = HUDStore.useHUDState(function(s)
-		return s.victoryCondition
-	end)
 	local selectedUnits = HUDStore.useHUDState(function(s)
 		return s.selectedUnits
-	end)
-	local selectedCategory = HUDStore.useHUDState(function(s)
-		return s.selectedCategory
 	end)
 	local selectedTrainingBuilding = HUDStore.useHUDState(function(s)
 		return s.selectedTrainingBuilding
@@ -137,15 +119,6 @@ local function DesktopShell(props: Props)
 	end)
 	local trainingQueue = HUDStore.useHUDState(function(s)
 		return s.trainingQueue
-	end)
-	local currentWallPiece = HUDStore.useHUDState(function(s)
-		return s.currentWallPiece
-	end)
-	local isPlacingWall = HUDStore.useHUDState(function(s)
-		return s.isPlacingWall
-	end)
-	local isDeleteMode = HUDStore.useHUDState(function(s)
-		return s.isDeleteMode
 	end)
 	local showPoliciesModal = HUDStore.useHUDState(function(s)
 		return s.showPoliciesModal
@@ -250,41 +223,24 @@ local function DesktopShell(props: Props)
 		return s.armySize
 	end)
 
-	local showExpandedMeters, setShowExpandedMeters = React.useState(false)
-
 	local hasUnitsSelected = #selectedUnits > 0
 	local hasTrainingBuildingSelected = selectedTrainingBuilding ~= nil
 	local hasProductionBuildingSelected = selectedProductionBuilding ~= nil
 
-	-- Battle Arena mode: no economy -- hide resource bars, build menus, meters,
-	-- quests, and undo. BattleLog and notifications stay (combat-relevant).
+	-- Battle Arena mode: no economy, so the build grid is suppressed entirely
+	-- (`showGrid` below) and the bottom bar itself only appears once units are
+	-- selected, giving the whole bar to formation/stance controls.
 	local isArenaMode = gameStartData ~= nil and gameStartData.mode == "BattleArena"
+	local showGrid = not isArenaMode
 
-	local categoryButtons = {}
-	for _, category in CATEGORIES do
-		local isSelected = selectedCategory == category
-		local buttonImage = UIConfig.HUD.CategoryButtonImages[category] or "rbxassetid://105781657626004"
-		local position = UIConfig.HUD.CategoryButtonPositions[category] or { X = 452, Y = 38 }
-
-		categoryButtons[category .. "Button"] = React.createElement(IconButton, {
-			Size = UDim2.fromOffset(UIConfig.HUD.CategoryButtonWidth, UIConfig.HUD.CategoryButtonHeight),
-			Position = UDim2.fromOffset(position.X, position.Y),
-			ButtonImage = buttonImage,
-			ImageColor3 = Color3.fromRGB(255, 255, 255),
-			ShowGlow = false,
-			VisualScale = isSelected and 1.5 or 1.0,
-			ZIndex = isSelected and 20 or 11,
-			OnClick = function()
-				HUDStore.selectCategory(category)
-			end,
-		})
-	end
-
-	-- Content priority, identical order to HUD.luau's render():
-	-- Training > Production > Hero Abilities > Upgrade > Unit Selection > Building Menu
-	local contentAreaChild
+	-- Same priority order the old contentAreaChild switch used. The one
+	-- change from the legacy chain: there is no final "else BuildingMenu"
+	-- branch, because the grid is no longer this switch's fallback -- it is
+	-- its own always-present element (see showGrid above and the bottom bar
+	-- layout below).
+	local contextualPanel
 	if hasTrainingBuildingSelected then
-		contentAreaChild = React.createElement(TrainingPanel, {
+		contextualPanel = React.createElement(TrainingPanel, {
 			selectedBuilding = selectedTrainingBuilding,
 			queue = trainingQueue,
 			onTrainUnit = function(unitType: string)
@@ -297,7 +253,7 @@ local function DesktopShell(props: Props)
 			end,
 		})
 	elseif hasProductionBuildingSelected then
-		contentAreaChild = React.createElement(WorkerAssignmentPanel, {
+		contextualPanel = React.createElement(WorkerAssignmentPanel, {
 			selectedBuilding = selectedProductionBuilding,
 			onAddWorker = function()
 				if selectedProductionBuilding then
@@ -314,7 +270,7 @@ local function DesktopShell(props: Props)
 			end,
 		})
 	elseif cameraMode == "King" and showHeroAbilities then
-		contentAreaChild = React.createElement(HeroAbilitiesPanel, {
+		contextualPanel = React.createElement(HeroAbilitiesPanel, {
 			abilities = heroAbilities,
 			tooltip = props.tooltip,
 			onAbilityUsed = function(abilityId: string)
@@ -322,7 +278,7 @@ local function DesktopShell(props: Props)
 			end,
 		})
 	elseif buildingUpgradeInfo then
-		contentAreaChild = React.createElement(UpgradePanel, {
+		contextualPanel = React.createElement(UpgradePanel, {
 			buildingInfo = buildingUpgradeInfo,
 			playerResources = resources,
 			onUpgrade = function()
@@ -333,7 +289,7 @@ local function DesktopShell(props: Props)
 			end,
 		})
 	elseif hasUnitsSelected then
-		contentAreaChild = React.createElement(UnitSelectionPanel, {
+		contextualPanel = React.createElement(UnitSelectionPanel, {
 			selectedUnits = selectedUnits,
 			selectedFormation = selectedFormation,
 			selectedStance = selectedStance,
@@ -348,122 +304,43 @@ local function DesktopShell(props: Props)
 			end,
 		})
 	else
-		contentAreaChild = React.createElement(BuildingMenu, {
-			tooltip = props.tooltip,
-			resources = resources,
-			gloryLifetime = gloryLifetime,
-			selectedCategory = selectedCategory,
-			currentWallPiece = currentWallPiece,
-			isPlacingWall = isPlacingWall,
-			onBuildingSelected = function(buildingName: string)
-				HUDStore.startPlacement(buildingName)
-			end,
-		})
+		contextualPanel = nil
 	end
 
-	local bottomBarChildren: { [string]: any } = {
-		MainBackground = React.createElement("ImageLabel", {
-			Name = "MainBackground",
-			Size = UDim2.new(0, 800, 0, UIConfig.HUD.BottomBarHeight),
-			Position = UDim2.new(0, 0, 0, 0),
-			BackgroundTransparency = 1,
-			Image = "rbxassetid://102075136386279",
-			BorderSizePixel = 0,
-			ZIndex = 10,
-		}),
+	local hasContextDock = contextualPanel ~= nil
 
-		UtilityButtons = React.createElement("Frame", {
-			Size = UDim2.new(0, UIConfig.HUD.UtilityButtonWidth, 0, UIConfig.HUD.BottomBarHeight),
-			Position = UDim2.new(0, 68, 0.26, 0),
+	local bottomBarChildren: { [string]: any } = {}
+	if showGrid then
+		bottomBarChildren.GridArea = React.createElement("Frame", {
+			Name = "GridArea",
+			Size = UDim2.new(1, hasContextDock and -(CONTEXT_DOCK_WIDTH + Theme.Metrics.Gap) or 0, 1, 0),
 			BackgroundTransparency = 1,
-			ZIndex = 11,
 		}, {
 			Padding = React.createElement("UIPadding", {
-				PaddingTop = UDim.new(0, 0),
-				PaddingBottom = UDim.new(0, 10),
+				PaddingTop = UDim.new(0, Theme.Metrics.Pad),
+				PaddingBottom = UDim.new(0, Theme.Metrics.Pad),
+				PaddingLeft = UDim.new(0, Theme.Metrics.Pad),
+				PaddingRight = UDim.new(0, Theme.Metrics.Pad),
 			}),
-			Layout = React.createElement("UIListLayout", {
-				FillDirection = Enum.FillDirection.Vertical,
-				Padding = UDim.new(0, 35),
-				HorizontalAlignment = Enum.HorizontalAlignment.Center,
-				VerticalAlignment = Enum.VerticalAlignment.Top,
-			}),
-
-			DeleteButton = React.createElement(IconButton, {
-				Name = "DeleteButton",
-				Size = UDim2.new(1, 0, 0, UIConfig.HUD.UtilityButtonHeight),
-				Icon = "🗑️",
-				IconSize = 15,
-				IconColor = UIConfig.HUD.PanelTextColor,
-				ImageColor3 = isDeleteMode and UIConfig.HUD.CategoryButtonSelected or UIConfig.HUD.UtilityButtonBackground,
-				OnClick = function()
-					HUDStore.toggleDeleteMode()
-				end,
-			}),
-
-			PoliciesButton = React.createElement(IconButton, {
-				Name = "PoliciesButton",
-				Size = UDim2.new(1, 0, 0, UIConfig.HUD.UtilityButtonHeight),
-				Icon = "📜",
-				IconSize = 20,
-				IconColor = UIConfig.HUD.PanelTextColor,
-				ImageColor3 = UIConfig.HUD.UtilityButtonBackground,
-				OnClick = function()
-					HUDStore.togglePoliciesModal()
-				end,
-			}),
-
-			AbilityTreeButton = React.createElement(IconButton, {
-				Name = "AbilityTreeButton",
-				Size = UDim2.new(1, 0, 0, UIConfig.HUD.UtilityButtonHeight),
-				Icon = "⚜️",
-				IconSize = 20,
-				IconColor = UIConfig.HUD.PanelTextColor,
-				ImageColor3 = showAbilityTree and UIConfig.HUD.CategoryButtonSelected
-					or UIConfig.HUD.UtilityButtonBackground,
-				LayoutOrder = 3,
-				OnClick = function()
-					HUDStore.toggleAbilityTree()
-				end,
-			}),
-		}),
-
-		MiniMapFrame = React.createElement("Frame", {
-			Name = "MiniMapFrame",
-			Size = UDim2.new(0, UIConfig.HUD.MinimapSize, 0, UIConfig.HUD.MinimapSize),
-			Position = UDim2.new(0, 185, 0, 40),
-			BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-			BorderColor3 = UIConfig.HUD.MinimapBorder,
-			BorderSizePixel = 2,
-			ClipsDescendants = true,
-			ZIndex = 9,
-		}, {
-			Corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
-			MiniMap = React.createElement(MiniMap),
-		}),
-
-		FogOfWarIndicator = React.createElement(FogOverlay),
-
-		-- RTS <-> Hero view switch, and hero touch combat cluster. Mounted
-		-- unconditionally, same as HUD.luau: ViewToggleButton is the only way to
-		-- reach hero view without a keyboard, and HeroTouchControls renders nil on
-		-- its own unless the device is touch-capable AND in hero view.
-		ViewToggle = React.createElement(require(script.Parent.Parent.screens.HUD.ViewToggleButton)),
-		HeroTouchControls = React.createElement(require(script.Parent.Parent.screens.HUD.HeroTouchControls)),
-
-		ContentArea = React.createElement("Frame", {
-			Name = "ContentArea",
-			Size = UDim2.new(0.35, 215, 0, 10),
-			Position = UDim2.new(0, 540, 0, 45),
+			Grid = React.createElement(DesktopBuildingGrid, { tooltip = props.tooltip }),
+		})
+	end
+	if hasContextDock then
+		bottomBarChildren.ContextDock = React.createElement("Frame", {
+			Name = "ContextDock",
+			AnchorPoint = if showGrid then Vector2.new(1, 0) else Vector2.new(0, 0),
+			Position = if showGrid then UDim2.new(1, 0, 0, 0) else UDim2.new(0, 0, 0, 0),
+			Size = if showGrid then UDim2.new(0, CONTEXT_DOCK_WIDTH, 1, 0) else UDim2.new(1, 0, 1, 0),
 			BackgroundTransparency = 1,
-			BorderSizePixel = 0,
-			ZIndex = 11,
 		}, {
-			Content = contentAreaChild,
-		}),
-	}
-	for key, element in categoryButtons do
-		bottomBarChildren[key] = element
+			Padding = React.createElement("UIPadding", {
+				PaddingTop = UDim.new(0, Theme.Metrics.Pad),
+				PaddingBottom = UDim.new(0, Theme.Metrics.Pad),
+				PaddingLeft = UDim.new(0, Theme.Metrics.Pad),
+				PaddingRight = UDim.new(0, Theme.Metrics.Pad),
+			}),
+			Content = contextualPanel,
+		})
 	end
 
 	-- ===== LORD HEALTH BAR ===== (persistent; fed by "KingHealthUpdate")
@@ -472,50 +349,52 @@ local function DesktopShell(props: Props)
 		local maxHealth = math.max(kingMaxHealth or 1, 1)
 		local fraction = math.clamp(health / maxHealth, 0, 1)
 		local barColor = if fraction > 0.5
-			then Color3.fromRGB(90, 170, 80)
-			elseif fraction > 0.25 then Color3.fromRGB(210, 160, 60)
-			else Color3.fromRGB(190, 60, 50)
+			then Theme.Color.Success
+			elseif fraction > 0.25 then Theme.Color.Warning
+			else Theme.Color.Danger
 		return React.createElement("Frame", {
 			Name = "LordHealthBar",
-			Size = UDim2.fromOffset(210, 34),
-			Position = UDim2.fromOffset(12, 12),
-			BackgroundColor3 = UIConfig.HUD.MeterBackground,
-			BackgroundTransparency = 0.2,
-			BorderSizePixel = 2,
-			BorderColor3 = UIConfig.HUD.MeterBorder,
+			Size = UDim2.fromOffset(220, 34),
+			Position = UDim2.fromOffset(Theme.Metrics.Pad, Theme.Metrics.ActionBarHeight + Theme.Metrics.Pad),
+			BackgroundColor3 = Theme.Color.Surface,
+			BackgroundTransparency = Theme.Transparency.Panel,
 			ZIndex = 12,
 		}, {
+			Stroke = React.createElement("UIStroke", Theme.strokeProps()),
+			Corner = React.createElement("UICorner", { CornerRadius = Theme.corner() }),
 			CrownIcon = React.createElement("TextLabel", {
 				Size = UDim2.fromOffset(28, 34),
 				BackgroundTransparency = 1,
 				Text = "👑",
-				TextSize = 18,
-				Font = Enum.Font.GothamBold,
+				TextSize = Theme.TextSize.Heading,
+				Font = Theme.Font.Body,
 				ZIndex = 13,
 			}),
 			BarContainer = React.createElement("Frame", {
 				Size = UDim2.new(1, -90, 0, 16),
 				Position = UDim2.fromOffset(32, 9),
-				BackgroundColor3 = Color3.fromRGB(40, 40, 40),
-				BorderSizePixel = 1,
-				BorderColor3 = UIConfig.HUD.MeterBorder,
+				BackgroundColor3 = Theme.Color.SurfaceRaised,
+				BorderSizePixel = 0,
 				ZIndex = 13,
 			}, {
+				Corner = React.createElement("UICorner", { CornerRadius = Theme.corner(Theme.Metrics.RadiusSmall) }),
 				Fill = React.createElement("Frame", {
 					Size = UDim2.fromScale(fraction, 1),
 					BackgroundColor3 = barColor,
 					BorderSizePixel = 0,
 					ZIndex = 14,
+				}, {
+					Corner = React.createElement("UICorner", { CornerRadius = Theme.corner(Theme.Metrics.RadiusSmall) }),
 				}),
 			}),
 			HealthText = React.createElement("TextLabel", {
-				Size = UDim2.fromOffset(52, 34),
-				Position = UDim2.new(1, -56, 0, 0),
+				Size = UDim2.fromOffset(56, 34),
+				Position = UDim2.new(1, -60, 0, 0),
 				BackgroundTransparency = 1,
 				Text = string.format("%d/%d", math.floor(health), math.floor(maxHealth)),
-				TextSize = 12,
-				Font = Enum.Font.GothamBold,
-				TextColor3 = UIConfig.HUD.PanelTextColor,
+				TextSize = Theme.TextSize.Small,
+				Font = Theme.Font.Number,
+				TextColor3 = Theme.Color.TextPrimary,
 				TextXAlignment = Enum.TextXAlignment.Right,
 				ZIndex = 13,
 			}),
@@ -528,25 +407,25 @@ local function DesktopShell(props: Props)
 		local title = if isAttacker
 			then string.format("⚔️ Seizing %s's Keep!", capture.keepOwnerName or "the enemy")
 			else "🔥 YOUR KEEP IS BEING CAPTURED!"
-		local accent = if isAttacker then Color3.fromRGB(214, 178, 94) else Color3.fromRGB(190, 60, 50)
+		local accent = if isAttacker then Theme.Color.Accent else Theme.Color.Danger
 		return React.createElement("Frame", {
 			Name = "KeepCaptureBanner",
 			Size = UDim2.fromOffset(440, 70),
-			Position = UDim2.new(0.5, 0, 0, 108),
+			Position = UDim2.new(0.5, 0, 0, Theme.Metrics.ActionBarHeight + 60),
 			AnchorPoint = Vector2.new(0.5, 0),
-			BackgroundColor3 = Color3.fromRGB(30, 20, 18),
-			BackgroundTransparency = 0.15,
-			BorderSizePixel = 2,
-			BorderColor3 = accent,
+			BackgroundColor3 = Theme.Color.Surface,
+			BackgroundTransparency = Theme.Transparency.Panel,
 			ZIndex = 30,
 		}, {
+			Stroke = React.createElement("UIStroke", { Color = accent, Thickness = 1.5, Transparency = 0.2 }),
+			Corner = React.createElement("UICorner", { CornerRadius = Theme.corner() }),
 			Title = React.createElement("TextLabel", {
 				Size = UDim2.new(1, -100, 0, 26),
-				Position = UDim2.fromOffset(12, 6),
+				Position = UDim2.fromOffset(Theme.Metrics.Pad, 6),
 				BackgroundTransparency = 1,
 				Text = title,
-				Font = Enum.Font.GothamBold,
-				TextSize = 18,
+				Font = Theme.Font.BodyBold,
+				TextSize = Theme.TextSize.Title,
 				TextColor3 = accent,
 				TextXAlignment = Enum.TextXAlignment.Left,
 				ZIndex = 31,
@@ -556,25 +435,27 @@ local function DesktopShell(props: Props)
 				Position = UDim2.new(1, -96, 0, 4),
 				BackgroundTransparency = 1,
 				Text = string.format("%ds", capture.secondsRemaining or 0),
-				Font = Enum.Font.GothamBold,
-				TextSize = 30,
-				TextColor3 = Color3.fromRGB(255, 255, 255),
+				Font = Theme.Font.Number,
+				TextSize = 28,
+				TextColor3 = Theme.Color.TextPrimary,
 				TextXAlignment = Enum.TextXAlignment.Right,
 				ZIndex = 31,
 			}),
 			BarContainer = React.createElement("Frame", {
 				Size = UDim2.new(1, -24, 0, 12),
 				Position = UDim2.new(0, 12, 1, -20),
-				BackgroundColor3 = Color3.fromRGB(40, 40, 40),
-				BorderSizePixel = 1,
-				BorderColor3 = UIConfig.HUD.MeterBorder,
+				BackgroundColor3 = Theme.Color.SurfaceRaised,
+				BorderSizePixel = 0,
 				ZIndex = 31,
 			}, {
+				Corner = React.createElement("UICorner", { CornerRadius = Theme.corner(Theme.Metrics.RadiusSmall) }),
 				Fill = React.createElement("Frame", {
 					Size = UDim2.fromScale(math.clamp(capture.fraction or 0, 0, 1), 1),
 					BackgroundColor3 = accent,
 					BorderSizePixel = 0,
 					ZIndex = 32,
+				}, {
+					Corner = React.createElement("UICorner", { CornerRadius = Theme.corner(Theme.Metrics.RadiusSmall) }),
 				}),
 			}),
 		})
@@ -584,25 +465,25 @@ local function DesktopShell(props: Props)
 		local capture = estateCapture :: any
 		local isAttacker = capture.attacker
 		local label = if isAttacker then "🚩 Capturing estate..." else "🚩 Estate under attack!"
-		local accent = if isAttacker then Color3.fromRGB(120, 200, 120) else Color3.fromRGB(210, 140, 60)
+		local accent = if isAttacker then Theme.Color.Success else Theme.Color.Warning
 		return React.createElement("Frame", {
 			Name = "EstateCaptureBar",
 			Size = UDim2.fromOffset(280, 48),
-			Position = UDim2.new(0.5, 0, 0, 186),
+			Position = UDim2.new(0.5, 0, 0, Theme.Metrics.ActionBarHeight + 138),
 			AnchorPoint = Vector2.new(0.5, 0),
-			BackgroundColor3 = Color3.fromRGB(30, 25, 20),
-			BackgroundTransparency = 0.25,
-			BorderSizePixel = 2,
-			BorderColor3 = UIConfig.HUD.MeterBorder,
+			BackgroundColor3 = Theme.Color.Surface,
+			BackgroundTransparency = Theme.Transparency.Panel,
 			ZIndex = 30,
 		}, {
+			Stroke = React.createElement("UIStroke", Theme.strokeProps()),
+			Corner = React.createElement("UICorner", { CornerRadius = Theme.corner() }),
 			Label = React.createElement("TextLabel", {
 				Size = UDim2.new(1, -70, 0, 20),
 				Position = UDim2.fromOffset(10, 4),
 				BackgroundTransparency = 1,
 				Text = label,
-				Font = Enum.Font.GothamBold,
-				TextSize = 15,
+				Font = Theme.Font.BodyBold,
+				TextSize = Theme.TextSize.Heading,
 				TextColor3 = accent,
 				TextXAlignment = Enum.TextXAlignment.Left,
 				ZIndex = 31,
@@ -612,149 +493,66 @@ local function DesktopShell(props: Props)
 				Position = UDim2.new(1, -62, 0, 4),
 				BackgroundTransparency = 1,
 				Text = string.format("%d%%", math.floor((capture.fraction or 0) * 100)),
-				Font = Enum.Font.GothamBold,
-				TextSize = 15,
-				TextColor3 = Color3.fromRGB(255, 255, 255),
+				Font = Theme.Font.Number,
+				TextSize = Theme.TextSize.Heading,
+				TextColor3 = Theme.Color.TextPrimary,
 				TextXAlignment = Enum.TextXAlignment.Right,
 				ZIndex = 31,
 			}),
 			BarContainer = React.createElement("Frame", {
 				Size = UDim2.new(1, -20, 0, 10),
 				Position = UDim2.new(0, 10, 1, -16),
-				BackgroundColor3 = Color3.fromRGB(40, 40, 40),
-				BorderSizePixel = 1,
-				BorderColor3 = UIConfig.HUD.MeterBorder,
+				BackgroundColor3 = Theme.Color.SurfaceRaised,
+				BorderSizePixel = 0,
 				ZIndex = 31,
 			}, {
+				Corner = React.createElement("UICorner", { CornerRadius = Theme.corner(Theme.Metrics.RadiusSmall) }),
 				Fill = React.createElement("Frame", {
 					Size = UDim2.fromScale(math.clamp(capture.fraction or 0, 0, 1), 1),
 					BackgroundColor3 = accent,
 					BorderSizePixel = 0,
 					ZIndex = 32,
+				}, {
+					Corner = React.createElement("UICorner", { CornerRadius = Theme.corner(Theme.Metrics.RadiusSmall) }),
 				}),
 			}),
 		})
 	end)() or nil
 
-	local meterPanel = React.createElement("Frame", {
-		Name = "MeterPanel",
-		Size = UDim2.new(0, 280, 0, showExpandedMeters and 280 or 50),
-		Position = UDim2.new(1, -1300, 1, -UIConfig.HUD.BottomBarHeight - (showExpandedMeters and 280 or 60)),
+	-- Minimap + view-toggle dock, bottom-right, above the bottom bar. Nested
+	-- deliberately: ViewToggleButton positions itself with a hardcoded
+	-- AnchorPoint(1,0) + `UDim2.new(1, -14, 0, topOffset)`, which this file is
+	-- not allowed to edit, so it is given its own narrow slot Frame here and
+	-- reads as "beside the minimap" because that slot sits immediately to the
+	-- minimap's left inside the same dock, rather than by changing the
+	-- button's own anchoring.
+	local minimapDock = React.createElement("Frame", {
+		Name = "MinimapDock",
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -Theme.Metrics.Pad, 1, -(BOTTOM_BAR_HEIGHT + Theme.Metrics.Pad)),
+		Size = UDim2.fromOffset(TOGGLE_SLOT_WIDTH + Theme.Metrics.Gap + MINIMAP_SIZE, DOCK_HEIGHT),
 		BackgroundTransparency = 1,
-		ZIndex = 10,
-		Visible = not isArenaMode,
+		ZIndex = 9,
 	}, {
-		ExpandButton = React.createElement(IconButton, {
-			Size = UDim2.new(0, 80, 0, 20),
-			Position = UDim2.new(0.5, -40, 0, 0),
-			Icon = showExpandedMeters and "▼" or "▲",
-			IconSize = 14,
-			IconColor = UIConfig.HUD.PanelTextColor,
-			ImageColor3 = UIConfig.HUD.UtilityButtonBackground,
-			OnClick = function()
-				setShowExpandedMeters(not showExpandedMeters)
-			end,
-		}),
-
-		MeterBackground = React.createElement("Frame", {
-			Size = UDim2.new(1, 0, 1, -10),
-			Position = UDim2.fromOffset(0, 20),
-			BackgroundColor3 = UIConfig.HUD.MeterBackground,
-			BorderSizePixel = 2,
-			BorderColor3 = UIConfig.HUD.MeterBorder,
+		ToggleSlot = React.createElement("Frame", {
+			Size = UDim2.fromOffset(TOGGLE_SLOT_WIDTH, DOCK_HEIGHT),
+			BackgroundTransparency = 1,
 		}, {
-			HappinessMeter = React.createElement("Frame", {
-				Size = UDim2.new(1, -20, 0, 30),
-				Position = UDim2.fromOffset(10, 5),
-				BackgroundTransparency = 1,
-			}, {
-				HappyEmoji = React.createElement("TextLabel", {
-					Size = UDim2.new(0, 35, 0, 35),
-					BackgroundTransparency = 1,
-					Text = "😊",
-					Font = Enum.Font.GothamBold,
-					TextSize = 24,
-					TextXAlignment = Enum.TextXAlignment.Center,
-					TextYAlignment = Enum.TextYAlignment.Center,
-				}),
-				BarContainer = React.createElement("Frame", {
-					Size = UDim2.new(1, -80, 1, -6),
-					Position = UDim2.fromOffset(40, 3),
-					BackgroundColor3 = Color3.fromRGB(40, 40, 40),
-					BorderSizePixel = 1,
-					BorderColor3 = UIConfig.HUD.MeterBorder,
-				}, {
-					HappyBar = React.createElement("Frame", {
-						Size = UDim2.new(happiness / 100, 0, 1, 0),
-						BackgroundColor3 = UIConfig.HUD.MeterHappyColor,
-						BorderSizePixel = 0,
-					}),
-					RevoltBar = React.createElement("Frame", {
-						Size = UDim2.new(math.max(0, (50 - happiness) / 100), 0, 1, 0),
-						Position = UDim2.new(1, 0, 0, 0),
-						AnchorPoint = Vector2.new(1, 0),
-						BackgroundColor3 = UIConfig.HUD.MeterRevoltColor,
-						BorderSizePixel = 0,
-					}),
-				}),
-				MadEmoji = React.createElement("TextLabel", {
-					Size = UDim2.new(0, 35, 0, 35),
-					Position = UDim2.new(1, -35, 0, 0),
-					BackgroundTransparency = 1,
-					Text = "😡",
-					Font = Enum.Font.GothamBold,
-					TextSize = 24,
-					TextXAlignment = Enum.TextXAlignment.Center,
-					TextYAlignment = Enum.TextYAlignment.Center,
-				}),
-			}),
+			ViewToggle = React.createElement(ViewToggleButton, { topOffset = Theme.Metrics.Gap }),
 		}),
-
-		ExpandedMeters = showExpandedMeters and React.createElement("Frame", {
-			Size = UDim2.new(1, 0, 1, -65),
-			Position = UDim2.fromOffset(0, 65),
-			BackgroundColor3 = UIConfig.HUD.MeterBackground,
-			BorderSizePixel = 2,
-			BorderColor3 = UIConfig.HUD.MeterBorder,
+		MiniMapFrame = React.createElement("Frame", {
+			Name = "MiniMapFrame",
+			Size = UDim2.fromOffset(MINIMAP_SIZE, MINIMAP_SIZE),
+			Position = UDim2.new(0, TOGGLE_SLOT_WIDTH + Theme.Metrics.Gap, 0, (DOCK_HEIGHT - MINIMAP_SIZE) / 2),
+			BackgroundColor3 = Theme.Color.Surface,
+			BackgroundTransparency = Theme.Transparency.Panel,
+			ClipsDescendants = true,
+			ZIndex = 9,
 		}, {
-			ContentFrame = React.createElement("Frame", {
-				Size = UDim2.new(1, -20, 1, -10),
-				Position = UDim2.fromOffset(10, 5),
-				BackgroundTransparency = 1,
-			}, {
-				Layout = React.createElement("UIListLayout", {
-					FillDirection = Enum.FillDirection.Vertical,
-					Padding = UDim.new(0, 6),
-					SortOrder = Enum.SortOrder.LayoutOrder,
-				}),
-				FoodMeter = createExpandedMeter("Food", "🌾", resources.Food or 0, 500, 1),
-				GoldMeter = createExpandedMeter("Gold", "💰", resources.Gold or 0, 1000, 2),
-				PopulationMeter = economySnapshot
-						and createExpandedMeter(
-							"Population",
-							"👥",
-							economySnapshot.population or 0,
-							economySnapshot.housingCapacity or 10,
-							3
-						)
-					or createExpandedMeter("Population", "👥", population, 100, 3),
-				EconomyHealthMeter = economySnapshot
-						and createExpandedMeter("Economy", "🏰", economySnapshot.economyHealth or 50, 100, 4)
-					or nil,
-				FoodConsumptionMeter = economySnapshot
-						and createExpandedMeter(
-							"Consumption",
-							"🍴",
-							math.min(economySnapshot.foodConsumptionRate or 0, 10),
-							10,
-							5
-						)
-					or nil,
-				TaxRateMeter = economySnapshot
-						and createExpandedMeter("Tax Rate", "💸", economySnapshot.taxRate or 0, 100, 6)
-					or nil,
-			}),
-		}) or nil,
+			Corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
+			Stroke = React.createElement("UIStroke", Theme.strokeProps(true)),
+			MiniMap = React.createElement(MiniMap),
+		}),
 	})
 
 	local tutorialModal = (function()
@@ -782,35 +580,47 @@ local function DesktopShell(props: Props)
 		Size = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
 	}, {
-		TopBar = not isArenaMode and React.createElement(TopBar, {
-			resources = resources,
-			honor = honor,
-			glory = glory,
-			population = population,
-			date = date,
-			weather = weather,
-			peaceTimeRemaining = peaceTimeRemaining,
-			victoryCondition = victoryCondition,
-		}) or nil,
+		TopBar = React.createElement(DesktopTopBar),
 
 		LordHealthBar = lordHealthBar,
 		KeepCaptureBanner = keepCaptureBanner,
 		EstateCaptureBar = estateCaptureBar,
 
+		FogOfWarIndicator = React.createElement(FogOverlay),
+		MinimapDock = minimapDock,
+		HeroTouchControls = React.createElement(HeroTouchControls),
+
+		QuestTrackerPanel = not isArenaMode and React.createElement(QuestTracker, {
+			quests = activeQuests,
+		}) or nil,
+
+		BattleLog = React.createElement(BattleLog, {
+			messages = battleLogMessages,
+			expanded = battleLogExpanded,
+			onToggleExpanded = function()
+				HUDStore.setState({ battleLogExpanded = not battleLogExpanded })
+			end,
+		}),
+
 		BottomBar = React.createElement("Frame", {
 			Name = "BottomBar",
-			Size = UDim2.new(0, 1400, 0, UIConfig.HUD.BottomBarHeight),
+			Size = UDim2.new(1, 0, 0, BOTTOM_BAR_HEIGHT),
 			Position = UDim2.new(0, 0, 1, 0),
 			AnchorPoint = Vector2.new(0, 1),
-			BackgroundTransparency = 1,
+			BackgroundColor3 = Theme.Color.Surface,
+			BackgroundTransparency = Theme.Transparency.Panel,
 			BorderSizePixel = 0,
 			ZIndex = 10,
 			-- Battle Arena: bar appears only with units selected, so players get
 			-- formations/stances/selection controls but no build/economy UI.
 			Visible = not isArenaMode or hasUnitsSelected,
-		}, bottomBarChildren),
-
-		MeterPanel = meterPanel,
+		}, {
+			Stroke = React.createElement("UIStroke", Theme.strokeProps(true)),
+			Content = React.createElement("Frame", {
+				Size = UDim2.fromScale(1, 1),
+				BackgroundTransparency = 1,
+			}, bottomBarChildren),
+		}),
 
 		PoliciesModal = showPoliciesModal and React.createElement(Policies, {
 			visible = showPoliciesModal,
@@ -861,10 +671,6 @@ local function DesktopShell(props: Props)
 			end,
 		}) or nil,
 
-		QuestTrackerPanel = not isArenaMode and React.createElement(QuestTracker, {
-			quests = activeQuests,
-		}) or nil,
-
 		AchievementNotificationOverlay = achievementData and React.createElement(AchievementNotification, {
 			achievementData = achievementData,
 			onDismiss = function()
@@ -901,14 +707,6 @@ local function DesktopShell(props: Props)
 				HUDStore.undoLastDeletion()
 			end,
 		}) or nil,
-
-		BattleLog = React.createElement(BattleLog, {
-			messages = battleLogMessages,
-			expanded = battleLogExpanded,
-			onToggleExpanded = function()
-				HUDStore.setState({ battleLogExpanded = not battleLogExpanded })
-			end,
-		}),
 
 		TutorialModal = tutorialModal,
 	})

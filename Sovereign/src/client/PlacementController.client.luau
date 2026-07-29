@@ -30,6 +30,19 @@ local resetWallPieceFunc = ReplicatedStorage:FindFirstChild("ResetWallPiece")
 	or Instance.new("BindableFunction", ReplicatedStorage)
 resetWallPieceFunc.Name = "ResetWallPiece"
 
+-- Cancel channel for the HUD's own Cancel button.
+--
+-- Placement was only ever cancellable with MouseButton2. A touch device has no
+-- right-click, so on mobile a player who started placing a building had no way
+-- out at all -- and because `isPlacing` gates ALL RTS selection and orders via
+-- ViewMode.shouldBlockRTSInput(), being stuck in placement wedged the entire
+-- game, not just the build menu. HUDStore fires this; the listener is installed
+-- further down, once cleanup() exists.
+local cancelPlacementEvent = ReplicatedStorage:FindFirstChild("CancelPlacement")
+	or Instance.new("BindableEvent", ReplicatedStorage)
+cancelPlacementEvent.Name = "CancelPlacement"
+cancelPlacementEvent.Parent = ReplicatedStorage
+
 -- Configuration
 local SNAP_RADIUS = 20
 local CONNECTION_TOLERANCE = 4.0
@@ -628,6 +641,15 @@ local function cleanup()
 	gameEvent:FireServer("PlacementEnded")
 	wallPieceEvent:Fire({ currentPiece = WALL_PIECES[wallPieceIndex].name, isPlacingWalls = false })
 end
+
+-- Installed here rather than at the declaration above because cleanup() is the
+-- single exit path every other cancel route already funnels through, and it is
+-- only defined by this point.
+cancelPlacementEvent.Event:Connect(function()
+	if isPlacing then
+		cleanup()
+	end
+end)
 
 local function startPlacement(buildingName: string)
 	cleanup()

@@ -354,6 +354,27 @@ function HUDStore.startPlacement(buildingName: string)
 	gameEvent:FireServer("StartPlacement", buildingName)
 end
 
+--- Abandons an in-progress placement.
+---
+--- Clearing the store flags alone is not enough: PlacementController owns the
+--- ghost model and its own `isPlacing`, which gates ALL RTS selection and move
+--- orders through ViewMode.shouldBlockRTSInput(). Leaving that armed with no
+--- ghost to cancel wedges the whole game. It previously had exactly one exit --
+--- MouseButton2 -- which a touch device cannot produce, so a mobile player who
+--- started placing was stuck. This BindableEvent is the HUD's way into the same
+--- cleanup() every other cancel path uses.
+function HUDStore.cancelPlacement()
+	HUDStore.setState({ isPlacingBuilding = false, selectedBuilding = HUDStore.None })
+
+	local cancelEvent = ReplicatedStorage:FindFirstChild("CancelPlacement") :: BindableEvent?
+	if cancelEvent then
+		cancelEvent:Fire()
+	end
+	if gameEvent then
+		gameEvent:FireServer("PlacementEnded")
+	end
+end
+
 -- ---------------------------------------------------------------------------
 -- CATEGORY / TRAINING / PRODUCTION SELECTION
 -- ---------------------------------------------------------------------------
