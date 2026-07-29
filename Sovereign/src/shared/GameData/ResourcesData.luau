@@ -218,6 +218,11 @@ define("Siege_Equipment", {
 -- ============================================================
 -- ABSTRACT -- not physical goods, never hauled or stored in buildings
 -- ============================================================
+-- NOTE: no starting_amount here, deliberately. Starting resources are
+-- GameManager's calculateStartingResources(), which scales the base grant by
+-- the lobby's Low/Standard/High setting. Seeding 500 gold here both ignored
+-- that setting and granted it a SECOND time on top, and it broke the contract
+-- (asserted by PlayerManager.spec) that create() zeroes every slot.
 define("Gold", {
 	display_name = "Gold",
 	icon = "💰",
@@ -225,7 +230,6 @@ define("Gold", {
 	is_tradeable = false, -- gold IS the currency; it is not traded against itself
 	base_price = 1.0,
 	max_carry_amount = 1000,
-	starting_amount = 500,
 })
 
 define("Honor", {

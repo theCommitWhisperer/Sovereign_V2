@@ -44,8 +44,14 @@ IGNORE_TARGETS = {
 
 
 def strip_comments_and_strings(text):
-    """Good enough to stop require()-scanning from reading commented-out code."""
-    text = re.sub(r"--\[(=*)\[.*?\]\1\]", " ", text, flags=re.S)
+    """Good enough to stop require()-scanning from reading commented-out code.
+
+    Long strings are blanked line-by-line rather than collapsed, so line numbers
+    stay accurate for the ambiguous-syntax check below -- help text and other
+    [[...]] blocks otherwise look like code and produce false positives.
+    """
+    text = re.sub(r"--\[(=*)\[.*?\]\1\]", lambda m: "\n" * m.group(0).count("\n"), text, flags=re.S)
+    text = re.sub(r"\[(=*)\[.*?\]\1\]", lambda m: "\n" * m.group(0).count("\n"), text, flags=re.S)
     text = re.sub(r"--[^\n]*", "", text)
     return text
 
@@ -116,6 +122,40 @@ def main():
 
             files += 1
             code = strip_comments_and_strings(text)
+
+            # Luau ambiguous-syntax: a statement starting with "(" directly after
+            # a line ending in ")" or an identifier parses as a CALL on the
+            # previous expression, and Luau rejects the whole file. This shipped
+            # once already -- a `(x :: T):Method()` line broke HUDStore, which
+            # cascaded through AdaptiveHUD -> App -> main and killed the entire
+            # UI, while every other check here passed clean.
+            lines = code.split("\n")
+            for idx in range(1, len(lines)):
+                stripped = lines[idx].lstrip()
+                if not stripped.startswith("("):
+                    continue
+                prev = lines[idx - 1].rstrip()
+                # Only a COMPLETE, callable expression creates the ambiguity.
+                # After a block/continuation keyword (`then`, `do`, `else`, `=`,
+                # a comma, an operator...) there is no preceding expression for
+                # the paren to be read as a call on, so `(` is unambiguous there
+                # -- and that form is used all over this codebase legitimately.
+                last_word = re.search(r"(\w+)$", prev)
+                if last_word and last_word.group(1) in {
+                    "then", "do", "else", "repeat", "return", "in",
+                    "and", "or", "not", "end", "elseif",
+                    # `if` / `while` alone on a line means the condition is
+                    # wrapped onto the next line -- a continuation, not a
+                    # statement boundary.
+                    "if", "while", "until", "local",
+                }:
+                    continue
+                if prev.endswith(")") or re.search(r"[\w\]\"']$", prev):
+                    errors.append(
+                        f"{rel}:{idx + 1}: statement starts with '(' after a line "
+                        f"ending in '{prev[-1:]}' -- Luau will read this as a call "
+                        f"and reject the file (bind to a local, or prefix with ';')"
+                    )
 
             for m in REQUIRE_RE.finditer(code):
                 expr = m.group(1)

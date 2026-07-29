@@ -22,11 +22,37 @@ return function()
 			expect(typeof(woodData.max_carry_amount)).to.equal("number")
 		end)
 
+		-- Iterate via getAllKeys(), not pairs(ResourcesData): the module now
+		-- exposes helper functions (get, getAllKeys, buildStartingTable...)
+		-- alongside the resource entries, so a raw pairs() walk hits a function
+		-- and dies on data.is_tradeable.
 		it("should have positive max_carry_amount for tradeable resources", function()
-			for name, data in ResourcesData do
-				if data.is_tradeable then
+			for _, key in ResourcesData.getAllKeys() do
+				local data = ResourcesData.get(key)
+				if data and data.is_tradeable then
 					expect(data.max_carry_amount > 0).to.equal(true)
 				end
+			end
+		end)
+
+		it("every registered resource is retrievable and well-formed", function()
+			local keys = ResourcesData.getAllKeys()
+			expect(#keys > 0).to.equal(true)
+			for _, key in keys do
+				local data = ResourcesData.get(key)
+				expect(data).to.be.ok()
+				expect(typeof(data.display_name)).to.equal("string")
+				expect(typeof(data.tier)).to.equal("string")
+			end
+		end)
+
+		-- Guards the bug this registry was built to fix: addResources only
+		-- credits keys already present, so a missing key silently discards the
+		-- resource. Every registered resource must be seeded.
+		it("buildStartingTable seeds every registered resource", function()
+			local stock = ResourcesData.buildStartingTable()
+			for _, key in ResourcesData.getAllKeys() do
+				expect(stock[key]).to.equal(0)
 			end
 		end)
 	end)

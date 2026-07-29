@@ -335,7 +335,8 @@ end
 function HUDStore.selectCategory(category: string)
 	if resetWallPieceFuncRef then
 		pcall(function()
-			(resetWallPieceFuncRef :: BindableFunction):Invoke()
+			local resetFn = resetWallPieceFuncRef :: BindableFunction
+			resetFn:Invoke()
 		end)
 	end
 	pollingBuildingId = nil
@@ -634,7 +635,12 @@ function HUDStore.undoLastDeletion()
 			if item.isWall then
 				if placePathEvent then
 					local yRotationRadians = math.rad(item.rotation and item.rotation.Y or 0)
-					(placePathEvent :: RemoteEvent):FireServer({
+					-- Bind the cast to a local rather than opening the next statement
+					-- with "(": following a line that ends in ")", Luau parses a
+					-- leading paren as a call on the previous expression and rejects
+					-- the whole file as ambiguous syntax.
+					local pathEvent = placePathEvent :: RemoteEvent
+					pathEvent:FireServer({
 						{ type = item.buildingType, position = item.position, rotation = yRotationRadians },
 					})
 				end
@@ -650,7 +656,8 @@ function HUDStore.undoLastDeletion()
 		local placePathEvent = remoteEvents and remoteEvents:FindFirstChild("PlaceWallPath")
 		if placePathEvent then
 			local yRotationRadians = math.rad(lastDeletion.rotation and lastDeletion.rotation.Y or 0)
-			(placePathEvent :: RemoteEvent):FireServer({
+			local pathEvent = placePathEvent :: RemoteEvent
+			pathEvent:FireServer({
 				{ type = lastDeletion.buildingType, position = lastDeletion.position, rotation = yRotationRadians },
 			})
 		else
