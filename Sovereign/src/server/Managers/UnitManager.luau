@@ -190,6 +190,11 @@ local function getUnitModel(unitType: string, unitInfo: any): Model?
 	return candidates[math.random(1, #candidates)]
 end
 
+-- Exposed so other systems resolve rigs the same way units do instead of
+-- writing a second copy of this scan (WorkerService swaps a worker's model
+-- between its Peasant rig and its trade rig using this same resolver).
+UnitManager.getUnitModel = getUnitModel
+
 -- Is a part already held to something by a joint (so it won't fall off)?
 local function isJointed(part: BasePart, model: Model): boolean
 	for _, d in model:GetDescendants() do
