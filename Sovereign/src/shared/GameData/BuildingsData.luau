@@ -1137,6 +1137,179 @@ BuildingsData["Celtic Cross"] = {
 } :: BuildingData
 
 -- ========================================
+-- PRODUCTION CHAINS
+-- ========================================
+-- The whole economy in one table. BuildingSpec reads `work` in preference to
+-- the legacy produces_resource/consumes_resource/production_* fields, so these
+-- entries override whatever the building declared above without those older
+-- fields having to be deleted building-by-building.
+--
+-- WHY THIS BLOCK EXISTS
+-- ---------------------
+-- Only ONE chain used to work end to end (Iron_Ore -> Iron_Bars -> Weapons).
+-- Everything else was either a dead end or actively broken:
+--
+--   * Windmill and Water Mill consumed FOOD to make Flour. Bakery and Brewery
+--     also consumed FOOD -- not Flour. So Flour was produced by two buildings,
+--     consumed by none, and the mills just burned food for nothing.
+--   * Tannery, Carpenter, Monastery and Scriptorium produced goods (Leather,
+--     Furniture, Manuscripts) that no building consumed and that could not
+--     even be sold, because they were absent from the resource registry.
+--
+-- The chains below are deliberately shaped so raw goods are nearly worthless
+-- and finished goods carry the margin -- that is what makes "spend workers to
+-- earn gold" an actual decision. See docs/EconomyRedesign.md section 3.
+--
+-- Contested inputs are the point: Hide feeds BOTH furniture and manuscripts,
+-- and Grain feeds BOTH bread and ale, so a player cannot max every chain at
+-- once off one farm.
+
+local CHAIN_WORK: { [string]: any } = {
+	-- ---- FOOD: fast and edible, or slow and worth three times as much ----
+	["Potato Farm"] = {
+		role = "Farmer",
+		slots = 3,
+		cycle = 4,
+		outputs = { Food = 2, Grain = 2 },
+	},
+	["Sheep Farm"] = {
+		role = "Shepherd",
+		slots = 2,
+		cycle = 5,
+		outputs = { Food = 1, Hide = 1 },
+	},
+	["Cow Farm"] = {
+		role = "Shepherd",
+		slots = 2,
+		cycle = 5,
+		outputs = { Food = 2, Hide = 1 },
+	},
+	["Fishermans Hut"] = {
+		role = "Fisherman",
+		slots = 2,
+		cycle = 5,
+		outputs = { Fish = 2 },
+	},
+
+	-- ---- GRAIN -> FLOUR -> BREAD (the staple chain) ----
+	Windmill = {
+		role = "Miller",
+		slots = 2,
+		cycle = 5,
+		inputs = { Grain = 2 },
+		outputs = { Flour = 2 },
+	},
+	["Water Mill"] = {
+		-- Needs water placement, so it earns a better ratio than the Windmill.
+		role = "Miller",
+		slots = 2,
+		cycle = 5,
+		inputs = { Grain = 3 },
+		outputs = { Flour = 4 },
+	},
+	Bakery = {
+		role = "Baker",
+		slots = 2,
+		cycle = 5,
+		inputs = { Flour = 2 },
+		outputs = { Bread = 3 },
+	},
+
+	-- ---- GRAIN -> ALE (popularity, and the tax buffer) ----
+	Brewery = {
+		role = "Brewer",
+		slots = 2,
+		cycle = 6,
+		inputs = { Grain = 2 },
+		outputs = { Ale = 2 },
+	},
+
+	-- ---- HIDE -> LEATHER -> FURNITURE ----
+	Tannery = {
+		role = "Tanner",
+		slots = 2,
+		cycle = 6,
+		inputs = { Hide = 2 },
+		outputs = { Leather = 1 },
+	},
+	Carpenter = {
+		role = "Carpenter",
+		slots = 2,
+		cycle = 6,
+		inputs = { Wood = 3, Leather = 1 },
+		outputs = { Furniture = 1 },
+	},
+
+	-- ---- HIDE -> VELLUM -> MANUSCRIPTS (the luxury chain) ----
+	-- Slowest and most worker-hungry in the game, and it competes with the
+	-- furniture chain for hide. Manuscripts are the single most valuable good.
+	Monastery = {
+		role = "Monk",
+		slots = 2,
+		cycle = 7,
+		inputs = { Hide = 2 },
+		outputs = { Vellum = 1 },
+	},
+	Scriptorium = {
+		role = "Scribe",
+		slots = 1,
+		cycle = 8,
+		inputs = { Vellum = 1 },
+		outputs = { Manuscripts = 1 },
+	},
+
+	-- ---- ORE -> BARS -> WEAPONS (the one chain that already worked) ----
+	-- Coal is now a real input rather than a resource with no purpose.
+	Smelter = {
+		role = "Smelter",
+		slots = 2,
+		cycle = 5,
+		inputs = { Iron_Ore = 2, Coal = 1 },
+		outputs = { Iron_Bars = 1 },
+	},
+	Weaponsmith = {
+		role = "Blacksmith",
+		slots = 2,
+		cycle = 8,
+		inputs = { Iron_Bars = 2 },
+		outputs = { Weapons = 1 },
+	},
+	["Siege Workshop"] = {
+		role = "Engineer",
+		slots = 1,
+		cycle = 12,
+		inputs = { Wood = 5, Iron_Bars = 2 },
+		outputs = { Siege_Equipment = 1 },
+	},
+
+	-- ---- GATHERERS: walk out to world ResourceNodes ----
+	Lumberjack = { role = "Woodcutter", slots = 3, cycle = 4, outputs = { Wood = 2 } },
+	["Stone Quarry"] = { role = "Stonemason", slots = 3, cycle = 5, outputs = { Stone = 2 } },
+	["Iron Mine"] = { role = "Miner", slots = 3, cycle = 5, outputs = { Iron_Ore = 1 } },
+	["Coal Mine"] = { role = "Miner", slots = 3, cycle = 5, outputs = { Coal = 1 } },
+}
+
+for buildingName, work in CHAIN_WORK do
+	local buildingData = BuildingsData[buildingName]
+	if buildingData then
+		buildingData.work = work
+
+		-- A building can only hold what its storage_capacity declares, so every
+		-- input it consumes and every output it makes needs headroom -- otherwise
+		-- addToStorage silently drops the goods the chain just produced.
+		buildingData.storage_capacity = buildingData.storage_capacity or {}
+		for resource in work.inputs or {} do
+			buildingData.storage_capacity[resource] = buildingData.storage_capacity[resource] or 60
+		end
+		for resource in work.outputs or {} do
+			buildingData.storage_capacity[resource] = buildingData.storage_capacity[resource] or 60
+		end
+	else
+		warn(("[BuildingsData] CHAIN_WORK references unknown building %q"):format(buildingName))
+	end
+end
+
+-- ========================================
 -- AUTO-POPULATE WORKER POINTS
 -- ========================================
 -- Automatically add worker_points to all production buildings that don't have them explicitly set

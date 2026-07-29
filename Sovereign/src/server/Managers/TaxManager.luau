@@ -64,10 +64,23 @@ function TaxManager.collectTaxes(player: Player)
 
     if playerData and taxInfo then
         local taxes = TaxSystem.calculateTaxes(player)
-        PlayerManager.addResources(player, { Gold = taxes })
-        taxInfo.lastCollected = tick()
 
-        TaxDebug:info(`Collected {taxes} gold from {player.Name}`)
+        if taxes < 0 then
+            -- "Generous Gifts": the crown pays out. Cap the payment at the gold
+            -- actually held so a treasury cannot be driven negative -- every
+            -- affordability check in the game assumes resources are >= 0.
+            local available = playerData.Resources.Gold or 0
+            local payout = math.min(available, -taxes)
+            if payout > 0 then
+                PlayerManager.deductResources(player, { Gold = payout })
+            end
+            TaxDebug:info(`Paid {payout} gold in gifts to {player.Name}'s subjects`)
+        else
+            PlayerManager.addResources(player, { Gold = taxes })
+            TaxDebug:info(`Collected {taxes} gold from {player.Name}`)
+        end
+
+        taxInfo.lastCollected = tick()
     end
 end
 

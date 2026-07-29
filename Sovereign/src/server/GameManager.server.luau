@@ -106,6 +106,7 @@ local MovementSystem = require(Systems.MovementSystem)
 local FlowFieldManager = require(Systems.FlowFieldManager)
 local VikingRaidSystem = require(Systems.VikingRaidSystem)
 local PopulationSystem = require(Systems.PopulationSystem)
+local RevoltSystem = require(Systems.RevoltSystem)
 local ConsumptionSystem = require(Systems.ConsumptionSystem)
 local MaintenanceSystem = require(Systems.MaintenanceSystem)
 local EventSystem = require(Systems.EventSystem)
@@ -123,6 +124,7 @@ local WeaponVisuals = require(script.Parent.Combat.WeaponVisuals)
 
 -- Initialize systems
 PopulationSystem.init()
+RevoltSystem.init()
 ConsumptionSystem.init()
 MaintenanceSystem.init()
 EventSystem.init()
@@ -1142,6 +1144,10 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				MaintenanceSystem.startLoop()
 				TaxManager.startLoop()
 				VictorySystem.startLoop()
+				-- Starts with taxes, not before them: revolt risk is driven by
+				-- tax pressure and food, so evaluating it while the player has
+				-- neither would just spam risk warnings during setup.
+				RevoltSystem.startLoop()
 			end)
 		end
 

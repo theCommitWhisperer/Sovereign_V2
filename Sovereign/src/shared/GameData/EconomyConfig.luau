@@ -57,13 +57,54 @@ EconomyConfig.Tax = {
 }
 
 -- Tax policy presets (names match ui/screens/Policies/Policies.luau)
+--
+-- Tax is how you SPEND popularity. Income scales with population, so the wide-
+-- and-loyal kingdom earns most from a punishing rate -- but only if it has
+-- bought enough popularity headroom (rations, ale, faith) to survive it. That
+-- trade is the core of the economy; see docs/EconomyRedesign.md section 3.1.
 EconomyConfig.DefaultTaxPolicy = "Normal Tax"
 EconomyConfig.TaxPolicies = {
+	-- Negative rate = you PAY your subjects. Buys popularity with gold, which
+	-- is how a rich industrial kingdom converts trade profit back into headroom.
+	["Generous Gifts"] = { rate = -0.05 } :: TaxPolicy,
 	["No Tax"] = { rate = 0.0 } :: TaxPolicy,
 	["Low Tax"] = { rate = 0.05 } :: TaxPolicy,
 	["Normal Tax"] = { rate = 0.1 } :: TaxPolicy,
 	["High Tax"] = { rate = 0.3 } :: TaxPolicy,
+	-- The greed option. Enormous income, but -50 popularity means only a
+	-- kingdom running double rations AND ale AND churches can hold it, and
+	-- one bad harvest tips it straight into revolt.
+	["Extortionate"] = { rate = 0.45 } :: TaxPolicy,
 } :: { [string]: TaxPolicy }
+
+-- ============================================================
+-- POPULARITY SOURCES
+--
+-- The budget the tax rate is spent against. Each source has a cap so no single
+-- one can carry an Extortionate rate alone -- you need several running at once,
+-- and every one of them costs food, buildings or workers.
+-- ============================================================
+EconomyConfig.Popularity = {
+	-- Ale served at taverns/inns. The strongest buyable popularity, and the
+	-- reason the Grain -> Ale chain competes with Grain -> Flour -> Bread.
+	aleMaxBonus = 20,
+	alePerServingBuilding = 5,
+
+	-- Faith from churches/chapels/monasteries. Cheapest per point (no goods
+	-- consumed) but capped low, so it is a floor-raiser, not a strategy.
+	faithMaxBonus = 15,
+	faithPerBuilding = 5,
+
+	-- Crowding: housing filled beyond comfort costs popularity.
+	crowdingThreshold = 0.9, -- population / housing capacity above this...
+	crowdingPenaltyPerTenth = -4, -- ...costs this per 10% over
+
+	-- Food variety: eating nothing but potatoes is miserable. Counts DISTINCT
+	-- edible resources in stock, which is what makes the fish/bread branches
+	-- worth building even once you have enough raw calories.
+	varietyBonusPerType = 4,
+	varietyMaxBonus = 12,
+}
 
 -- Popularity gate on tax income: unhappy subjects pay less (or nothing).
 -- Checked top-down; first entry whose minHappiness <= happiness wins.

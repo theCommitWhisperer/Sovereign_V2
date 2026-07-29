@@ -418,7 +418,10 @@ UnitsData.BatteringRam = makeUnit({
 	subtype = "Siege",
 	description = "Slow wooden ram. Crushes gates and walls; nearly useless against troops.",
 	tags = { "military", "siege" },
-	cost = { Wood = 100, Gold = 50 },
+	-- Siege engines cost Siege_Equipment from the Siege Workshop. Before this
+	-- they cost only Wood+Gold, which meant the Workshop produced a resource
+	-- that nothing in the game consumed -- the whole building was decorative.
+	cost = { Wood = 100, Gold = 50, Siege_Equipment = 1 },
 	training_time_seconds = 40,
 	population_cost = 3,
 	max_health = 400,
@@ -434,7 +437,7 @@ UnitsData.Catapult = makeUnit({
 	subtype = "Siege",
 	description = "Hurls stones over long range. Demolishes buildings from afar.",
 	tags = { "military", "siege" },
-	cost = { Wood = 150, Gold = 100 },
+	cost = { Wood = 150, Gold = 100, Siege_Equipment = 2 },
 	training_time_seconds = 50,
 	population_cost = 3,
 	max_health = 200,
@@ -452,7 +455,7 @@ UnitsData.Trebuchet = makeUnit({
 	description = "Counterweight engine of terrifying reach. Reduces castles to rubble, "
 		.. "but must all but stop to loose — nearly helpless up close.",
 	tags = { "military", "siege" },
-	cost = { Wood = 220, Gold = 160, Iron_Bars = 10 },
+	cost = { Wood = 220, Gold = 160, Iron_Bars = 10, Siege_Equipment = 3 },
 	training_time_seconds = 70,
 	population_cost = 4,
 	max_health = 220,

@@ -397,19 +397,18 @@ function PopulationManager.startLoop()
 		end
 	end)
 
-	-- Automatic population growth for both players and AI
+	-- AI population growth only.
+	--
+	-- Human growth deliberately lives in PopulationSystem, NOT here. Both used
+	-- to run: this loop attempted growth every 60s while PopulationSystem
+	-- attempted it every 10s, each with its own independent "last attempt"
+	-- bookkeeping. They raced on the same canGrowPopulation/housing check, so
+	-- the real growth rate was neither module's configured rate. PopulationSystem
+	-- owns human growth because it is the rate-limited one; this loop keeps the
+	-- AI path, which PopulationSystem does not cover.
 	task.spawn(function()
 		while true do
 			task.wait(60)
-
-			for _, player in ipairs(Players:GetPlayers()) do
-				if PopulationManager.canGrowPopulation(player) then
-					local growthRate = PopulationManager.getGrowthRate(player)
-					if growthRate > 0 then
-						PopulationManager.tryGrowPopulation(player)
-					end
-				end
-			end
 
 			for ownerId, popData in pairs(populationData) do
 				if popData.isAI then
