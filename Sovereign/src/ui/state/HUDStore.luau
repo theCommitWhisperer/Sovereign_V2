@@ -187,6 +187,10 @@ local state: State = defaultState()
 local listeners: { [(State) -> ()]: true } = {}
 local connections: { RBXScriptConnection } = {}
 local started = false
+-- Bumped by every init() and every destroy(). An init() that yields carries its
+-- own generation and bails out silently if this moves underneath it, so a
+-- suspended attempt can never clobber (or abandon) a newer one.
+local initGeneration = 0
 local gameEvent: RemoteEvent? = nil
 local getStatsEvent: RemoteEvent? = nil
 local deleteModeEventRef: BindableEvent? = nil
@@ -196,6 +200,21 @@ local selectionManagerRef: any = nil
 
 function HUDStore.get(): State
 	return state
+end
+
+--- Appends a line to the battle log. BattleLog.luau renders `messages` with
+--- `{ text, color }` entries and shows the last three when collapsed.
+local MAX_LOG_MESSAGES = 50
+
+function HUDStore.pushLogMessage(text: string, color: Color3?)
+	local next = table.clone(state.battleLogMessages)
+	table.insert(next, { text = text, color = color or Color3.fromRGB(255, 255, 255) })
+	-- Bounded: this is append-only for the whole match and the collapsed view
+	-- only ever reads the tail.
+	while #next > MAX_LOG_MESSAGES do
+		table.remove(next, 1)
+	end
+	HUDStore.setState({ battleLogMessages = next })
 end
 
 local function notify()
@@ -812,24 +831,58 @@ function HUDStore.init()
 		return
 	end
 	started = true
+	initGeneration += 1
+	local generation = initGeneration
+
+	-- True once a newer init() or a destroy() has superseded this call. Checked
+	-- after every yield, because WaitForChild below can suspend for up to 10s
+	-- and AdaptiveHUD can mount, unmount and remount inside that window.
+	local function superseded(): boolean
+		return not started or initGeneration ~= generation
+	end
+
+	-- Abandon this attempt WITHOUT leaving the store wedged.
+	--
+	-- This is the bug that made building placement silently impossible: init()
+	-- claimed `started = true`, then yielded on WaitForChild. If AdaptiveHUD
+	-- remounted during that yield, destroy() cleared gameEvent while the
+	-- original init() was still suspended; the resumed call then hit a bare
+	-- `if not started then return end` and gave up -- but `started` was left
+	-- true by the remount's own init(), which had itself early-returned as a
+	-- no-op. Net result: started = true, gameEvent = nil, forever. Every
+	-- startPlacement then warned "called before init()" and dropped, so no
+	-- building could ever be placed and nothing looked broken on screen.
+	local function abandon(reason: string?)
+		if superseded() then
+			return -- a newer attempt owns the store now; leave its state alone
+		end
+		if reason then
+			warn(`[HUDStore] {reason}`)
+		end
+		-- Release the flag so a later mount can retry, instead of wedging.
+		started = false
+	end
 
 	local player = Players.LocalPlayer
 
-	local remoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents", 10)
-	if not remoteEvents then
-		warn("[HUDStore] RemoteEvents folder not found after 10s; store will not receive updates")
+	-- Fast path: by the time the HUD mounts these already exist, so the common
+	-- case does not yield at all -- which is what closes the race window.
+	local remoteEvents = ReplicatedStorage:FindFirstChild("RemoteEvents")
+		or ReplicatedStorage:WaitForChild("RemoteEvents", 10)
+	if superseded() then
 		return
 	end
-	if not started then
-		return -- destroy() ran while we were yielding on WaitForChild
+	if not remoteEvents then
+		abandon("RemoteEvents folder not found after 10s; store will not receive updates")
+		return
 	end
 
-	local event = remoteEvents:WaitForChild("GameEvent", 10) :: RemoteEvent?
-	if not event then
-		warn("[HUDStore] GameEvent not found after 10s; economy/selection/combat state will not update")
+	local event = (remoteEvents:FindFirstChild("GameEvent") or remoteEvents:WaitForChild("GameEvent", 10)) :: RemoteEvent?
+	if superseded() then
 		return
 	end
-	if not started then
+	if not event then
+		abandon("GameEvent not found after 10s; economy/selection/combat state will not update")
 		return
 	end
 	gameEvent = event
@@ -848,7 +901,10 @@ function HUDStore.init()
 	else
 		warn("[HUDStore] GetStats not found after 10s; Stats modal will show stale/no data")
 	end
-	if not started then
+	-- GetStats is optional, but its WaitForChild above can yield for 10s, so a
+	-- remount can still have superseded us by here. Bail silently if so rather
+	-- than wiring the remaining listeners onto a store someone else now owns.
+	if superseded() then
 		return
 	end
 
@@ -1003,6 +1059,14 @@ function HUDStore.init()
 			HUDStore.setState({ resources = data.resources })
 		elseif action == "StartPlacement" and typeof(data) == "string" then
 			HUDStore.setState({ isPlacingBuilding = true, selectedBuilding = data })
+		elseif action == "Error" and typeof(data) == "table" and data.message then
+			-- The server has always fired these ("You must place your Keep before
+			-- other buildings!", "Not enough resources", ...) and NOTHING has ever
+			-- displayed them -- HUD.luau did not handle "Error" either. So a
+			-- rejected build silently did nothing, which reads as a broken button
+			-- rather than a rule. Route them into the battle log, which until now
+			-- rendered an array that no code ever appended to.
+			HUDStore.pushLogMessage(data.message, Color3.fromRGB(235, 120, 110))
 		elseif action == "TrainingQueueUpdate" and data.buildingId and data.queue then
 			HUDStore.setState({ trainingQueue = data.queue })
 		elseif action == "UpdateHappiness" and data.happiness then
@@ -1132,6 +1196,9 @@ end
 --- this is what makes the store safe across an AdaptiveHUD remount.
 function HUDStore.destroy()
 	started = false
+	-- Invalidate any init() still suspended on a WaitForChild, so it cannot
+	-- resume and wire listeners into a store that has just been torn down.
+	initGeneration += 1
 	gameEvent = nil
 	getStatsEvent = nil
 	deleteModeEventRef = nil
