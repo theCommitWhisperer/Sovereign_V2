@@ -51,7 +51,11 @@ local DesktopBuildingGrid = require(script.Parent.Parent.panels.DesktopBuildingG
 
 local MiniMap = require(script.Parent.Parent.screens.HUD.MiniMap)
 local FogOverlay = require(script.Parent.Parent.screens.HUD.FogOverlay)
-local UnitSelectionPanel = require(script.Parent.Parent.screens.HUD.UnitSelectionPanel)
+-- ArmyPanel replaces screens/HUD/UnitSelectionPanel: that one listed stance and
+-- formation names as bare buttons, which tells you nothing unless you already
+-- know what a Schiltron is. ArmyPanel shows each option's real numeric tradeoff
+-- read from CombatConfig/FormationsData, and the selection's composition.
+local ArmyPanel = require(script.Parent.Parent.panels.ArmyPanel)
 local TrainingPanel = require(script.Parent.Parent.screens.HUD.TrainingPanel)
 local WorkerAssignmentPanel = require(script.Parent.Parent.screens.HUD.WorkerAssignmentPanel)
 local HeroAbilitiesPanel = require(script.Parent.Parent.screens.HUD.HeroAbilitiesPanel)
@@ -290,7 +294,7 @@ local function DesktopShell(props: Props)
 			end,
 		})
 	elseif hasUnitsSelected then
-		contextualPanel = React.createElement(UnitSelectionPanel, {
+		contextualPanel = React.createElement(ArmyPanel, {
 			selectedUnits = selectedUnits,
 			selectedFormation = selectedFormation,
 			selectedStance = selectedStance,

@@ -80,7 +80,9 @@ local UtilityRow = require(script.Parent.Parent.panels.UtilityRow)
 
 local FogOverlay = require(script.Parent.Parent.screens.HUD.FogOverlay)
 local MiniMap = require(script.Parent.Parent.screens.HUD.MiniMap)
-local UnitSelectionPanel = require(script.Parent.Parent.screens.HUD.UnitSelectionPanel)
+-- ArmyPanel replaces screens/HUD/UnitSelectionPanel. `compact = true` gives it
+-- 44px rows instead of desktop's 36px.
+local ArmyPanel = require(script.Parent.Parent.panels.ArmyPanel)
 local TrainingPanel = require(script.Parent.Parent.screens.HUD.TrainingPanel)
 local HeroAbilitiesPanel = require(script.Parent.Parent.screens.HUD.HeroAbilitiesPanel)
 local UpgradePanel = require(script.Parent.Parent.screens.HUD.UpgradePanel)
@@ -316,7 +318,8 @@ local function MobileShell(props: Props)
 		}, {
 			Corner = React.createElement("UICorner", { CornerRadius = Theme.corner(Theme.Metrics.RadiusCard) }),
 			Stroke = React.createElement("UIStroke", Theme.strokeProps()),
-			Content = React.createElement(UnitSelectionPanel, {
+			Content = React.createElement(ArmyPanel, {
+				compact = true,
 				selectedUnits = selectedUnits,
 				selectedFormation = selectedFormation,
 				selectedStance = selectedStance,
