@@ -97,7 +97,7 @@ function AchievementNotification:render()
 			BorderColor3 = UIConfig.HUD.AccentGold,
 			Text = "🏆",
 			TextSize = 40,
-			Font = UIConfig.Font.Default,
+			FontFace = UIConfig.Font.Default,
 		}),
 
 		Content = React.createElement("Frame", {
@@ -111,7 +111,7 @@ function AchievementNotification:render()
 				Text = "🎉 ACHIEVEMENT UNLOCKED! 🎉",
 				TextColor3 = UIConfig.HUD.AccentGold,
 				TextSize = 16,
-				Font = UIConfig.Font.Title,
+				FontFace = UIConfig.Font.Title,
 				TextXAlignment = Enum.TextXAlignment.Left,
 			}),
 
@@ -122,7 +122,7 @@ function AchievementNotification:render()
 				Text = achievement.achievementName or achievement.name or "Achievement",
 				TextColor3 = Color3.fromRGB(255, 255, 255),
 				TextSize = 18,
-				Font = UIConfig.Font.Title,
+				FontFace = UIConfig.Font.Title,
 				TextXAlignment = Enum.TextXAlignment.Left,
 				TextStrokeTransparency = 0.5,
 			}),
@@ -134,7 +134,7 @@ function AchievementNotification:render()
 				Text = achievement.description or "",
 				TextColor3 = UIConfig.HUD.PanelTextColor,
 				TextSize = 12,
-				Font = UIConfig.Font.Default,
+				FontFace = UIConfig.Font.Default,
 				TextXAlignment = Enum.TextXAlignment.Left,
 				TextWrapped = true,
 			}),
@@ -146,7 +146,7 @@ function AchievementNotification:render()
 				Text = rewardText,
 				TextColor3 = UIConfig.HUD.AccentGold,
 				TextSize = 13,
-				Font = UIConfig.Font.Default,
+				FontFace = UIConfig.Font.Default,
 				TextXAlignment = Enum.TextXAlignment.Left,
 			}) or nil,
 		}),
@@ -160,7 +160,7 @@ function AchievementNotification:render()
 			Text = "✕",
 			TextColor3 = UIConfig.HUD.PanelTextColor,
 			TextSize = 16,
-			Font = UIConfig.Font.Default,
+			FontFace = UIConfig.Font.Default,
 			[React.Event.Activated] = function()
 				self:setState({ slideIn = false })
 				task.wait(0.5)

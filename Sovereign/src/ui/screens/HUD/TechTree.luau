@@ -94,7 +94,7 @@ function TechTree:render()
 			Text = category,
 			TextColor3 = UIConfig.HUD.PanelTextColor,
 			TextSize = 16,
-			Font = UIConfig.Font.Title,
+			FontFace = UIConfig.Font.Title,
 			AutoButtonColor = selectedCategory ~= category,
 			[React.Event.Activated] = function()
 				self:setState({ selectedCategory = category })
@@ -182,7 +182,7 @@ function TechTree:render()
 				Text = tech.name,
 				TextColor3 = Color3.fromRGB(255, 255, 255),
 				TextSize = 14,
-				Font = UIConfig.Font.Title,
+				FontFace = UIConfig.Font.Title,
 				TextXAlignment = Enum.TextXAlignment.Left,
 				TextWrapped = true,
 			}),
@@ -194,7 +194,7 @@ function TechTree:render()
 				Text = tech.description,
 				TextColor3 = Color3.fromRGB(230, 230, 230),
 				TextSize = 11,
-				Font = UIConfig.Font.Default,
+				FontFace = UIConfig.Font.Default,
 				TextXAlignment = Enum.TextXAlignment.Left,
 				TextYAlignment = Enum.TextYAlignment.Top,
 				TextWrapped = true,
@@ -207,7 +207,7 @@ function TechTree:render()
 				Text = string.format("⏱️ %ds", tech.researchTime),
 				TextColor3 = Color3.fromRGB(200, 200, 200),
 				TextSize = 11,
-				Font = UIConfig.Font.Default,
+				FontFace = UIConfig.Font.Default,
 				TextXAlignment = Enum.TextXAlignment.Left,
 			}),
 
@@ -222,7 +222,7 @@ function TechTree:render()
 					or "💰 Need Resources",
 				TextColor3 = Color3.fromRGB(255, 255, 255),
 				TextSize = 11,
-				Font = UIConfig.Font.Default,
+				FontFace = UIConfig.Font.Default,
 				TextXAlignment = Enum.TextXAlignment.Left,
 			}),
 
@@ -237,7 +237,7 @@ function TechTree:render()
 					Text = "Research",
 					TextColor3 = Color3.fromRGB(255, 255, 255),
 					TextSize = 12,
-					Font = UIConfig.Font.Title,
+					FontFace = UIConfig.Font.Title,
 					AutoButtonColor = canAfford,
 					[React.Event.Activated] = function()
 						if canAfford then
@@ -293,7 +293,7 @@ function TechTree:render()
 			Text = "Research technologies to unlock powerful bonuses • Gray = Locked • Red = Need Resources • Green = Available",
 			TextColor3 = UIConfig.HUD.PanelTextColor,
 			TextSize = 12,
-			Font = UIConfig.Font.Default,
+			FontFace = UIConfig.Font.Default,
 			TextXAlignment = Enum.TextXAlignment.Center,
 		}),
 	})

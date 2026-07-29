@@ -66,7 +66,7 @@ function UpgradePanel:render()
 				TextColor3 = hasEnough and UIConfig.HUD.BuildingButtonAffordable
 					or UIConfig.HUD.BuildingButtonUnaffordable,
 				TextSize = 14,
-				Font = UIConfig.Font.Default,
+				FontFace = UIConfig.Font.Default,
 				TextXAlignment = Enum.TextXAlignment.Left,
 			})
 		end
@@ -85,7 +85,7 @@ function UpgradePanel:render()
 				Text = string.format("📈 Production: +%d%%", (nextUpgrade.productionBonus - 1) * 100),
 				TextColor3 = UIConfig.HUD.AccentGold,
 				TextSize = 14,
-				Font = UIConfig.Font.Default,
+				FontFace = UIConfig.Font.Default,
 				TextXAlignment = Enum.TextXAlignment.Left,
 			})
 		end
@@ -98,7 +98,7 @@ function UpgradePanel:render()
 				Text = string.format("📦 Storage: +%d%%", (nextUpgrade.storageBonus - 1) * 100),
 				TextColor3 = UIConfig.HUD.AccentGold,
 				TextSize = 14,
-				Font = UIConfig.Font.Default,
+				FontFace = UIConfig.Font.Default,
 				TextXAlignment = Enum.TextXAlignment.Left,
 			})
 		end
@@ -111,7 +111,7 @@ function UpgradePanel:render()
 				Text = string.format("🛡️ Health: +%d%%", (nextUpgrade.healthBonus - 1) * 100),
 				TextColor3 = UIConfig.HUD.AccentGold,
 				TextSize = 14,
-				Font = UIConfig.Font.Default,
+				FontFace = UIConfig.Font.Default,
 				TextXAlignment = Enum.TextXAlignment.Left,
 			})
 		end
@@ -129,7 +129,7 @@ function UpgradePanel:render()
 			Text = "🏰 Building Upgrades",
 			TextColor3 = UIConfig.HUD.PanelHeaderColor,
 			TextSize = 20,
-			Font = UIConfig.Font.Title,
+			FontFace = UIConfig.Font.Title,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
 
@@ -140,7 +140,7 @@ function UpgradePanel:render()
 			Text = string.format("Current Level: %d", currentLevel),
 			TextColor3 = UIConfig.HUD.PanelTextColor,
 			TextSize = 16,
-			Font = UIConfig.Font.Default,
+			FontFace = UIConfig.Font.Default,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
 
@@ -156,7 +156,7 @@ function UpgradePanel:render()
 				Text = string.format("⬆️ Upgrade to Level %d", nextUpgrade.level),
 				TextColor3 = UIConfig.HUD.PanelHeaderColor,
 				TextSize = 18,
-				Font = UIConfig.Font.Title,
+				FontFace = UIConfig.Font.Title,
 				TextXAlignment = Enum.TextXAlignment.Left,
 			}),
 
@@ -167,7 +167,7 @@ function UpgradePanel:render()
 				Text = nextUpgrade.description,
 				TextColor3 = UIConfig.HUD.PanelTextColor,
 				TextSize = 14,
-				Font = UIConfig.Font.Default,
+				FontFace = UIConfig.Font.Default,
 				TextXAlignment = Enum.TextXAlignment.Left,
 				TextWrapped = true,
 			}),
@@ -179,7 +179,7 @@ function UpgradePanel:render()
 				Text = "Bonuses:",
 				TextColor3 = UIConfig.HUD.PanelHeaderColor,
 				TextSize = 16,
-				Font = UIConfig.Font.Title,
+				FontFace = UIConfig.Font.Title,
 				TextXAlignment = Enum.TextXAlignment.Left,
 			}),
 
@@ -196,7 +196,7 @@ function UpgradePanel:render()
 				Text = "Cost:",
 				TextColor3 = UIConfig.HUD.PanelHeaderColor,
 				TextSize = 16,
-				Font = UIConfig.Font.Title,
+				FontFace = UIConfig.Font.Title,
 				TextXAlignment = Enum.TextXAlignment.Left,
 			}),
 
@@ -213,7 +213,7 @@ function UpgradePanel:render()
 				Text = "✅ Max Level Reached!\n\nThis building is fully upgraded.",
 				TextColor3 = UIConfig.HUD.AccentGold,
 				TextSize = 16,
-				Font = UIConfig.Font.Title,
+				FontFace = UIConfig.Font.Title,
 				TextXAlignment = Enum.TextXAlignment.Center,
 				TextYAlignment = Enum.TextYAlignment.Top,
 			}),

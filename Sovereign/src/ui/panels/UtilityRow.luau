@@ -37,7 +37,7 @@ local function UtilityRow(props: Props)
 			BackgroundTransparency = item.active and Theme.Transparency.CardActive or Theme.Transparency.Panel,
 			AutoButtonColor = false,
 			Text = item.icon,
-			Font = Theme.Font.Body,
+			FontFace = Theme.FontFace.Body,
 			TextSize = Theme.TextSize.Heading,
 			TextColor3 = item.active and Theme.Color.Accent or Theme.Color.TextPrimary,
 			[React.Event.Activated] = item.onClick,

@@ -91,11 +91,23 @@ Theme.Transparency = {
 
 -- ============================================================
 -- TYPE
+--
+-- NAMED FontFace, NOT Font, DELIBERATELY.
+-- TextLabel has two separate properties: `Font` takes an Enum.Font, and
+-- `FontFace` takes a Font object. Font.new(...) produces the latter, so
+-- assigning it to `Font` throws "EnumItem, number, or string expected, got
+-- Font" at render time. That happened in 37 places here, and 37 more in the
+-- legacy screens which had the same confusion against UIConfig -- those errors
+-- were already being thrown before this rebuild, they were just lost in the
+-- noise. Naming the table FontFace makes the only correct assignment
+-- (`FontFace = Theme.FontFace.Body`) read naturally and the broken one read
+-- obviously wrong.
+--
 -- Two weights only. Fondamento (the game's display face) is kept for headings
 -- so the HUD still reads as Sovereign, but body/data uses a plain face because
 -- Fondamento is genuinely hard to read at 11-12px on a phone.
 -- ============================================================
-Theme.Font = {
+Theme.FontFace = {
 	Display = Font.new("rbxasset://fonts/families/Fondamento.json"),
 	Body = Font.new("rbxasset://fonts/families/SourceSansPro.json"),
 	BodyBold = Font.new("rbxasset://fonts/families/SourceSansPro.json", Enum.FontWeight.SemiBold),

@@ -149,7 +149,7 @@ function HeroAbilitiesPanel:render()
 				Text = ability.name,
 				TextColor3 = UIConfig.HUD.PanelTextColor,
 				TextSize = 14,
-				Font = UIConfig.Font.Medieval,
+				FontFace = UIConfig.Font.Medieval,
 				TextWrapped = true,
 				TextYAlignment = Enum.TextYAlignment.Top,
 			}),
@@ -169,7 +169,7 @@ function HeroAbilitiesPanel:render()
 					Text = string.format("%.1fs", cooldown),
 					TextColor3 = Color3.fromRGB(255, 255, 255),
 					TextSize = 20,
-					Font = UIConfig.Font.Default,
+					FontFace = UIConfig.Font.Default,
 					TextStrokeTransparency = 0.5,
 					ZIndex = 3,
 				}),
@@ -184,7 +184,7 @@ function HeroAbilitiesPanel:render()
 				TextColor3 = glory >= ability.glory_cost and Color3.fromRGB(255, 215, 0)
 					or Color3.fromRGB(200, 80, 80),
 				TextSize = 12,
-				Font = UIConfig.Font.Default,
+				FontFace = UIConfig.Font.Default,
 				TextXAlignment = Enum.TextXAlignment.Center,
 				ZIndex = 3,
 			}) or nil,
@@ -199,7 +199,7 @@ function HeroAbilitiesPanel:render()
 				Text = tostring(index),
 				TextColor3 = Color3.fromRGB(255, 255, 255),
 				TextSize = 14,
-				Font = UIConfig.Font.Default,
+				FontFace = UIConfig.Font.Default,
 			}),
 
 			UIStroke = React.createElement("UIStroke", {
@@ -221,7 +221,7 @@ function HeroAbilitiesPanel:render()
 			Text = "⚔️ Hero Abilities",
 			TextColor3 = UIConfig.HUD.PanelHeaderColor,
 			TextSize = 20,
-			Font = UIConfig.Font.Title,
+			FontFace = UIConfig.Font.Title,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
 
@@ -232,7 +232,7 @@ function HeroAbilitiesPanel:render()
 			Text = string.format("🏆 Glory: %d", glory),
 			TextColor3 = Color3.fromRGB(255, 215, 0),
 			TextSize = 18,
-			Font = UIConfig.Font.Title,
+			FontFace = UIConfig.Font.Title,
 			TextXAlignment = Enum.TextXAlignment.Right,
 		}),
 
@@ -249,7 +249,7 @@ function HeroAbilitiesPanel:render()
 			Text = "Click abilities to activate • Numbers 1-5 for hotkeys",
 			TextColor3 = UIConfig.HUD.PanelTextColor,
 			TextSize = 12,
-			Font = UIConfig.Font.Default,
+			FontFace = UIConfig.Font.Default,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
 	})
