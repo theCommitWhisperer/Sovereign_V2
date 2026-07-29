@@ -270,11 +270,23 @@ local function useHUDState<T>(selector: (State) -> T): T
 	end)
 
 	React.useEffect(function()
+		-- Always store through a thunk. React treats ANY function handed to a
+		-- setter as an updater and calls it, so the day a selector returns a
+		-- function (a callback held in the store, say) the value would be
+		-- invoked instead of stored -- surfacing as React's opaque "Should have
+		-- a queue" error rather than anything pointing at this line. Wrapping
+		-- costs nothing and makes the hook safe for any T.
+		local function store(newValue: T)
+			setValue(function()
+				return newValue
+			end)
+		end
+
 		-- The store may have changed between the initial useState() call above
 		-- and this effect committing, so re-derive once before subscribing.
-		setValue(selector(state))
+		store(selector(state))
 		return HUDStore.subscribe(function(newState)
-			setValue(selector(newState))
+			store(selector(newState))
 		end)
 	end, {})
 

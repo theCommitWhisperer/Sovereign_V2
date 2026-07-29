@@ -50,7 +50,21 @@ local function pickShell()
 end
 
 local function AdaptiveHUD(props: Props)
-	local Shell, setShell = React.useState(pickShell)
+	-- Both shells are plain function components, and React cannot tell "a
+	-- function I should STORE" from "a function I should CALL": anything
+	-- function-shaped passed to useState is treated as a lazy initializer, and
+	-- anything function-shaped passed to a setter is treated as an updater.
+	--
+	-- So `setShell(pickShell())` handed React the DesktopShell function itself,
+	-- which React then invoked as an updater -- executing the component body
+	-- outside any render, with no fiber for its hooks to attach to. That is the
+	-- "Should have a queue. This is likely a bug in React." error.
+	--
+	-- Wrapping in a thunk makes the intent unambiguous: the thunk is called, and
+	-- the component it returns is what gets stored.
+	local Shell, setShell = React.useState(function()
+		return pickShell()
+	end)
 
 	React.useEffect(function()
 		HUDStore.init()
@@ -67,12 +81,18 @@ local function AdaptiveHUD(props: Props)
 	end, {})
 
 	React.useEffect(function()
+		-- Always via a thunk -- see the useState comment above. Passing the
+		-- component directly makes React run it as a state updater.
+		local function applyShell()
+			setShell(function()
+				return pickShell()
+			end)
+		end
+
 		-- Platform may have changed between the initial useState() call above
 		-- and this effect committing (gamepad plugged in during load, etc.).
-		setShell(pickShell())
-		return Platform.onChanged(function()
-			setShell(pickShell())
-		end)
+		applyShell()
+		return Platform.onChanged(applyShell)
 	end, {})
 
 	React.useEffect(function()
