@@ -1,14 +1,30 @@
+--!strict
+-- Lobby: multiplayer staging screen. Presentation + clarity rebuild onto
+-- Theme -- the remote wiring (LobbyEvent actions, the class-component
+-- lifecycle) is unchanged from before this pass; only what gets drawn and how
+-- the layout responds to screen size changed. See LobbyManager.luau (server,
+-- read-only from here) for what state actually exists.
+--
+-- LAYOUT STRATEGY: Header and Footer are fixed-height and pinned to their
+-- edges; MainArea fills the fixed remainder between them (Position/Size
+-- computed from constants, the same explicit-offset technique the old file
+-- used, and the one ArmyPanel's own ScrollingFrame sizing uses -- Roblox's
+-- UIListLayout has no "fill remaining space" primitive). The countdown banner
+-- is deliberately NOT a separate fixed slot in that math: it lives as the
+-- first item inside whichever scrolling column it's part of (compact: the
+-- single main scroll; desktop: the roster/settings column), so its variable
+-- height never has to be predicted.
 local React = require(game.ReplicatedStorage.Packages.react)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
-local UIConfig = require(script.Parent.Parent.Parent.UIConfig)
+local Theme = require(script.Parent.Parent.Parent.Theme)
+local Platform = require(script.Parent.Parent.Parent.Platform)
 local LobbySettings = require(script.Parent.Parent.Parent.LobbySettings)
-local Button = require(script.Parent.Parent.Parent.components.Button)
-local Toggle = require(script.Parent.Parent.Parent.components.Toggle)
+local LobbySettingsPanel = require(script.Parent.Parent.Parent.panels.LobbySettingsPanel)
+local LobbyCountdownBanner = require(script.Parent.Parent.Parent.panels.LobbyCountdownBanner)
 local PlayerList = require(script.Parent.PlayerList)
 local MapPreview = require(script.Parent.MapPreview)
-local Row = require(script.Parent.Parent.Parent.components.Row)
 local MapData = require(ReplicatedStorage.Shared.GameData.MapData)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local LobbyDebug = DebugManager.createChannel("Lobby", false)
@@ -16,26 +32,49 @@ local LobbyDebug = DebugManager.createChannel("Lobby", false)
 local Lobby = React.Component:extend("Lobby")
 
 local localPlayer = Players.LocalPlayer
-local FACTIONS = { "Kingdom", "Empire", "Tribes", "IronLegion" }
-local MEDIEVAL_BUTTON_IMAGE = "rbxassetid://93664952098994"
 
--- Helper function to generate the initial state from the settings config
+local SETTINGS_GROUPS = {
+	{ title = "Map Settings", settings = LobbySettings.MapSettings },
+	{ title = "Starting Resources", settings = LobbySettings.StartingResources },
+	{ title = "Gameplay Modifiers", settings = LobbySettings.GameplayModifiers },
+	{ title = "Pacing & Economy", settings = LobbySettings.PacingAndEconomy },
+}
+
+-- LobbyManager keeps this same rule server-side (getLobbyMaxPlayers) but never
+-- broadcasts the result -- only Settings.selectedMap goes over the wire, so
+-- this mirrors the server's own logic from that. See the "gaps" note in the
+-- final report: LobbyManager should really send maxPlayers directly so this
+-- can't drift from the server's copy.
+local function computeMaxPlayers(mapKey: string?): number
+	local mapConfig = mapKey and MapData.getMap(mapKey)
+	if mapConfig then
+		if mapConfig.KeepSpawnZones and #mapConfig.KeepSpawnZones > 0 then
+			return #mapConfig.KeepSpawnZones
+		end
+		return mapConfig.MaxPlayers or 4
+	end
+	return 4
+end
+
 local function getInitialState()
-	local state = {
+	local state: any = {
 		players = {},
 		mapKeys = MapData.getMapList(),
 		selectedMap = MapData.DefaultMap,
-		userMaps = {},          -- { {MapId, Name, UpdatedAt} } — player's editor-saved maps
-		userMapsLoaded = false, -- whether we've fetched from server yet
-		spawnSelections = {},  -- { [spawnNumber] = { userId, name } }
+		spawnSelections = {}, -- { [spawnNumber] = { userId, name } }
 		mySpawn = nil,
 		myFaction = nil,
 		isReady = false,
 		countdownActive = false,
 		countdownTimeRemaining = 0,
+		compact = Platform.isCompact(),
+		-- What the LOCAL player last voted per setting, tracked client-side --
+		-- LobbyManager never broadcasts per-player votes (see
+		-- LobbySettingsPanel's header comment), only the winning value.
+		myVotes = { selectedMap = MapData.DefaultMap },
 	}
 
-	for groupName, settings in pairs(LobbySettings) do
+	for _, settings in pairs(LobbySettings) do
 		for _, setting in ipairs(settings) do
 			state[setting.id] = setting.defaultValue
 		end
@@ -47,28 +86,21 @@ end
 function Lobby:init()
 	LobbyDebug:info("Lobby:init() - Initializing lobby component")
 	self.state = getInitialState()
-	LobbyDebug:info("Initial lobby state created", { mapCount = #self.state.mapKeys })
 
-	-- Track if game is starting to prevent double-clicks
 	self.isStartingGame = false
-
-	-- Countdown thread reference
 	self.countdownThread = nil
 
-	-- Setup lobby event listener
 	LobbyDebug:info("Waiting for RemoteEvents")
 	local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
 	local LobbyEvent = RemoteEvents:WaitForChild("LobbyEvent")
 	local GameEvent = RemoteEvents:WaitForChild("GameEvent")
 	LobbyDebug:info("RemoteEvents found and connected")
 
-	-- Listen for lobby state updates from server
 	self.lobbyConnection = LobbyEvent.OnClientEvent:Connect(function(action, data)
 		LobbyDebug:info("Received LobbyEvent from server", { action = action })
 		if action == "LobbyStateUpdate" then
-			-- Convert server players to UI format
 			local playersArray = {}
-			for userId, playerData in pairs(data.Players) do
+			for _, playerData in pairs(data.Players) do
 				table.insert(playersArray, {
 					userId = playerData.UserId,
 					name = playerData.Name,
@@ -79,7 +111,6 @@ function Lobby:init()
 				})
 			end
 
-			-- Update settings from server
 			local newState: any = {
 				players = playersArray,
 				countdownActive = data.CountdownActive,
@@ -87,29 +118,22 @@ function Lobby:init()
 			}
 			LobbyDebug:info("Players updated", { playerCount = #playersArray })
 
-			-- Sync settings from server
 			for key, value in pairs(data.Settings) do
 				newState[key] = value
 			end
 
-			-- Preserve client-only state not broadcast by server
 			newState.mapKeys = self.state.mapKeys
-			newState.userMaps = self.state.userMaps
-			newState.userMapsLoaded = self.state.userMapsLoaded
 
-			-- Sync spawn selections from server
 			if data.SpawnSelections then
 				newState.spawnSelections = data.SpawnSelections
 			end
 
-			-- Find my faction, ready status, and spawn
 			local myPlayerData = data.Players[localPlayer.UserId]
 			if myPlayerData then
 				newState.myFaction = myPlayerData.SelectedFaction
 				newState.isReady = myPlayerData.IsReady
 			end
 
-			-- Find my spawn
 			if data.SpawnSelections then
 				for spawnNum, selection in pairs(data.SpawnSelections) do
 					if selection.userId == localPlayer.UserId then
@@ -125,7 +149,6 @@ function Lobby:init()
 			self:setState({ countdownActive = true, countdownTimeRemaining = data })
 			LobbyDebug:info("Countdown started:", data, "seconds")
 
-			-- Start client-side countdown
 			if self.countdownThread then
 				task.cancel(self.countdownThread)
 			end
@@ -134,7 +157,7 @@ function Lobby:init()
 				local timeLeft = data
 				while timeLeft > 0 do
 					task.wait(1)
-					timeLeft = timeLeft - 1
+					timeLeft -= 1
 					if self.state.countdownActive then
 						self:setState({ countdownTimeRemaining = timeLeft })
 					else
@@ -146,25 +169,15 @@ function Lobby:init()
 			self:setState({ countdownActive = false, countdownTimeRemaining = 0 })
 			LobbyDebug:info("Countdown cancelled")
 
-			-- Cancel countdown thread
 			if self.countdownThread then
 				task.cancel(self.countdownThread)
 				self.countdownThread = nil
 			end
-		elseif action == "UserMapsList" then
-			-- Server returned the player's editor-saved maps
-			self:setState({ userMaps = data or {}, userMapsLoaded = true })
 		elseif action == "FactionTaken" then
-			-- Show error that faction is taken
 			warn("Faction already taken:", data)
 		elseif action == "LobbyGameStart" then
-			-- Game is starting from multiplayer lobby!
 			LobbyDebug:info("Game starting with settings:", data)
-
-			-- Fire StartGame to GameManager with the settings from lobby
 			GameEvent:FireServer("StartGame", data)
-
-			-- Navigate to HUD
 			local navigate = self.props.navigate
 			if navigate then
 				navigate("hud")
@@ -172,84 +185,89 @@ function Lobby:init()
 		end
 	end)
 
-	-- Listen for game started confirmation from GameManager
 	self.gameConnection = GameEvent.OnClientEvent:Connect(function(action, data)
 		if action == "GameStarted" then
 			LobbyDebug:info("Game started successfully with faction:", data.faction)
 		end
 	end)
 
-	-- Join the lobby when component mounts
 	LobbyDebug:info("Sending JoinLobby request to server")
 	LobbyEvent:FireServer("JoinLobby")
 
-	-- Pre-select the default map so the server is in sync from the start
+	-- Pre-select the default map so the server is in sync from the start.
 	LobbyEvent:FireServer("VoteSetting", "selectedMap", MapData.DefaultMap)
 
 	self.addAI = function()
-		LobbyDebug:info("Add AI button clicked")
 		LobbyEvent:FireServer("AddAI")
 	end
 
 	self.removePlayer = function(playerInfo)
-		LobbyDebug:info("Remove player:", playerInfo.userId)
 		LobbyEvent:FireServer("RemovePlayer", playerInfo.userId)
 	end
 
 	self.selectMap = function(mapName)
-		LobbyDebug:info("Map selected:", mapName)
 		LobbyEvent:FireServer("VoteSetting", "selectedMap", mapName)
-	end
-
-	self.selectCustomMap = function(mapId)
-		LobbyDebug:info("Custom map selected:", mapId)
-		LobbyEvent:FireServer("SelectCustomMap", mapId)
+		self:recordVote("selectedMap", mapName)
 	end
 
 	self.onSettingChanged = function(settingId, newValue)
-		LobbyDebug:info("Setting changed:", settingId, newValue)
 		LobbyEvent:FireServer("VoteSetting", settingId, newValue)
+		self:recordVote(settingId, newValue)
 	end
 
 	self.selectSpawn = function(spawnNumber)
-		LobbyDebug:info("Spawn selected:", spawnNumber)
 		LobbyEvent:FireServer("SelectSpawn", spawnNumber)
 	end
 
 	self.selectColor = function(color)
-		LobbyDebug:info("Color selected:", color)
 		LobbyEvent:FireServer("SelectColor", color)
 	end
 
 	self.selectFaction = function(faction, targetUserId)
-		-- If targetUserId is not provided, assume it's for the local player
 		local userId = targetUserId or localPlayer.UserId
-		LobbyDebug:info("Faction selected", { faction = faction, userId = userId })
 		LobbyEvent:FireServer("SelectFaction", faction, userId)
 	end
 
 	self.toggleReady = function()
-		LobbyDebug:info("Toggle ready clicked")
 		LobbyEvent:FireServer("ToggleReady")
 	end
 end
 
+--- Records what the local player actually clicked so LobbySettingsPanel can
+--- show "your vote was outvoted" -- see its header comment for why this can't
+--- come from the server today.
+function Lobby:recordVote(settingId: string, value: any)
+	local myVotes = table.clone(self.state.myVotes)
+	myVotes[settingId] = value
+	self:setState({ myVotes = myVotes })
+end
+
+function Lobby:didMount()
+	self.platformUnsubscribe = Platform.onChanged(function()
+		local compact = Platform.isCompact()
+		if compact ~= self.state.compact then
+			self:setState({ compact = compact })
+		end
+	end)
+end
+
 function Lobby:willUnmount()
-	-- Clean up connections
 	if self.lobbyConnection then
 		self.lobbyConnection:Disconnect()
 	end
 	if self.gameConnection then
 		self.gameConnection:Disconnect()
 	end
+	if self.platformUnsubscribe then
+		self.platformUnsubscribe()
+		self.platformUnsubscribe = nil
+	end
 
-	-- Cancel countdown thread
 	if self.countdownThread then
 		task.cancel(self.countdownThread)
 		self.countdownThread = nil
 	end
 
-	-- Leave lobby
 	local RemoteEvents = ReplicatedStorage:FindFirstChild("RemoteEvents")
 	if RemoteEvents then
 		local LobbyEvent = RemoteEvents:FindFirstChild("LobbyEvent")
@@ -259,533 +277,352 @@ function Lobby:willUnmount()
 	end
 end
 
--- Helper function to render a list of settings from the config
-function Lobby:renderSettingsGroup(settings)
-	local elements = {}
-	for i, settingInfo in ipairs(settings) do
-		table.insert(
-			elements,
-			React.createElement(Row, {
-				key = settingInfo.id,
-				LayoutOrder = i,
-				Label = settingInfo.label,
-				TextColor3 = UIConfig.LobbyPage.OptionsTextColor,
-				TextSize = UIConfig.LobbyPage.OptionsTextSize,
-			}, {
-				Control = React.createElement(Toggle, {
-					value = self.state[settingInfo.id],
-					options = settingInfo.type == "cycle" and settingInfo.options or nil,
-					onValueChanged = function(newValue)
-						self.onSettingChanged(settingInfo.id, newValue)
-					end,
-				}),
-			})
-		)
-	end
-	return elements
+--- One entry in the map picker. `horizontal` is the compact-mode strip
+--- (AutomaticSize width, fixed height); the desktop list uses full-width rows.
+function Lobby:renderMapChip(mapKey: string, order: number, horizontal: boolean)
+	local mapConfig = MapData.getMap(mapKey)
+	local displayName = mapConfig and mapConfig.Name or mapKey
+	local isSelected = self.state.selectedMap == mapKey
+
+	return React.createElement("TextButton", {
+		key = mapKey,
+		LayoutOrder = order,
+		Size = if horizontal
+			then UDim2.new(0, 0, 1, 0)
+			else UDim2.new(1, 0, 0, Theme.Metrics.DesktopTarget),
+		AutomaticSize = if horizontal then Enum.AutomaticSize.X else Enum.AutomaticSize.None,
+		BackgroundColor3 = if isSelected then Theme.Color.Accent else Theme.Color.SurfaceRaised,
+		BackgroundTransparency = if isSelected then Theme.Transparency.CardActive else Theme.Transparency.Card,
+		AutoButtonColor = false,
+		Text = "",
+		[React.Event.Activated] = function()
+			self.selectMap(mapKey)
+		end,
+	}, {
+		Corner = React.createElement("UICorner", { CornerRadius = Theme.corner(Theme.Metrics.RadiusSmall) }),
+		Stroke = React.createElement("UIStroke", {
+			Color = if isSelected then Theme.Color.Accent else Theme.Color.Border,
+			Transparency = if isSelected then 0 else Theme.Transparency.Border,
+			Thickness = 1,
+		}),
+		Padding = React.createElement("UIPadding", {
+			PaddingLeft = UDim.new(0, Theme.Metrics.Pad),
+			PaddingRight = UDim.new(0, Theme.Metrics.Pad),
+		}),
+		Label = React.createElement("TextLabel", {
+			Size = if horizontal then UDim2.new(0, 0, 1, 0) else UDim2.new(1, 0, 1, 0),
+			AutomaticSize = if horizontal then Enum.AutomaticSize.X else Enum.AutomaticSize.None,
+			BackgroundTransparency = 1,
+			Text = displayName,
+			FontFace = if isSelected then Theme.FontFace.BodyBold else Theme.FontFace.Body,
+			TextSize = Theme.TextSize.Body,
+			TextColor3 = if isSelected then Theme.Color.Accent else Theme.Color.TextSecondary,
+			TextXAlignment = Enum.TextXAlignment.Left,
+		}),
+	})
 end
 
 function Lobby:render()
 	local navigate = self.props.navigate
-	local lobbyConfig = UIConfig.LobbyPage
-	local paddingConfig = lobbyConfig.Padding
+	local state = self.state
+	local compact = state.compact
+	local maxPlayers = computeMaxPlayers(state.selectedMap)
+	local mapKeys = state.mapKeys or MapData.getMapList()
 
-	local mapListChildren = {
-		Layout = React.createElement("UIListLayout", {
-			FillDirection = Enum.FillDirection.Vertical,
-			HorizontalAlignment = Enum.HorizontalAlignment.Center,
-			Padding = UDim.new(0, 3),
-		}),
-	}
-	local mapKeys = self.state.mapKeys or MapData.getMapList()
-	for _, mapKey in ipairs(mapKeys) do
-		local mapConfig = MapData.getMap(mapKey)
-		local displayName = mapConfig and mapConfig.Name or mapKey
-		local isSelected = self.state.selectedMap == mapKey
+	-- Fixed row constants for the pinned Header/Footer; see the module comment
+	-- for why MainArea's fill-remaining math only ever depends on these two.
+	local headerHeight = 32
+	local footerHeight = Platform.tokens.hitTarget + Theme.Metrics.Pad * 2
+	local gap = Theme.Metrics.Gap
+	-- No Theme token exists for "map preview panel height" (Theme.luau is
+	-- scoped to the in-match HUD); Platform.tokens.panelWidth is the closest
+	-- real token -- it's sized for exactly this kind of side panel -- so reuse
+	-- it here to get a near-square preview instead of inventing a raw literal.
+	local mapPreviewHeight = Platform.tokens.panelWidth
 
-		mapListChildren[mapKey] = React.createElement("TextButton", {
-			key = mapKey,
-			Size = UDim2.new(0.95, 0, 0, 32),
-			BackgroundColor3 = isSelected and Color3.fromRGB(140, 100, 50) or Color3.fromRGB(90, 65, 35),
-			BackgroundTransparency = 0,
+	local mapPreview = React.createElement(MapPreview, {
+		mapKey = state.selectedMap,
+		mapConfig = MapData.getMap(state.selectedMap),
+		spawnSelections = state.spawnSelections,
+		mySpawn = state.mySpawn,
+		onSpawnSelected = self.selectSpawn,
+		players = state.players,
+		localPlayerId = localPlayer.UserId,
+		Size = UDim2.new(1, 0, 0, mapPreviewHeight),
+	})
+
+	local countdownBanner = React.createElement(LobbyCountdownBanner, {
+		LayoutOrder = 1,
+		active = state.countdownActive,
+		timeRemaining = state.countdownTimeRemaining,
+		compact = compact,
+		onCancel = self.toggleReady,
+	})
+
+	local playerList = React.createElement(PlayerList, {
+		players = state.players,
+		maxPlayers = maxPlayers,
+		localPlayerId = localPlayer.UserId,
+		spawnSelections = state.spawnSelections,
+		onAddAI = self.addAI,
+		onRemovePlayer = self.removePlayer,
+		onSelectFaction = self.selectFaction,
+		onSelectColor = self.selectColor,
+		compact = compact,
+	})
+
+	local settingsPanel = React.createElement(LobbySettingsPanel, {
+		groups = SETTINGS_GROUPS,
+		values = state,
+		myVotes = state.myVotes,
+		onVote = self.onSettingChanged,
+		compact = compact,
+	})
+
+	local mainArea
+	if compact then
+		local mapChips: { [string]: any } = {
+			Layout = React.createElement("UIListLayout", {
+				FillDirection = Enum.FillDirection.Horizontal,
+				Padding = UDim.new(0, Theme.Metrics.GapTight),
+				SortOrder = Enum.SortOrder.LayoutOrder,
+			}),
+		}
+		for i, mapKey in mapKeys do
+			mapChips[mapKey] = self:renderMapChip(mapKey, i, true)
+		end
+
+		mainArea = React.createElement("ScrollingFrame", {
+			Name = "MainArea",
+			Position = UDim2.new(0, 0, 0, headerHeight + gap),
+			Size = UDim2.new(1, 0, 1, -(headerHeight + footerHeight + gap * 2)),
+			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
-			Text = displayName,
-			FontFace = UIConfig.Font.Title,
-			TextColor3 = isSelected and Color3.fromRGB(255, 240, 200) or Color3.fromRGB(220, 200, 170),
-			TextSize = 14,
-			[React.Event.MouseButton1Click] = function()
-				self.selectMap(mapKey)
-			end,
+			ScrollingDirection = Enum.ScrollingDirection.Y,
+			ScrollBarThickness = 4,
+			AutomaticCanvasSize = Enum.AutomaticSize.Y,
+			CanvasSize = UDim2.fromScale(0, 0),
 		}, {
-			UICorner = React.createElement("UICorner", {
-				CornerRadius = UDim.new(0, 3),
+			Layout = React.createElement("UIListLayout", {
+				FillDirection = Enum.FillDirection.Vertical,
+				Padding = UDim.new(0, Theme.Metrics.GapLoose),
+				SortOrder = Enum.SortOrder.LayoutOrder,
 			}),
-			UIStroke = React.createElement("UIStroke", {
-				Color = isSelected and Color3.fromRGB(200, 170, 90) or Color3.fromRGB(60, 45, 25),
-				Thickness = isSelected and 2 or 1.5,
-			}),
-			UIGradient = React.createElement("UIGradient", {
-				Color = ColorSequence.new({
-					ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-					ColorSequenceKeypoint.new(0.3, Color3.fromRGB(220, 210, 200)),
-					ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
-					ColorSequenceKeypoint.new(0.7, Color3.fromRGB(210, 200, 190)),
-					ColorSequenceKeypoint.new(1, Color3.fromRGB(240, 235, 225)),
+			Countdown = countdownBanner,
+			MapSection = React.createElement("Frame", {
+				LayoutOrder = 2,
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundTransparency = 1,
+			}, {
+				Layout = React.createElement("UIListLayout", {
+					FillDirection = Enum.FillDirection.Vertical,
+					Padding = UDim.new(0, Theme.Metrics.Gap),
+					SortOrder = Enum.SortOrder.LayoutOrder,
 				}),
-				Rotation = 0,
+				Preview = mapPreview,
+				Strip = React.createElement("ScrollingFrame", {
+					LayoutOrder = 2,
+					Size = UDim2.new(1, 0, 0, Theme.Metrics.TouchTarget),
+					BackgroundTransparency = 1,
+					BorderSizePixel = 0,
+					ScrollingDirection = Enum.ScrollingDirection.X,
+					ScrollBarThickness = 4,
+					AutomaticCanvasSize = Enum.AutomaticSize.X,
+					CanvasSize = UDim2.fromScale(0, 0),
+				}, mapChips),
 			}),
+			Players = React.createElement("Frame", {
+				LayoutOrder = 3,
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundTransparency = 1,
+			}, { List = playerList }),
+			Settings = React.createElement("Frame", {
+				LayoutOrder = 4,
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundTransparency = 1,
+			}, { Panel = settingsPanel }),
+		})
+	else
+		local mapListRows: { [string]: any } = {
+			Layout = React.createElement("UIListLayout", {
+				FillDirection = Enum.FillDirection.Vertical,
+				Padding = UDim.new(0, Theme.Metrics.GapTight),
+				SortOrder = Enum.SortOrder.LayoutOrder,
+			}),
+		}
+		for i, mapKey in mapKeys do
+			mapListRows[mapKey] = self:renderMapChip(mapKey, i, false)
+		end
+
+		local leftColumn = React.createElement("Frame", {
+			Name = "LeftColumn",
+			Size = UDim2.new(0.38, -gap / 2, 1, 0),
+			BackgroundTransparency = 1,
+		}, {
+			Preview = mapPreview,
+			MapListLabel = React.createElement("TextLabel", {
+				Position = UDim2.new(0, 0, 0, mapPreviewHeight + gap),
+				Size = UDim2.new(1, 0, 0, 16),
+				BackgroundTransparency = 1,
+				Text = "Maps",
+				FontFace = Theme.FontFace.BodyBold,
+				TextSize = Theme.TextSize.Small,
+				TextColor3 = Theme.Color.TextSecondary,
+				TextXAlignment = Enum.TextXAlignment.Left,
+			}),
+			MapList = React.createElement("ScrollingFrame", {
+				Position = UDim2.new(0, 0, 0, mapPreviewHeight + gap + 16 + Theme.Metrics.GapTight),
+				Size = UDim2.new(1, 0, 1, -(mapPreviewHeight + gap + 16 + Theme.Metrics.GapTight)),
+				BackgroundTransparency = 1,
+				BorderSizePixel = 0,
+				ScrollingDirection = Enum.ScrollingDirection.Y,
+				ScrollBarThickness = 4,
+				AutomaticCanvasSize = Enum.AutomaticSize.Y,
+				CanvasSize = UDim2.fromScale(0, 0),
+			}, mapListRows),
+		})
+
+		local rightColumn = React.createElement("ScrollingFrame", {
+			Name = "RightColumn",
+			Position = UDim2.new(0.4, 0, 0, 0),
+			Size = UDim2.new(0.6, 0, 1, 0),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			ScrollingDirection = Enum.ScrollingDirection.Y,
+			ScrollBarThickness = 4,
+			AutomaticCanvasSize = Enum.AutomaticSize.Y,
+			CanvasSize = UDim2.fromScale(0, 0),
+		}, {
+			Layout = React.createElement("UIListLayout", {
+				FillDirection = Enum.FillDirection.Vertical,
+				Padding = UDim.new(0, Theme.Metrics.GapLoose),
+				SortOrder = Enum.SortOrder.LayoutOrder,
+			}),
+			Countdown = countdownBanner,
+			Players = React.createElement("Frame", {
+				LayoutOrder = 2,
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundTransparency = 1,
+			}, { List = playerList }),
+			Settings = React.createElement("Frame", {
+				LayoutOrder = 3,
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundTransparency = 1,
+			}, { Panel = settingsPanel }),
+		})
+
+		mainArea = React.createElement("Frame", {
+			Name = "MainArea",
+			Position = UDim2.new(0, 0, 0, headerHeight + gap),
+			Size = UDim2.new(1, 0, 1, -(headerHeight + footerHeight + gap * 2)),
+			BackgroundTransparency = 1,
+		}, {
+			Left = leftColumn,
+			Right = rightColumn,
 		})
 	end
-
-	-- "My Maps" section intentionally hidden.
-	-- Only hand-crafted maps with PreviewImage assets appear in the list above.
-
-	local mapSettingsChildren = self:renderSettingsGroup(LobbySettings.MapSettings)
-	table.insert(
-		mapSettingsChildren,
-		1,
-		React.createElement("UIListLayout", {
-			FillDirection = Enum.FillDirection.Vertical,
-			HorizontalAlignment = Enum.HorizontalAlignment.Center,
-			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, 10),
-		})
-	)
-	table.insert(
-		mapSettingsChildren,
-		2,
-		React.createElement("TextLabel", {
-			LayoutOrder = 0,
-			Text = "Map Settings",
-			Size = UDim2.new(1, 0, 0, 30),
-			FontFace = UIConfig.Font.Title,
-			TextColor3 = lobbyConfig.GameRulesTitleColor,
-			TextSize = lobbyConfig.GameRulesTitleSize,
-			BackgroundTransparency = 1,
-		})
-	)
-
-	local startingResourcesChildren = self:renderSettingsGroup(LobbySettings.StartingResources)
-	table.insert(
-		startingResourcesChildren,
-		1,
-		React.createElement("UIListLayout", {
-			FillDirection = Enum.FillDirection.Vertical,
-			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = paddingConfig.SettingsRows.Bottom,
-		})
-	)
-	table.insert(
-		startingResourcesChildren,
-		2,
-		React.createElement("TextLabel", {
-			LayoutOrder = 0,
-			Text = "Starting Resources",
-			Size = UDim2.new(1, 0, 0, 25),
-			FontFace = UIConfig.Font.Title,
-			TextColor3 = lobbyConfig.StartingResourcesTitleColor,
-			TextSize = lobbyConfig.StartingResourcesTitleSize,
-			BackgroundTransparency = 1,
-			TextXAlignment = Enum.TextXAlignment.Left,
-		})
-	)
-
-	local gameplayModifierChildren = self:renderSettingsGroup(LobbySettings.GameplayModifiers)
-	local pacingAndEconomyChildren = self:renderSettingsGroup(LobbySettings.PacingAndEconomy)
 
 	return React.createElement("Frame", {
 		Name = "LobbyScreen",
 		Size = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
 	}, {
-		BackgroundImage = React.createElement("ImageLabel", {
-			Name = "BackgroundImage",
-			Image = "rbxassetid://99876577284469",
-			ScaleType = Enum.ScaleType.Stretch,
-			BackgroundTransparency = 1,
+		-- Flat glass wash over whatever sits behind the lobby (main-menu scene),
+		-- not an opaque ImageLabel backdrop -- same "glass, not a slab" rule as
+		-- the in-match HUD panels.
+		Wash = React.createElement("Frame", {
 			Size = UDim2.fromScale(1, 1),
+			BackgroundColor3 = Theme.Color.Surface,
+			BackgroundTransparency = Theme.Transparency.Panel,
+			BorderSizePixel = 0,
 			ZIndex = 1,
 		}),
-		MainFrame = React.createElement("Frame", {
-			Name = "MainFrame",
-			Size = UDim2.new(0.95, 0, 0.95, 0),
-			Position = UDim2.fromScale(0.5, 0.5),
-			AnchorPoint = Vector2.new(0.5, 0.5),
+
+		Content = React.createElement("Frame", {
+			Size = UDim2.fromScale(1, 1),
 			BackgroundTransparency = 1,
 			ZIndex = 2,
 		}, {
-			UIPadding = React.createElement("UIPadding", {
-				PaddingTop = paddingConfig.MainPanels.Top,
-				PaddingBottom = paddingConfig.MainPanels.Bottom,
-				PaddingLeft = paddingConfig.MainPanels.Left,
-				PaddingRight = paddingConfig.MainPanels.Right,
-			}),
-			UIListLayout = React.createElement("UIListLayout", {
-				FillDirection = Enum.FillDirection.Horizontal,
-				HorizontalAlignment = Enum.HorizontalAlignment.Center,
-				VerticalAlignment = Enum.VerticalAlignment.Top,
-				Padding = UDim.new(0.02, 0),
+			Padding = React.createElement("UIPadding", {
+				PaddingTop = UDim.new(0, Theme.Metrics.PadLoose),
+				PaddingBottom = UDim.new(0, Theme.Metrics.PadLoose),
+				PaddingLeft = UDim.new(0, Theme.Metrics.PadLoose),
+				PaddingRight = UDim.new(0, Theme.Metrics.PadLoose),
 			}),
 
-			LeftPanel = React.createElement("Frame", {
-				Name = "LeftPanel",
-				Size = UDim2.new(0.3, 0, 1, 0),
-				BackgroundColor3 = lobbyConfig.PanelBackgroundColor,
-				BackgroundTransparency = lobbyConfig.PanelBackgroundTransparency,
-				ClipsDescendants = true,
+			Header = React.createElement("Frame", {
+				Name = "Header",
+				Size = UDim2.new(1, 0, 0, headerHeight),
+				BackgroundTransparency = 1,
 			}, {
-				UIPadding = React.createElement("UIPadding", {
-					PaddingTop = paddingConfig.LeftPanelSections.Top,
-					PaddingBottom = paddingConfig.LeftPanelSections.Bottom,
-					PaddingLeft = paddingConfig.LeftPanelSections.Left,
-					PaddingRight = paddingConfig.LeftPanelSections.Right,
-				}),
-				UICorner = React.createElement("UICorner", {
-					CornerRadius = UDim.new(0, 6),
-				}),
-				UIStroke = React.createElement("UIStroke", {
-					Color = Color3.fromRGB(100, 75, 40),
-					Thickness = 3,
-				}),
-
-				-- Map preview takes the top portion
-				MapPreview = React.createElement(
-					MapPreview,
-					{
-						mapKey = self.state.selectedMap,
-						mapConfig = MapData.getMap(self.state.selectedMap),
-						spawnSelections = self.state.spawnSelections,
-						mySpawn = self.state.mySpawn,
-						onSpawnSelected = self.selectSpawn,
-						players = self.state.players,
-						localPlayerId = localPlayer.UserId,
-						Size = UDim2.new(1, 0, 0.45, 0),
-					}
-				),
-
-				-- Map selector section
-				MapSelectorFrame = React.createElement("Frame", {
-					Name = "MapSelectorFrame",
-					Size = UDim2.new(1, 0, 0.16, 0),
-					Position = UDim2.new(0, 0, 0.46, 0),
+				Title = React.createElement("TextLabel", {
+					Size = UDim2.new(1, 0, 1, 0),
 					BackgroundTransparency = 1,
-				}, {
-					UIListLayout = React.createElement("UIListLayout", {
-						FillDirection = Enum.FillDirection.Vertical,
-						HorizontalAlignment = Enum.HorizontalAlignment.Center,
-						SortOrder = Enum.SortOrder.LayoutOrder,
-						Padding = UDim.new(0, 6),
-					}),
-					Title = React.createElement("TextLabel", {
-						LayoutOrder = 1,
-						Text = "Select Map",
-						Size = UDim2.new(1, 0, 0, 22),
-						FontFace = UIConfig.Font.Title,
-						TextColor3 = Color3.fromRGB(200, 180, 140),
-						TextSize = 18,
-						BackgroundTransparency = 1,
-					}),
-					Divider = React.createElement("Frame", {
-						LayoutOrder = 2,
-						Size = UDim2.new(0.8, 0, 0, 1),
-						BackgroundColor3 = Color3.fromRGB(120, 100, 70),
-						BorderSizePixel = 0,
-					}),
-					MapList = React.createElement(
-						"ScrollingFrame",
-						{
-							LayoutOrder = 3,
-							Size = UDim2.new(1, 0, 1, -30),
-							BackgroundTransparency = 1,
-							BorderSizePixel = 0,
-							ScrollBarThickness = 4,
-							ScrollBarImageColor3 = Color3.fromRGB(120, 100, 70),
-							CanvasSize = UDim2.new(0, 0, 0, #mapKeys * 35),
-							AutomaticCanvasSize = Enum.AutomaticSize.Y,
-						},
-						mapListChildren
-					),
+					Text = "Lobby",
+					FontFace = Theme.FontFace.Display,
+					TextSize = Theme.TextSize.Title,
+					TextColor3 = Theme.Color.TextPrimary,
+					TextXAlignment = Enum.TextXAlignment.Left,
 				}),
-
-				-- Map settings at the bottom
-				MapSettingsFrame = React.createElement("Frame", {
-					Name = "MapSettingsFrame",
-					AutomaticSize = Enum.AutomaticSize.Y,
-					Size = UDim2.new(1, 0, 0, 0),
-					Position = UDim2.new(0, 0, 0.63, 0),
-					BackgroundTransparency = 1,
-				}, mapSettingsChildren),
 			}),
 
-			RightPanel = React.createElement(
-				"Frame",
-				{ Name = "RightPanel", Size = UDim2.new(0.68, 0, 1, 0), BackgroundTransparency = 1 },
-				{
-					UIPadding = React.createElement("UIPadding", {
-						PaddingTop = paddingConfig.RightPanelSections.Top,
-						PaddingBottom = paddingConfig.RightPanelSections.Bottom,
-						PaddingLeft = paddingConfig.RightPanelSections.Left,
-						PaddingRight = paddingConfig.RightPanelSections.Right,
+			Main = mainArea,
+
+			Footer = React.createElement("Frame", {
+				Name = "Footer",
+				Position = UDim2.new(0, 0, 1, 0),
+				AnchorPoint = Vector2.new(0, 1),
+				Size = UDim2.new(1, 0, 0, footerHeight),
+				BackgroundTransparency = 1,
+			}, {
+				-- Hidden entirely while the countdown banner is up -- that banner
+				-- is now the only Ready/Cancel affordance, so there's nothing for
+				-- this button to do until the countdown ends or gets cancelled.
+				ReadyButton = (not state.countdownActive) and React.createElement("TextButton", {
+					Size = UDim2.new(1, -120, 1, -Theme.Metrics.Pad),
+					BackgroundColor3 = if state.isReady then Theme.Color.Accent else Theme.Color.Action,
+					BackgroundTransparency = Theme.Transparency.CardActive,
+					AutoButtonColor = false,
+					Text = if state.isReady then "Ready ✓" else "Ready Up",
+					FontFace = Theme.FontFace.BodyBold,
+					TextSize = Theme.TextSize.Heading,
+					TextColor3 = if state.isReady then Theme.Color.Accent else Theme.Color.TextPrimary,
+					[React.Event.Activated] = self.toggleReady,
+				}, {
+					Corner = React.createElement("UICorner", { CornerRadius = Theme.corner() }),
+					Stroke = React.createElement("UIStroke", {
+						Color = if state.isReady then Theme.Color.Accent else Theme.Color.Border,
+						Transparency = if state.isReady then 0 else Theme.Transparency.Border,
+						Thickness = 1,
 					}),
-					UIListLayout = React.createElement("UIListLayout", {
-						FillDirection = Enum.FillDirection.Vertical,
-						HorizontalAlignment = Enum.HorizontalAlignment.Center,
-						SortOrder = Enum.SortOrder.LayoutOrder,
-					}),
-					ContentFrame = React.createElement("Frame", {
-						LayoutOrder = 1,
-						Name = "ContentFrame",
-						Size = UDim2.new(1, 0, 1, -100),
-						BackgroundTransparency = 1,
-					}, {
-						UIListLayout = React.createElement("UIListLayout", {
-							FillDirection = Enum.FillDirection.Vertical,
-							HorizontalAlignment = Enum.HorizontalAlignment.Center,
-							SortOrder = Enum.SortOrder.LayoutOrder,
-							Padding = UDim.new(0.02, 0),
-						}),
-						PlayerList = React.createElement(PlayerList, {
-							LayoutOrder = 1,
-							players = self.state.players,
-							onAddAI = self.addAI,
-							onRemovePlayer = self.removePlayer,
-							onSelectFaction = self.selectFaction,
-							onSelectSpawn = self.selectSpawn,
-							onSelectColor = self.selectColor,
-							spawnSelections = self.state.spawnSelections,
-							localPlayerId = localPlayer.UserId,
-							Size = UDim2.new(1, 0, 0, 250),
-							Button = Button,
-						}),
-						GameSettingsFrame = React.createElement("Frame", {
-							LayoutOrder = 2,
-							Name = "GameSettingsFrame",
-							AutomaticSize = Enum.AutomaticSize.Y,
-							Size = UDim2.new(1, 0, 0, 0),
-							BackgroundColor3 = lobbyConfig.PanelBackgroundColor,
-							BackgroundTransparency = lobbyConfig.PanelBackgroundTransparency,
-							BorderSizePixel = 0,
-						}, {
-							UIPadding = React.createElement("UIPadding", {
-								PaddingTop = paddingConfig.GameSettings.Top,
-								PaddingBottom = paddingConfig.GameSettings.Bottom,
-								PaddingLeft = paddingConfig.GameSettings.Left,
-								PaddingRight = paddingConfig.GameSettings.Right,
-							}),
-							UIListLayout = React.createElement("UIListLayout", {
-								FillDirection = Enum.FillDirection.Vertical,
-								HorizontalAlignment = Enum.HorizontalAlignment.Center,
-								SortOrder = Enum.SortOrder.LayoutOrder,
-							}),
-							Title = React.createElement("TextLabel", {
-								LayoutOrder = 1,
-								Text = "Game Settings",
-								Size = UDim2.new(1, 0, 0, 30),
-								FontFace = UIConfig.Font.Title,
-								TextColor3 = lobbyConfig.GameSettingsTitleColor,
-								TextSize = lobbyConfig.GameSettingsTitleSize,
-								BackgroundTransparency = 1,
-							}),
-							SettingsContainer = React.createElement("Frame", {
-								LayoutOrder = 2,
-								AutomaticSize = Enum.AutomaticSize.Y,
-								Size = UDim2.new(0.95, 0, 0, 0),
-								BackgroundTransparency = 1,
-							}, {
-								UIListLayout = React.createElement("UIListLayout", {
-									FillDirection = Enum.FillDirection.Horizontal,
-									VerticalAlignment = Enum.VerticalAlignment.Top,
-									SortOrder = Enum.SortOrder.LayoutOrder,
-									Padding = UDim.new(0.02, 0),
-								}),
-								LeftColumn = React.createElement("Frame", {
-									LayoutOrder = 1,
-									AutomaticSize = Enum.AutomaticSize.Y,
-									Size = UDim2.new(0.49, 0, 0, 0),
-									BackgroundTransparency = 1,
-								}, {
-									UIPadding = React.createElement("UIPadding", {
-										PaddingTop = paddingConfig.SettingsColumns.Top,
-										PaddingBottom = paddingConfig.SettingsColumns.Bottom,
-										PaddingLeft = paddingConfig.SettingsColumns.Left,
-										PaddingRight = paddingConfig.SettingsColumns.Right,
-									}),
-								}, startingResourcesChildren),
-								RightColumn = React.createElement("Frame", {
-									LayoutOrder = 2,
-									AutomaticSize = Enum.AutomaticSize.Y,
-									Size = UDim2.new(0.49, 0, 0, 0),
-									BackgroundTransparency = 1,
-								}, {
-									UIPadding = React.createElement("UIPadding", {
-										PaddingTop = paddingConfig.SettingsColumns.Top,
-										PaddingBottom = paddingConfig.SettingsColumns.Bottom,
-										PaddingLeft = paddingConfig.SettingsColumns.Left,
-										PaddingRight = paddingConfig.SettingsColumns.Right,
-									}),
-									UIListLayout = React.createElement("UIListLayout", {
-										FillDirection = Enum.FillDirection.Vertical,
-										HorizontalAlignment = Enum.HorizontalAlignment.Center,
-										SortOrder = Enum.SortOrder.LayoutOrder,
-										Padding = UDim.new(0, 20),
-									}),
-									GameplayModifiersFrame = React.createElement("Frame", {
-										LayoutOrder = 1,
-										AutomaticSize = Enum.AutomaticSize.Y,
-										Size = UDim2.new(1, 0, 0, 0),
-										BackgroundTransparency = 1,
-									}, {
-										UIListLayout = React.createElement("UIListLayout", {
-											FillDirection = Enum.FillDirection.Vertical,
-											SortOrder = Enum.SortOrder.LayoutOrder,
-											Padding = paddingConfig.SettingsRows.Bottom,
-										}),
-										Title = React.createElement("TextLabel", {
-											LayoutOrder = 0,
-											Text = "Gameplay Modifiers",
-											Size = UDim2.new(1, 0, 0, 25),
-											FontFace = UIConfig.Font.Title,
-											TextColor3 = lobbyConfig.GameRulesTitleColor,
-											TextSize = lobbyConfig.GameRulesTitleSize,
-											BackgroundTransparency = 1,
-											TextXAlignment = Enum.TextXAlignment.Left,
-										}),
-									}, gameplayModifierChildren),
-									PacingAndEconomyFrame = React.createElement("Frame", {
-										LayoutOrder = 2,
-										AutomaticSize = Enum.AutomaticSize.Y,
-										Size = UDim2.new(1, 0, 0, 0),
-										BackgroundTransparency = 1,
-									}, {
-										UIListLayout = React.createElement("UIListLayout", {
-											FillDirection = Enum.FillDirection.Vertical,
-											SortOrder = Enum.SortOrder.LayoutOrder,
-											Padding = paddingConfig.SettingsRows.Bottom,
-										}),
-										Title = React.createElement("TextLabel", {
-											LayoutOrder = 0,
-											Text = "Pacing & Economy",
-											Size = UDim2.new(1, 0, 0, 25),
-											FontFace = UIConfig.Font.Title,
-											TextColor3 = lobbyConfig.GameRulesTitleColor,
-											TextSize = lobbyConfig.GameRulesTitleSize,
-											BackgroundTransparency = 1,
-											TextXAlignment = Enum.TextXAlignment.Left,
-										}),
-									}, pacingAndEconomyChildren),
-								}),
-							}),
-						}),
-					}),
-					ButtonsFrame = React.createElement("Frame", {
-						LayoutOrder = 2,
-						Size = UDim2.new(1, 0, 0, 180),
-						BackgroundTransparency = 1,
-						Position = UDim2.new(0, 0, 1, -180),
-						AnchorPoint = Vector2.new(0, 1),
-					}, {
-						UIPadding = React.createElement("UIPadding", {
-							PaddingTop = paddingConfig.ButtonsFrame.Top,
-							PaddingBottom = paddingConfig.ButtonsFrame.Bottom,
-							PaddingLeft = paddingConfig.ButtonsFrame.Left,
-							PaddingRight = paddingConfig.ButtonsFrame.Right,
-						}),
-						UIListLayout = React.createElement("UIListLayout", {
-							FillDirection = Enum.FillDirection.Vertical,
-							HorizontalAlignment = Enum.HorizontalAlignment.Center,
-							SortOrder = Enum.SortOrder.LayoutOrder,
-							Padding = UDim.new(0, 10),
-						}),
-						-- Countdown Display (if active)
-						CountdownLabel = self.state.countdownActive and React.createElement("TextLabel", {
-							LayoutOrder = 1,
-							Text = "Starting in " .. math.ceil(self.state.countdownTimeRemaining) .. "...",
-							Size = UDim2.new(1, 0, 0, 50),
-							FontFace = UIConfig.Font.Title,
-							TextColor3 = Color3.fromRGB(255, 200, 0),
-							TextSize = 24,
-							BackgroundTransparency = 1,
-						}) or nil,
-						-- Ready Button
-						ReadyButton = not self.state.countdownActive and React.createElement("TextButton", {
-							LayoutOrder = 1,
-							Size = UDim2.new(0.4, 0, 0, 50),
-							BackgroundColor3 = if self.state.isReady
-								then Color3.fromRGB(50, 95, 35)
-								else Color3.fromRGB(120, 85, 40),
-							BackgroundTransparency = 0,
-							BorderSizePixel = 0,
-							Text = if self.state.isReady then "Not Ready" else "Ready",
-							FontFace = UIConfig.Font.Title,
-							TextColor3 = if self.state.isReady
-								then Color3.fromRGB(180, 255, 160)
-								else Color3.fromRGB(255, 240, 200),
-							TextSize = 26,
-							[React.Event.MouseButton1Click] = function()
-								self.toggleReady()
-							end,
-						}, {
-							UICorner = React.createElement("UICorner", {
-								CornerRadius = UDim.new(0, 4),
-							}),
-							UIStroke = React.createElement("UIStroke", {
-								Color = if self.state.isReady
-									then Color3.fromRGB(80, 140, 60)
-									else Color3.fromRGB(180, 150, 70),
-								Thickness = 2.5,
-							}),
-							UIGradient = React.createElement("UIGradient", {
-								Color = ColorSequence.new({
-									ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-									ColorSequenceKeypoint.new(0.25, Color3.fromRGB(230, 220, 210)),
-									ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
-									ColorSequenceKeypoint.new(0.75, Color3.fromRGB(220, 210, 200)),
-									ColorSequenceKeypoint.new(1, Color3.fromRGB(245, 240, 230)),
-								}),
-								Rotation = 0,
-							}),
-						}) or nil,
-						BackButton = React.createElement("TextButton", {
-							LayoutOrder = 3,
-							Size = UDim2.new(0.25, 0, 0, 36),
-							BackgroundColor3 = Color3.fromRGB(85, 60, 30),
-							BackgroundTransparency = 0,
-							BorderSizePixel = 0,
-							Text = if self.state.countdownActive then "Cancel" else "Back",
-							FontFace = UIConfig.Font.Default,
-							TextColor3 = Color3.fromRGB(220, 200, 170),
-							TextSize = 18,
-							[React.Event.MouseButton1Click] = function()
-								if self.state.countdownActive then
-									self.toggleReady()
-								else
-									if navigate then
-										navigate("mainMenu")
-									end
-								end
-							end,
-						}, {
-							UICorner = React.createElement("UICorner", {
-								CornerRadius = UDim.new(0, 3),
-							}),
-							UIStroke = React.createElement("UIStroke", {
-								Color = Color3.fromRGB(55, 40, 20),
-								Thickness = 2,
-							}),
-							UIGradient = React.createElement("UIGradient", {
-								Color = ColorSequence.new({
-									ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-									ColorSequenceKeypoint.new(0.3, Color3.fromRGB(225, 215, 205)),
-									ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
-									ColorSequenceKeypoint.new(0.7, Color3.fromRGB(215, 205, 195)),
-									ColorSequenceKeypoint.new(1, Color3.fromRGB(240, 235, 225)),
-								}),
-								Rotation = 0,
-							}),
-						}),
-					}),
-				}
-			),
+				}) or nil,
+
+				BackButton = React.createElement("TextButton", {
+					Position = UDim2.new(1, 0, 0, 0),
+					AnchorPoint = Vector2.new(1, 0),
+					Size = UDim2.new(0, 110, 1, -Theme.Metrics.Pad),
+					BackgroundColor3 = Theme.Color.SurfaceRaised,
+					BackgroundTransparency = Theme.Transparency.Card,
+					AutoButtonColor = false,
+					Text = "Leave",
+					FontFace = Theme.FontFace.Body,
+					TextSize = Theme.TextSize.Body,
+					TextColor3 = Theme.Color.TextSecondary,
+					[React.Event.Activated] = function()
+						if navigate then
+							navigate("mainMenu")
+						end
+					end,
+				}, {
+					Corner = React.createElement("UICorner", { CornerRadius = Theme.corner() }),
+					Stroke = React.createElement("UIStroke", Theme.strokeProps()),
+				}),
+			}),
 		}),
 	})
 end

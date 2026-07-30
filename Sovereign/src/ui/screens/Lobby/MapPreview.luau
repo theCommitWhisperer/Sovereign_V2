@@ -1,7 +1,7 @@
 --!strict
 -- MapPreview: Renders a generated minimap preview with terrain features and clickable spawn picker
 local React = require(game.ReplicatedStorage.Packages.react)
-local UIConfig = require(script.Parent.Parent.Parent.UIConfig)
+local Theme = require(script.Parent.Parent.Parent.Theme)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local MapPreview = React.Component:extend("MapPreview")
@@ -341,9 +341,9 @@ function MapPreview:render()
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			BackgroundTransparency = 1,
 			Text = "Neutral",
-			TextColor3 = Color3.fromRGB(220, 200, 160),
-			TextSize = 9,
-			FontFace = UIConfig.Font.Default,
+			TextColor3 = Theme.Color.TextSecondary,
+			TextSize = Theme.TextSize.Caption,
+			FontFace = Theme.FontFace.Body,
 			ZIndex = 6,
 		})
 	end
@@ -414,8 +414,10 @@ function MapPreview:render()
 			CornerRadius = UDim.new(0.15, 0),
 		})
 		if isMine then
+			-- Gold marks "this is mine" -- the same accent meaning as the roster's
+			-- (You) tag and Ready pill, not a decorative highlight.
 			spawnChildren["UIStroke"] = React.createElement("UIStroke", {
-				Color = Color3.fromRGB(255, 215, 0),
+				Color = Theme.Color.Accent,
 				Thickness = 2,
 			})
 		end
@@ -429,9 +431,9 @@ function MapPreview:render()
 			BackgroundTransparency = bgTransparency,
 			BorderSizePixel = 0,
 			Text = labelText,
-			TextColor3 = Color3.fromRGB(255, 255, 255),
-			TextSize = 10,
-			FontFace = UIConfig.Font.Default,
+			TextColor3 = Theme.Color.TextPrimary,
+			TextSize = Theme.TextSize.Caption,
+			FontFace = Theme.FontFace.Body,
 			TextWrapped = true,
 			ZIndex = 8,
 			[React.Event.MouseButton1Click] = function()
@@ -455,9 +457,9 @@ function MapPreview:render()
 			Size = UDim2.new(1, 0, 0, 22),
 			Position = UDim2.new(0.5, 0, 0, 0),
 			AnchorPoint = Vector2.new(0.5, 0),
-			FontFace = UIConfig.Font.Title,
-			TextColor3 = Color3.fromRGB(220, 200, 160),
-			TextSize = 18,
+			FontFace = Theme.FontFace.Display,
+			TextColor3 = Theme.Color.TextPrimary,
+			TextSize = Theme.TextSize.Title,
 			BackgroundTransparency = 1,
 			TextXAlignment = Enum.TextXAlignment.Center,
 		}),
@@ -486,12 +488,9 @@ function MapPreview:render()
 					DominantAxis = Enum.DominantAxis.Width,
 				}),
 				UICorner = React.createElement("UICorner", {
-					CornerRadius = UDim.new(0, 4),
+					CornerRadius = Theme.corner(),
 				}),
-				UIStroke = React.createElement("UIStroke", {
-					Color = Color3.fromRGB(100, 80, 50),
-					Thickness = 2,
-				}),
+				UIStroke = React.createElement("UIStroke", Theme.strokeProps()),
 			}, featureElements),
 		}),
 
@@ -501,9 +500,9 @@ function MapPreview:render()
 			Size = UDim2.new(1, 0, 0, 14),
 			Position = UDim2.new(0.5, 0, 1, -28),
 			AnchorPoint = Vector2.new(0.5, 0),
-			FontFace = UIConfig.Font.Default,
-			TextColor3 = Color3.fromRGB(160, 150, 130),
-			TextSize = 10,
+			FontFace = Theme.FontFace.Body,
+			TextColor3 = Theme.Color.TextSecondary,
+			TextSize = Theme.TextSize.Caption,
 			BackgroundTransparency = 1,
 			TextWrapped = true,
 			TextXAlignment = Enum.TextXAlignment.Center,
@@ -515,9 +514,9 @@ function MapPreview:render()
 			Size = UDim2.new(1, 0, 0, 14),
 			Position = UDim2.new(0.5, 0, 1, -14),
 			AnchorPoint = Vector2.new(0.5, 0),
-			FontFace = UIConfig.Font.Default,
-			TextColor3 = Color3.fromRGB(130, 125, 110),
-			TextSize = 9,
+			FontFace = Theme.FontFace.Body,
+			TextColor3 = Theme.Color.TextMuted,
+			TextSize = Theme.TextSize.Caption,
 			BackgroundTransparency = 1,
 			TextWrapped = true,
 			TextXAlignment = Enum.TextXAlignment.Center,
