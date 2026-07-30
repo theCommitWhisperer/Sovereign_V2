@@ -1,0 +1,28 @@
+# Normalize text files and ensure consistent line endings across platforms
+* text=auto
+
+# Roblox/Luau source files
+*.luau text eol=lf
+*.lua text eol=lf
+
+# Common project files
+*.md text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.txt text eol=lf
+
+# Windows scripts should keep CRLF
+*.ps1 text eol=crlf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.rbxlx binary
+*.rbxm binary
+*.rbxl binary
+*.fbx binary
+*.obj binary
