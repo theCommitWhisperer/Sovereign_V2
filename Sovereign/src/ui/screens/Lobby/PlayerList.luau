@@ -28,7 +28,12 @@ local React = require(game.ReplicatedStorage.Packages.react)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Theme = require(script.Parent.Parent.Parent.Theme)
 
-local SWATCH = 22
+-- Big enough to hit comfortably and to read as a colour rather than a pixel.
+-- Big enough to hit comfortably and to read as a colour rather than a pixel.
+local SWATCH = 28
+-- The local player's swatch doubles as the colour dropdown trigger and carries a
+-- caret inside it, so it needs to be bigger than a decorative dot.
+local SWATCH_TRIGGER = 30
 local TeamLayoutsData = require(ReplicatedStorage.Shared.GameData.TeamLayoutsData)
 
 export type PlayerEntry = {
@@ -91,6 +96,14 @@ end
 --- colour IS the label, so a grid of squares carries the same information in one
 --- row. Blocked colours get a dimmed swatch plus a stroke, and the owner's name
 --- stays reachable through the instance name for a future tooltip.
+--- Picks a caret colour that survives whatever swatch it sits on. A light arrow
+--- disappears on yellow and a dark one disappears on navy, so choose by the
+--- swatch's own perceived brightness rather than picking one and hoping.
+local function contrastOn(colour: Color3): Color3
+	local luminance = 0.299 * colour.R + 0.587 * colour.G + 0.114 * colour.B
+	return if luminance > 0.55 then Color3.fromRGB(20, 16, 10) else Color3.fromRGB(250, 246, 236)
+end
+
 local function colorSwatch(name: string, r: number, g: number, b: number, mine: boolean, takenBy: string?, order: number, onClick: () -> ())
 	local blocked = takenBy ~= nil
 	return React.createElement("TextButton", {
@@ -187,7 +200,7 @@ end
 -- `expanded` gates the faction/colour pickers and the spawn line. Those were
 -- always visible on the local player's card and were most of the roster's
 -- height; you set your kingdom once, so they collapse behind a toggle.
-local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: string, allPlayers: { PlayerEntry }, props: Props, order: number, expanded: boolean, onToggle: () -> ())
+local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: string, allPlayers: { PlayerEntry }, props: Props, order: number, expanded: boolean, onToggle: () -> (), colorOpen: boolean, onToggleColor: () -> ())
 	local swatch = if entry.selectedColor
 		then Color3.fromRGB(entry.selectedColor[1], entry.selectedColor[2], entry.selectedColor[3])
 		else Theme.Color.TextMuted
@@ -220,14 +233,39 @@ local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: stri
 			Padding = UDim.new(0, Theme.Metrics.GapTight),
 			SortOrder = Enum.SortOrder.LayoutOrder,
 		}),
-		Swatch = React.createElement("Frame", {
-			LayoutOrder = 1,
-			Size = UDim2.fromOffset(16, 16),
-			BackgroundColor3 = swatch,
-			BorderSizePixel = 0,
-		}, {
-			Corner = React.createElement("UICorner", { CornerRadius = UDim.new(1, 0) }),
-		}),
+		-- Your own swatch IS the colour dropdown: a plain 16px dot gave no hint it
+		-- was interactive, so it is a 30px button with the caret drawn inside it.
+		-- Other players' swatches stay decorative dots.
+		Swatch = if isLocal
+			then React.createElement("TextButton", {
+				LayoutOrder = 1,
+				Size = UDim2.fromOffset(SWATCH_TRIGGER, SWATCH_TRIGGER),
+				BackgroundColor3 = swatch,
+				BorderSizePixel = 0,
+				AutoButtonColor = true,
+				Text = if colorOpen then "▴" else "▾",
+				FontFace = Theme.FontFace.BodyBold,
+				TextSize = Theme.TextSize.ScreenSmall,
+				TextColor3 = contrastOn(swatch),
+				[React.Event.Activated] = onToggleColor,
+			}, {
+				Corner = React.createElement("UICorner", { CornerRadius = UDim.new(1, 0) }),
+				-- Gold ring: the same "this is yours / this is active" signal the
+				-- rest of the lobby uses.
+				Stroke = React.createElement("UIStroke", {
+					Color = Theme.Color.Accent,
+					Transparency = if colorOpen then 0 else 0.4,
+					Thickness = 2,
+				}),
+			})
+			else React.createElement("Frame", {
+				LayoutOrder = 1,
+				Size = UDim2.fromOffset(16, 16),
+				BackgroundColor3 = swatch,
+				BorderSizePixel = 0,
+			}, {
+				Corner = React.createElement("UICorner", { CornerRadius = UDim.new(1, 0) }),
+			}),
 		Name = React.createElement("TextLabel", {
 			LayoutOrder = 2,
 			Size = UDim2.new(1, -150, 1, 0),
@@ -271,7 +309,9 @@ local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: stri
 	end
 	children.IdentityRow = React.createElement("Frame", {
 		LayoutOrder = 1,
-		Size = UDim2.new(1, 0, 0, 24),
+		-- Sized to the colour trigger, not to the text: a 24px row clipped the
+		-- 30px swatch button.
+		Size = UDim2.new(1, 0, 0, SWATCH_TRIGGER + 2),
 		BackgroundTransparency = 1,
 	}, identityChildren)
 
@@ -348,7 +388,7 @@ local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: stri
 			SortOrder = Enum.SortOrder.LayoutOrder,
 			Wraps = true,
 		})
-		children.Colors = if expanded
+		children.Colors = if colorOpen
 			then React.createElement("Frame", {
 				LayoutOrder = 3,
 				Size = UDim2.new(1, 0, 0, SWATCH),
@@ -446,6 +486,34 @@ end
 --- Section header for one team when the layout isn't a free-for-all -- see
 --- the module comment. Plain caption text, same weight/colour as the map
 --- list's "Maps" label in Lobby.luau, so it reads as structure, not a card.
+--- Always-available Add AI.
+---
+--- The per-slot "Waiting for players" invitation only exists while a seat is
+--- empty, so a full 1v1 offered no way to add a third opponent at all -- the
+--- button vanished exactly when you wanted it. This one stays until the MAP is
+--- out of spawns; the server grows the layout to make room (see
+--- LobbyManager.addAI).
+local function addAIAction(canAdd: boolean, mapSeats: number, filled: number, compact: boolean, order: number, onAddAI: () -> ())
+	local height = if compact then Theme.Metrics.TouchTarget else Theme.Metrics.DesktopTarget
+	return React.createElement("TextButton", {
+		key = "AddAIAction",
+		LayoutOrder = order,
+		Size = UDim2.new(1, 0, 0, height),
+		BackgroundColor3 = if canAdd then Theme.Color.Action else Theme.Color.SurfaceRaised,
+		BackgroundTransparency = if canAdd then 0 else Theme.Transparency.ScreenCard,
+		AutoButtonColor = canAdd,
+		Active = canAdd,
+		Text = if canAdd then "+ Add AI opponent" else `Map is full ({filled}/{mapSeats})`,
+		FontFace = Theme.FontFace.BodyBold,
+		TextSize = Theme.TextSize.ScreenSmall,
+		TextColor3 = if canAdd then Theme.Color.TextPrimary else Theme.Color.TextMuted,
+		[React.Event.Activated] = if canAdd then onAddAI else nil,
+	}, {
+		Corner = React.createElement("UICorner", { CornerRadius = Theme.corner(Theme.Metrics.RadiusSmall) }),
+		Stroke = React.createElement("UIStroke", Theme.strokeProps(canAdd)),
+	})
+end
+
 local function teamHeader(teamIndex: number, order: number)
 	return React.createElement("TextLabel", {
 		key = "TeamHeader" .. teamIndex,
@@ -491,6 +559,14 @@ local function PlayerList(props: Props)
 			return not was
 		end)
 	end
+	-- Colour has its own open state: it is a dropdown off the swatch, not part
+	-- of the card's general expand.
+	local colorOpen, setColorOpen = React.useState(false)
+	local function toggleColorOpen()
+		setColorOpen(function(was)
+			return not was
+		end)
+	end
 	local players = props.players or {}
 	local isFFA = TeamLayoutsData.isFreeForAll(props.teamLayout)
 
@@ -531,10 +607,14 @@ local function PlayerList(props: Props)
 			order += 1
 			local spawnNum = spawnByUserId[entry.userId]
 			local spawnLabel = if spawnNum then ("#" .. spawnNum) else "not chosen"
-			rowChildren["Player" .. entry.userId] = playerCard(entry, entry.userId == props.localPlayerId, spawnLabel, players, props, order, expanded, toggleExpanded)
+			rowChildren["Player" .. entry.userId] = playerCard(entry, entry.userId == props.localPlayerId, spawnLabel, players, props, order, expanded, toggleExpanded, colorOpen, toggleColorOpen)
 		end
 
-		local emptyCount = math.max(0, props.maxPlayers - #players)
+		-- Seats come from the LAYOUT, not the map. Rendering maxPlayers meant a
+		-- 1v1 on a four-spawn map showed four slots, two of which offered an
+		-- "Add AI" that the server then refused because the layout was full.
+		local seats = TeamLayoutsData.getSlotCount(props.teamLayout)
+		local emptyCount = math.max(0, seats - #players)
 		for i = 1, emptyCount do
 			order += 1
 			rowChildren["Empty" .. i] = emptySlot(order, props.compact, props.onAddAI)
@@ -564,13 +644,25 @@ local function PlayerList(props: Props)
 				local entry: PlayerEntry? = if userId then playerByUserId[userId] else nil
 				if entry then
 					rowChildren["Player" .. entry.userId] =
-						playerCard(entry, entry.userId == props.localPlayerId, "#" .. slotNum, players, props, order, expanded, toggleExpanded)
+						playerCard(entry, entry.userId == props.localPlayerId, "#" .. slotNum, players, props, order, expanded, toggleExpanded, colorOpen, toggleColorOpen)
 				else
 					rowChildren["EmptySlot" .. slotNum] = emptySlot(order, props.compact, props.onAddAI)
 				end
 			end
 		end
 	end
+
+	-- Capacity here is the MAP's, not the layout's: the layout grows to fit, so
+	-- what actually limits the roster is how many spawns exist.
+	order += 1
+	rowChildren.AddAI = addAIAction(
+		#players < props.maxPlayers,
+		props.maxPlayers,
+		#players,
+		props.compact,
+		order,
+		props.onAddAI
+	)
 
 	-- Server-authored: empty seats auto-fill with AI, so the only real blocker
 	-- is more humans than the layout has seats.
@@ -592,7 +684,7 @@ local function PlayerList(props: Props)
 			LayoutOrder = 1,
 			Size = UDim2.new(1, 0, 0, 24),
 			BackgroundTransparency = 1,
-			Text = `Players · {#players}/{props.maxPlayers}`,
+			Text = `Players · {#players}/{TeamLayoutsData.getSlotCount(props.teamLayout)}`,
 			FontFace = Theme.FontFace.Display,
 			TextSize = Theme.TextSize.ScreenHeading,
 			TextColor3 = Theme.Color.TextPrimary,

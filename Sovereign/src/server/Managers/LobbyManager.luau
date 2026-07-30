@@ -354,14 +354,29 @@ end
 function LobbyManager.addAI(requestingPlayer: Player)
 	local lobby = getOrCreateLobby()
 
-	-- Count current players (human + AI) against the CURRENT layout's slot
-	-- count, not a flat cap -- a 2v2 tops out at 4, a 3v1 also at 4, but a
-	-- 2v1v1 needs the same 4; the cap has to move with whatever's selected.
 	local totalPlayers = countLobbyPlayers(lobby)
 
+	-- If the layout is already full, GROW it rather than refusing.
+	--
+	-- The lobby now opens on 1v1, so one human plus one AI fills it immediately
+	-- and a second Add AI just warned at the player -- who had asked for a bigger
+	-- match and got nothing. Adding an opponent to a full free-for-all steps the
+	-- layout up (1v1 -> 1v1v1 -> 1v1v1v1), which is what the click means.
+	--
+	-- Explicitly-chosen team layouts are NOT grown: turning someone's 2v2 into a
+	-- 2v1v1 because they clicked Add AI would silently change the match they
+	-- picked. Those refuse, as does a free-for-all that has hit the map's spawns.
 	if totalPlayers >= TeamLayoutsData.getSlotCount(lobby.Settings.teamLayout) then
-		LobbyDebug:warn("Lobby is full for the current team layout, cannot add AI")
-		return
+		local grown = TeamLayoutsData.smallestFreeForAllFor(totalPlayers + 1)
+		local fitsMap = grown ~= nil and TeamLayoutsData.getSlotCount(grown) <= getLobbyMaxPlayers(lobby)
+
+		if TeamLayoutsData.isFreeForAll(lobby.Settings.teamLayout) and grown and fitsMap then
+			LobbyDebug:info(`Add AI grew layout {lobby.Settings.teamLayout} -> {grown}`)
+			lobby.Settings.teamLayout = grown
+		else
+			LobbyDebug:warn("Lobby is full and the layout cannot grow further; cannot add AI")
+			return
+		end
 	end
 
 	-- Create unique AI ID
