@@ -98,11 +98,43 @@ local function countLobbyPlayers(lobby: LobbySession): number
 	return total
 end
 
--- A layout's teams must be exactly full to start -- a 2v2 with 3 players has
--- no valid way to split the roster, so "fits" means an exact match, not just
--- "enough room".
-local function lobbyFitsLayout(lobby: LobbySession): boolean
-	return countLobbyPlayers(lobby) == TeamLayoutsData.getSlotCount(lobby.Settings.teamLayout)
+-- Counts humans only. AI seats are filled automatically, so they never gate
+-- whether a match can begin.
+local function countHumans(lobby: LobbySession): number
+	local total = 0
+	for _, entry in lobby.Players do
+		if not entry.IsAI then
+			total += 1
+		end
+	end
+	return total
+end
+
+-- Can this lobby start?
+--
+-- The first version of this required the roster to EXACTLY fill the layout,
+-- which made most layouts unstartable in practice: a solo player picking 1v1
+-- could not begin without first hand-adding an AI, and the default 1v1v1v1
+-- needed four bodies before anything happened at all. Empty seats are filled
+-- with AI instead (see fillEmptySeatsWithAI), so the only real requirements are
+-- at least one human and no more humans than the layout has seats.
+local function lobbyCanStart(lobby: LobbySession): boolean
+	local humans = countHumans(lobby)
+	return humans > 0 and humans <= TeamLayoutsData.getSlotCount(lobby.Settings.teamLayout)
+end
+
+-- Why a lobby cannot start, phrased for the player. nil when it can.
+local function startBlocker(lobby: LobbySession): string?
+	local humans = countHumans(lobby)
+	local slots = TeamLayoutsData.getSlotCount(lobby.Settings.teamLayout)
+	if humans == 0 then
+		return "Waiting for a player"
+	end
+	if humans > slots then
+		local label = TeamLayoutsData.getOrDefault(lobby.Settings.teamLayout).label
+		return ("%s seats %d - %d players in lobby"):format(label, slots, humans)
+	end
+	return nil
 end
 
 -- Faction -> teamIndex for every seated player (human and AI alike), derived
@@ -249,6 +281,37 @@ function LobbyManager.removePlayer(player: Player)
 end
 
 -- Add an AI player to the lobby
+-- Seats one AI per empty slot in the chosen layout.
+--
+-- This is what makes every layout playable on its own: pick 2v2 alone and you
+-- get three AI opponents/allies rather than a lobby that refuses to start. Runs
+-- at countdown time rather than on layout change so a human joining during the
+-- wait takes a real seat instead of displacing a bot that already has one.
+local function fillEmptySeatsWithAI(lobby: LobbySession)
+	local slots = TeamLayoutsData.getSlotCount(lobby.Settings.teamLayout)
+	local guard = 0
+	while countLobbyPlayers(lobby) < slots and guard < slots do
+		guard += 1
+		local index = countLobbyPlayers(lobby) + 1
+		local aiId = -1 * index
+		if lobby.Players[aiId] then
+			-- Id already taken (a hand-added AI); walk past it rather than
+			-- overwrite, otherwise the loop cannot terminate.
+			aiId -= slots
+		end
+		lobby.Players[aiId] = {
+			Player = nil :: any,
+			UserId = aiId,
+			Name = "AI_Opponent" .. index,
+			IsReady = true,
+			SelectedFaction = nil,
+			IsAI = true,
+		}
+		autoAssignSpawn(lobby, aiId, "AI_Opponent" .. index)
+		LobbyDebug:info(`Auto-seated AI for empty slot {index}/{slots}`)
+	end
+end
+
 function LobbyManager.addAI(requestingPlayer: Player)
 	local lobby = getOrCreateLobby()
 
@@ -533,7 +596,7 @@ function LobbyManager.toggleReady(player: Player)
 
 	-- Need at least 1 human player, and the roster has to exactly fill the
 	-- chosen layout's teams -- a 2v2 with 3 players has no valid split.
-	if allReady and humanCount > 0 and not lobby.CountdownActive and lobbyFitsLayout(lobby) then
+	if allReady and humanCount > 0 and not lobby.CountdownActive and lobbyCanStart(lobby) then
 		LobbyManager.startCountdown()
 	elseif not allReady and lobby.CountdownActive then
 		LobbyManager.cancelCountdown()
@@ -550,10 +613,15 @@ function LobbyManager.startCountdown()
 	-- Defense in depth: toggleReady is the normal gate, but a roster change
 	-- between that check and this call (e.g. an AI added mid-toggle) must not
 	-- be allowed to start a countdown for a layout that no longer fits.
-	if not lobbyFitsLayout(lobby) then
-		LobbyDebug:warn("Roster does not fit the current team layout; refusing to start countdown")
+	local blocker = startBlocker(lobby)
+	if blocker then
+		LobbyDebug:warn(`Cannot start countdown: {blocker}`)
 		return
 	end
+
+	-- Any seat still empty becomes an AI, so the layout is always full by the
+	-- time the match builds its team map.
+	fillEmptySeatsWithAI(lobby)
 
 	lobby.CountdownActive = true
 	lobby.CountdownStartTime = tick()
@@ -625,8 +693,8 @@ function LobbyManager.startGame()
 	-- COUNTDOWN_DURATION seconds after being scheduled, and the roster can
 	-- have changed underneath it since. Refuse rather than start a match that
 	-- can't seat everyone into the chosen layout.
-	if not lobbyFitsLayout(lobby) then
-		LobbyDebug:warn("Roster no longer fits the current team layout; refusing to start game")
+	if not lobbyCanStart(lobby) then
+		LobbyDebug:warn(`Cannot start game: {startBlocker(lobby) or "unknown"}`)
 
 		-- Reset the countdown state directly instead of calling
 		-- cancelCountdown(): this guard runs INSIDE the countdown's own thread
@@ -786,6 +854,9 @@ function LobbyManager.broadcastLobbyState()
 		-- computeMaxPlayers in Lobby.luau) -- broadcast the real number
 		-- instead so that copy can't drift from this one.
 		MaxPlayers = getLobbyMaxPlayers(lobby),
+		-- Why the lobby cannot start, or nil. Sent so the roster can state the
+		-- real reason instead of the client re-deriving a rule the server owns.
+		StartBlocker = startBlocker(lobby),
 		CountdownActive = lobby.CountdownActive,
 		CountdownTimeRemaining = if lobby.CountdownActive and lobby.CountdownStartTime
 			then math.max(0, COUNTDOWN_DURATION - (tick() - lobby.CountdownStartTime))

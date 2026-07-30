@@ -27,6 +27,8 @@
 local React = require(game.ReplicatedStorage.Packages.react)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Theme = require(script.Parent.Parent.Parent.Theme)
+
+local SWATCH = 22
 local TeamLayoutsData = require(ReplicatedStorage.Shared.GameData.TeamLayoutsData)
 
 export type PlayerEntry = {
@@ -82,6 +84,37 @@ end
 --- One faction/colour pick chip. `takenBy` renders it inert and names the
 --- reason -- same "say why it's unavailable" rule DesktopBuildingGrid's
 --- locked tiles and ArmyPanel's blocked formations use.
+--- A colour choice as a swatch, not a labelled chip.
+---
+--- Twelve chips each spelling out "Blue" / "Cyan" / "Teal" wrapped into several
+--- rows and was a large part of why the roster column swallowed the screen. The
+--- colour IS the label, so a grid of squares carries the same information in one
+--- row. Blocked colours get a dimmed swatch plus a stroke, and the owner's name
+--- stays reachable through the instance name for a future tooltip.
+local function colorSwatch(name: string, r: number, g: number, b: number, mine: boolean, takenBy: string?, order: number, onClick: () -> ())
+	local blocked = takenBy ~= nil
+	return React.createElement("TextButton", {
+		Name = if blocked then `{name} (taken by {takenBy})` else name,
+		LayoutOrder = order,
+		Size = UDim2.fromOffset(SWATCH, SWATCH),
+		BackgroundColor3 = Color3.fromRGB(r, g, b),
+		BackgroundTransparency = if blocked then 0.6 else 0,
+		AutoButtonColor = not blocked,
+		Text = "",
+		Active = not blocked,
+		[React.Event.Activated] = if blocked then nil else onClick,
+	}, {
+		Corner = React.createElement("UICorner", { CornerRadius = Theme.corner(Theme.Metrics.RadiusSmall) }),
+		-- Gold ring marks yours; a plain hairline keeps dark swatches visible
+		-- against a dark card.
+		Stroke = React.createElement("UIStroke", {
+			Color = if mine then Theme.Color.Accent else Theme.Color.Border,
+			Transparency = if mine then 0 else Theme.Transparency.Border,
+			Thickness = if mine then 2 else 1,
+		}),
+	})
+end
+
 local function pickChip(label: string, mine: boolean, takenBy: string?, swatch: Color3?, order: number, onClick: () -> ())
 	local blocked = takenBy ~= nil
 	local children: { [string]: any } = {
@@ -151,7 +184,10 @@ local function readyPill(isReady: boolean, order: number)
 	})
 end
 
-local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: string, allPlayers: { PlayerEntry }, props: Props, order: number)
+-- `expanded` gates the faction/colour pickers and the spawn line. Those were
+-- always visible on the local player's card and were most of the roster's
+-- height; you set your kingdom once, so they collapse behind a toggle.
+local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: string, allPlayers: { PlayerEntry }, props: Props, order: number, expanded: boolean, onToggle: () -> ())
 	local swatch = if entry.selectedColor
 		then Color3.fromRGB(entry.selectedColor[1], entry.selectedColor[2], entry.selectedColor[3])
 		else Theme.Color.TextMuted
@@ -164,14 +200,14 @@ local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: stri
 			Thickness = if isLocal then 2 else 1,
 		}),
 		Padding = React.createElement("UIPadding", {
-			PaddingTop = UDim.new(0, Theme.Metrics.Pad),
-			PaddingBottom = UDim.new(0, Theme.Metrics.Pad),
+			PaddingTop = UDim.new(0, Theme.Metrics.PadTight),
+			PaddingBottom = UDim.new(0, Theme.Metrics.PadTight),
 			PaddingLeft = UDim.new(0, Theme.Metrics.Pad),
 			PaddingRight = UDim.new(0, Theme.Metrics.Pad),
 		}),
 		Layout = React.createElement("UIListLayout", {
 			FillDirection = Enum.FillDirection.Vertical,
-			Padding = UDim.new(0, Theme.Metrics.GapTight),
+			Padding = UDim.new(0, 2),
 			SortOrder = Enum.SortOrder.LayoutOrder,
 		}),
 	}
@@ -205,6 +241,19 @@ local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: stri
 		}),
 		Ready = readyPill(entry.isReady, 3),
 	}
+	if isLocal then
+		identityChildren.Edit = React.createElement("TextButton", {
+			LayoutOrder = 5,
+			Size = UDim2.fromOffset(Theme.Metrics.DesktopTarget, Theme.Metrics.DesktopTarget),
+			BackgroundTransparency = 1,
+			AutoButtonColor = false,
+			Text = if expanded then "▴" else "▾",
+			FontFace = Theme.FontFace.BodyBold,
+			TextSize = Theme.TextSize.ScreenSmall,
+			TextColor3 = Theme.Color.Accent,
+			[React.Event.Activated] = onToggle,
+		})
+	end
 	if entry.isAI then
 		identityChildren.Remove = React.createElement("TextButton", {
 			LayoutOrder = 4,
@@ -249,12 +298,14 @@ local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: stri
 				props.onSelectFaction(faction, nil)
 			end)
 		end
-		children.Factions = React.createElement("Frame", {
-			LayoutOrder = 2,
-			Size = UDim2.new(1, 0, 0, 0),
-			AutomaticSize = Enum.AutomaticSize.Y,
-			BackgroundTransparency = 1,
-		}, factionChildren)
+		children.Factions = if expanded
+			then React.createElement("Frame", {
+				LayoutOrder = 2,
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundTransparency = 1,
+			}, factionChildren)
+			else nil
 	else
 		children.Faction = React.createElement("TextLabel", {
 			LayoutOrder = 2,
@@ -287,21 +338,27 @@ local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: stri
 				end
 			end
 			local mine = colorsEqual(entry.selectedColor, opt.r, opt.g, opt.b)
-			colorChildren[opt.name] =
-				pickChip(opt.name, mine, takenByOther, Color3.fromRGB(opt.r, opt.g, opt.b), i, function()
-					props.onSelectColor({ opt.r, opt.g, opt.b })
-				end)
+			colorChildren[opt.name] = colorSwatch(opt.name, opt.r, opt.g, opt.b, mine, takenByOther, i, function()
+				props.onSelectColor({ opt.r, opt.g, opt.b })
+			end)
 		end
-		children.Colors = React.createElement("Frame", {
-			LayoutOrder = 3,
-			Size = UDim2.new(1, 0, 0, 0),
-			AutomaticSize = Enum.AutomaticSize.Y,
-			BackgroundTransparency = 1,
-		}, colorChildren)
+		colorChildren.Layout = React.createElement("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			Padding = UDim.new(0, Theme.Metrics.GapTight),
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Wraps = true,
+		})
+		children.Colors = if expanded
+			then React.createElement("Frame", {
+				LayoutOrder = 3,
+				Size = UDim2.new(1, 0, 0, SWATCH),
+				BackgroundTransparency = 1,
+			}, colorChildren)
+			else nil
 	end
 
 	-- Row 4: spawn -- always read-only, chosen by clicking the map (MapPreview).
-	children.Spawn = React.createElement("TextLabel", {
+	children.Spawn = if expanded or not isLocal then React.createElement("TextLabel", {
 		LayoutOrder = 4,
 		Size = UDim2.new(1, 0, 0, 20),
 		BackgroundTransparency = 1,
@@ -310,7 +367,7 @@ local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: stri
 		TextSize = Theme.TextSize.ScreenCaption,
 		TextColor3 = Theme.Color.TextMuted,
 		TextXAlignment = Enum.TextXAlignment.Left,
-	})
+	}) else nil
 
 	return React.createElement("Frame", {
 		key = tostring(entry.userId),
@@ -326,11 +383,17 @@ end
 --- Empty slot: an invitation, not a blank. Every empty slot offers Add AI --
 --- LobbyManager.addAI auto-assigns the next open spawn, so any of them works.
 local function emptySlot(order: number, compact: boolean, onAddAI: () -> ())
+	-- FIXED height, deliberately. This row used AutomaticSize.Y while its own
+	-- label was sized `1, 0` -- height 100% of a parent whose height came from
+	-- its children. Roblox resolves that circular constraint by growing the row,
+	-- and it reached 625px, which is what made the roster swallow the screen.
+	local rowHeight = if compact
+		then Theme.Metrics.TouchTarget + Theme.Metrics.Pad * 2
+		else Theme.Metrics.DesktopTarget + Theme.Metrics.Pad * 2
 	return React.createElement("Frame", {
 		key = "Empty" .. order,
 		LayoutOrder = order,
-		Size = UDim2.new(1, 0, 0, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
+		Size = UDim2.new(1, 0, 0, rowHeight),
 		BackgroundColor3 = Theme.Color.Surface,
 		BackgroundTransparency = Theme.Transparency.ScreenCard,
 		BorderSizePixel = 0,
@@ -355,7 +418,7 @@ local function emptySlot(order: number, compact: boolean, onAddAI: () -> ())
 		}),
 		Label = React.createElement("TextLabel", {
 			LayoutOrder = 1,
-			Size = UDim2.new(1, -100, 1, 0),
+			Size = UDim2.new(1, -100, 0, if compact then Theme.Metrics.TouchTarget else Theme.Metrics.DesktopTarget),
 			BackgroundTransparency = 1,
 			Text = "Waiting for players…",
 			FontFace = Theme.FontFace.Body,
@@ -397,20 +460,21 @@ local function teamHeader(teamIndex: number, order: number)
 	})
 end
 
---- Blocker shown when the roster can't fill the chosen layout's teams --
---- either direction (too few or too many) means there's no valid split, so
---- Ready-driven start has to be refused (see LobbyManager.lobbyFitsLayout).
-local function rosterBlocker(layoutId: string, playerCount: number, order: number)
-	local layout = TeamLayoutsData.getOrDefault(layoutId)
-	local needed = TeamLayoutsData.getSlotCount(layoutId)
-
+--- Blocker shown when the lobby cannot start.
+---
+--- The REASON comes from the server (LobbyManager broadcasts StartBlocker), not
+--- from re-deriving the rule here. An earlier version computed it client-side as
+--- "player count must exactly equal slot count", which stopped being true the
+--- moment empty seats began auto-filling with AI -- so it showed a blocker on a
+--- lobby that could in fact start.
+local function rosterBlocker(message: string, order: number)
 	return React.createElement("TextLabel", {
 		key = "RosterBlocker",
 		LayoutOrder = order,
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundTransparency = 1,
-		Text = `{layout.label} needs {needed} players — {playerCount} in lobby`,
+		Text = message,
 		FontFace = Theme.FontFace.BodyBold,
 		TextSize = Theme.TextSize.ScreenCaption,
 		TextColor3 = Theme.Color.Warning,
@@ -420,6 +484,13 @@ local function rosterBlocker(layoutId: string, playerCount: number, order: numbe
 end
 
 local function PlayerList(props: Props)
+	-- Only the local player's card can expand, so one boolean is enough.
+	local expanded, setExpanded = React.useState(false)
+	local function toggleExpanded()
+		setExpanded(function(was)
+			return not was
+		end)
+	end
 	local players = props.players or {}
 	local isFFA = TeamLayoutsData.isFreeForAll(props.teamLayout)
 
@@ -460,7 +531,7 @@ local function PlayerList(props: Props)
 			order += 1
 			local spawnNum = spawnByUserId[entry.userId]
 			local spawnLabel = if spawnNum then ("#" .. spawnNum) else "not chosen"
-			rowChildren["Player" .. entry.userId] = playerCard(entry, entry.userId == props.localPlayerId, spawnLabel, players, props, order)
+			rowChildren["Player" .. entry.userId] = playerCard(entry, entry.userId == props.localPlayerId, spawnLabel, players, props, order, expanded, toggleExpanded)
 		end
 
 		local emptyCount = math.max(0, props.maxPlayers - #players)
@@ -493,7 +564,7 @@ local function PlayerList(props: Props)
 				local entry: PlayerEntry? = if userId then playerByUserId[userId] else nil
 				if entry then
 					rowChildren["Player" .. entry.userId] =
-						playerCard(entry, entry.userId == props.localPlayerId, "#" .. slotNum, players, props, order)
+						playerCard(entry, entry.userId == props.localPlayerId, "#" .. slotNum, players, props, order, expanded, toggleExpanded)
 				else
 					rowChildren["EmptySlot" .. slotNum] = emptySlot(order, props.compact, props.onAddAI)
 				end
@@ -501,13 +572,9 @@ local function PlayerList(props: Props)
 		end
 	end
 
-	-- A layout's teams have to be exactly full to start (see
-	-- LobbyManager.lobbyFitsLayout) -- surface that as a clear blocker rather
-	-- than let Ready silently do nothing.
-	local neededPlayers = TeamLayoutsData.getSlotCount(props.teamLayout)
-	local blocker = if #players ~= neededPlayers
-		then rosterBlocker(props.teamLayout, #players, 2)
-		else nil
+	-- Server-authored: empty seats auto-fill with AI, so the only real blocker
+	-- is more humans than the layout has seats.
+	local blocker = if props.startBlocker then rosterBlocker(props.startBlocker, 2) else nil
 
 	return React.createElement("Frame", {
 		Name = "PlayerList",

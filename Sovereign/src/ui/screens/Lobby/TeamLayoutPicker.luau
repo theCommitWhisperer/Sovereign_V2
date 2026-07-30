@@ -1,16 +1,18 @@
 --!strict
--- TeamLayoutPicker: chip-style picker for the match's team arrangement (2v2,
--- 1v1v1v1, 3v1, ...). Mirrors LobbySettingsPanel's chip pattern, but each
--- option needs more than a label -- its description, and for asymmetric
--- layouts a visible "uneven teams" marker -- so it gets its own small card
--- instead of being squeezed into the generic SettingDef chip used for plain
--- string/toggle settings.
+-- TeamLayoutPicker: dropdown for the match's team arrangement (2v2, 1v1v1v1,
+-- 3v1, ...).
 --
--- Presentational only: `layoutIds` (which options to show -- the lobby
--- filters this to TeamLayoutsData.getPlayableOn(maxPlayers) before handing
--- it down, since what's playable depends on the selected map) and
--- `selectedLayout` come in as props, `onSelect` is the only way out. The
--- caller owns the VoteSetting remote call, same as every other lobby chip.
+-- WHY A DROPDOWN AND NOT A CARD LIST
+-- ----------------------------------
+-- This was six always-visible cards, each with a label, a description and an
+-- asymmetry warning -- 213px of permanent height to express one choice you make
+-- once per match. Collapsed it costs one row; the descriptions are still there,
+-- just only while you are actually choosing.
+--
+-- Presentational only: `layoutIds` (the lobby filters this to
+-- TeamLayoutsData.getPlayableOn(maxPlayers), since what is playable depends on
+-- the selected map) and `selectedLayout` come in as props, `onSelect` is the
+-- only way out. The caller owns the VoteSetting remote call.
 
 local React = require(game.ReplicatedStorage.Packages.react)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -25,94 +27,148 @@ export type Props = {
 	LayoutOrder: number?,
 }
 
-local function layoutCard(layout: TeamLayoutsData.Layout, isSelected: boolean, order: number, compact: boolean, onSelect: (string) -> ())
-	local children: { [string]: any } = {
-		Corner = React.createElement("UICorner", { CornerRadius = Theme.corner(Theme.Metrics.RadiusSmall) }),
-		Stroke = React.createElement("UIStroke", {
-			Color = if isSelected then Theme.Color.Accent else Theme.Color.Border,
-			Transparency = if isSelected then 0 else Theme.Transparency.Border,
-			Thickness = 1,
-		}),
-		Padding = React.createElement("UIPadding", {
-			PaddingTop = UDim.new(0, Theme.Metrics.PadTight),
-			PaddingBottom = UDim.new(0, Theme.Metrics.PadTight),
-			PaddingLeft = UDim.new(0, Theme.Metrics.Pad),
-			PaddingRight = UDim.new(0, Theme.Metrics.Pad),
-		}),
-		Layout = React.createElement("UIListLayout", {
-			FillDirection = Enum.FillDirection.Vertical,
-			Padding = UDim.new(0, 2),
-			SortOrder = Enum.SortOrder.LayoutOrder,
-		}),
-		Label = React.createElement("TextLabel", {
-			LayoutOrder = 1,
-			Size = UDim2.new(1, 0, 0, 22),
-			BackgroundTransparency = 1,
-			Text = layout.label,
-			FontFace = if isSelected then Theme.FontFace.BodyBold else Theme.FontFace.Body,
-			TextSize = Theme.TextSize.ScreenBody,
-			TextColor3 = if isSelected then Theme.Color.Accent else Theme.Color.TextPrimary,
-			TextXAlignment = Enum.TextXAlignment.Left,
-		}),
-		Description = React.createElement("TextLabel", {
-			LayoutOrder = 2,
-			Size = UDim2.new(1, 0, 0, 0),
-			AutomaticSize = Enum.AutomaticSize.Y,
-			BackgroundTransparency = 1,
-			Text = layout.description,
-			FontFace = Theme.FontFace.Body,
-			TextSize = Theme.TextSize.ScreenCaption,
-			TextColor3 = if isSelected then Theme.Color.TextPrimary else Theme.Color.TextSecondary,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			TextWrapped = true,
-		}),
-	}
-
-	-- Asymmetric layouts hand one side a numerical disadvantage on purpose --
-	-- this has to be visible on the chip itself, not just in the description
-	-- text, so picking one is never an accident.
-	if layout.asymmetric then
-		children.AsymmetricTag = React.createElement("TextLabel", {
-			LayoutOrder = 3,
-			Size = UDim2.new(1, 0, 0, 20),
-			BackgroundTransparency = 1,
-			Text = "⚠ Asymmetric -- uneven teams",
-			FontFace = Theme.FontFace.BodyBold,
-			TextSize = Theme.TextSize.ScreenCaption,
-			TextColor3 = Theme.Color.Warning,
-			TextXAlignment = Enum.TextXAlignment.Left,
-		})
-	end
-
+local function optionRow(
+	layout: TeamLayoutsData.Layout,
+	isSelected: boolean,
+	rowHeight: number,
+	order: number,
+	onSelect: (string) -> ()
+)
 	return React.createElement("TextButton", {
-		key = layout.id,
+		Name = layout.id,
 		LayoutOrder = order,
-		Size = UDim2.new(0, if compact then 158 else 196, 0, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
+		Size = UDim2.new(1, 0, 0, rowHeight),
 		BackgroundColor3 = if isSelected then Theme.Color.Accent else Theme.Color.SurfaceRaised,
-		BackgroundTransparency = if isSelected then Theme.Transparency.ScreenCardActive else Theme.Transparency.ScreenCard,
-		AutoButtonColor = false,
+		BackgroundTransparency = if isSelected then 0.75 else Theme.Transparency.ScreenCard,
+		AutoButtonColor = true,
 		Text = "",
 		[React.Event.Activated] = function()
 			onSelect(layout.id)
 		end,
-	}, children)
+	}, {
+		Corner = React.createElement("UICorner", { CornerRadius = Theme.corner(Theme.Metrics.RadiusSmall) }),
+		Pad = React.createElement("UIPadding", {
+			PaddingLeft = UDim.new(0, Theme.Metrics.Pad),
+			PaddingRight = UDim.new(0, Theme.Metrics.Pad),
+		}),
+		Label = React.createElement("TextLabel", {
+			Size = UDim2.new(0.3, 0, 1, 0),
+			BackgroundTransparency = 1,
+			Text = layout.label,
+			FontFace = Theme.FontFace.BodyBold,
+			TextSize = Theme.TextSize.ScreenSmall,
+			TextColor3 = if isSelected then Theme.Color.Accent else Theme.Color.TextPrimary,
+			TextXAlignment = Enum.TextXAlignment.Left,
+		}),
+		-- The asymmetry warning rides on the description line rather than taking
+		-- a row of its own.
+		Detail = React.createElement("TextLabel", {
+			Position = UDim2.fromScale(0.3, 0),
+			Size = UDim2.new(0.7, 0, 1, 0),
+			BackgroundTransparency = 1,
+			Text = if layout.asymmetric
+				then "uneven teams · " .. layout.description
+				else layout.description,
+			FontFace = Theme.FontFace.Body,
+			TextSize = Theme.TextSize.ScreenCaption,
+			TextColor3 = if layout.asymmetric then Theme.Color.Warning else Theme.Color.TextMuted,
+			TextXAlignment = Enum.TextXAlignment.Right,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+		}),
+	})
 end
 
 local function TeamLayoutPicker(props: Props)
-	local chips: { [string]: any } = {
+	local open, setOpen = React.useState(false)
+	local rowHeight = if props.compact then Theme.Metrics.TouchTarget else Theme.Metrics.DesktopTarget
+	local selected = TeamLayoutsData.getOrDefault(props.selectedLayout)
+
+	local children: { [string]: any } = {
 		Layout = React.createElement("UIListLayout", {
-			FillDirection = Enum.FillDirection.Horizontal,
+			FillDirection = Enum.FillDirection.Vertical,
 			Padding = UDim.new(0, Theme.Metrics.GapTight),
 			SortOrder = Enum.SortOrder.LayoutOrder,
-			Wraps = true,
+		}),
+
+		Trigger = React.createElement("TextButton", {
+			LayoutOrder = 1,
+			Size = UDim2.new(1, 0, 0, rowHeight),
+			BackgroundColor3 = Theme.Color.SurfaceRaised,
+			BackgroundTransparency = Theme.Transparency.ScreenCard,
+			AutoButtonColor = true,
+			Text = "",
+			[React.Event.Activated] = function()
+				setOpen(function(wasOpen)
+					return not wasOpen
+				end)
+			end,
+		}, {
+			Corner = React.createElement("UICorner", { CornerRadius = Theme.corner(Theme.Metrics.RadiusSmall) }),
+			Stroke = React.createElement("UIStroke", {
+				Color = if open then Theme.Color.Accent else Theme.Color.Border,
+				Transparency = if open then 0 else Theme.Transparency.Border,
+				Thickness = 1,
+			}),
+			Pad = React.createElement("UIPadding", {
+				PaddingLeft = UDim.new(0, Theme.Metrics.Pad),
+				PaddingRight = UDim.new(0, Theme.Metrics.Pad),
+			}),
+			Title = React.createElement("TextLabel", {
+				Size = UDim2.new(0.45, 0, 1, 0),
+				BackgroundTransparency = 1,
+				Text = "Teams",
+				FontFace = Theme.FontFace.Body,
+				TextSize = Theme.TextSize.ScreenSmall,
+				TextColor3 = Theme.Color.TextSecondary,
+				TextXAlignment = Enum.TextXAlignment.Left,
+			}),
+			Value = React.createElement("TextLabel", {
+				Position = UDim2.fromScale(0.45, 0),
+				Size = UDim2.new(0.55, -14, 1, 0),
+				BackgroundTransparency = 1,
+				Text = selected.label,
+				FontFace = Theme.FontFace.BodyBold,
+				TextSize = Theme.TextSize.ScreenSmall,
+				TextColor3 = Theme.Color.Accent,
+				TextXAlignment = Enum.TextXAlignment.Right,
+			}),
+			Caret = React.createElement("TextLabel", {
+				AnchorPoint = Vector2.new(1, 0.5),
+				Position = UDim2.new(1, 0, 0.5, 0),
+				Size = UDim2.fromOffset(12, 12),
+				BackgroundTransparency = 1,
+				Text = if open then "▴" else "▾",
+				FontFace = Theme.FontFace.Body,
+				TextSize = Theme.TextSize.ScreenCaption,
+				TextColor3 = Theme.Color.TextSecondary,
+			}),
 		}),
 	}
-	for i, layoutId in props.layoutIds do
-		local layout = TeamLayoutsData.get(layoutId)
-		if layout then
-			chips[layoutId] = layoutCard(layout, layoutId == props.selectedLayout, i, props.compact, props.onSelect)
+
+	if open then
+		local listChildren: { [string]: any } = {
+			Layout = React.createElement("UIListLayout", {
+				FillDirection = Enum.FillDirection.Vertical,
+				Padding = UDim.new(0, 2),
+				SortOrder = Enum.SortOrder.LayoutOrder,
+			}),
+		}
+		for i, id in props.layoutIds do
+			local layout = TeamLayoutsData.get(id)
+			if layout then
+				listChildren[id] = optionRow(layout, id == props.selectedLayout, rowHeight, i, function(chosen)
+					props.onSelect(chosen)
+					setOpen(false)
+				end)
+			end
 		end
+
+		children.Options = React.createElement("Frame", {
+			LayoutOrder = 2,
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+		}, listChildren)
 	end
 
 	return React.createElement("Frame", {
@@ -120,41 +176,8 @@ local function TeamLayoutPicker(props: Props)
 		LayoutOrder = props.LayoutOrder,
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
-		-- A real card, not a transparent container. Section labels sitting directly
-		-- on the backdrop image were part of why this screen was unreadable.
-		BackgroundColor3 = Theme.Color.Surface,
-		BackgroundTransparency = Theme.Transparency.ScreenPanel,
-	}, {
-		Corner = React.createElement("UICorner", { CornerRadius = Theme.corner() }),
-		Stroke = React.createElement("UIStroke", Theme.strokeProps()),
-		Pad = React.createElement("UIPadding", {
-			PaddingTop = UDim.new(0, Theme.Metrics.Pad),
-			PaddingBottom = UDim.new(0, Theme.Metrics.Pad),
-			PaddingLeft = UDim.new(0, Theme.Metrics.Pad),
-			PaddingRight = UDim.new(0, Theme.Metrics.Pad),
-		}),
-		Layout = React.createElement("UIListLayout", {
-			FillDirection = Enum.FillDirection.Vertical,
-			Padding = UDim.new(0, Theme.Metrics.GapTight),
-			SortOrder = Enum.SortOrder.LayoutOrder,
-		}),
-		Title = React.createElement("TextLabel", {
-			LayoutOrder = 1,
-			Size = UDim2.new(1, 0, 0, 24),
-			BackgroundTransparency = 1,
-			Text = "Team Layout",
-			FontFace = Theme.FontFace.Display,
-			TextSize = Theme.TextSize.ScreenHeading,
-			TextColor3 = Theme.Color.TextPrimary,
-			TextXAlignment = Enum.TextXAlignment.Left,
-		}),
-		Chips = React.createElement("Frame", {
-			LayoutOrder = 2,
-			Size = UDim2.new(1, 0, 0, 0),
-			AutomaticSize = Enum.AutomaticSize.Y,
-			BackgroundTransparency = 1,
-		}, chips),
-	})
+		BackgroundTransparency = 1,
+	}, children)
 end
 
 return TeamLayoutPicker

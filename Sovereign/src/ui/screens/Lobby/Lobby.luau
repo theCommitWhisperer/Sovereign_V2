@@ -119,6 +119,11 @@ function Lobby:init()
 				newState.maxPlayers = data.MaxPlayers
 			end
 
+			-- `false` rather than nil: a table literal drops nil-valued fields,
+			-- so assigning nil here would leave a stale blocker on screen after
+			-- the lobby became startable.
+			newState.startBlocker = data.StartBlocker or false
+
 			newState.mapKeys = self.state.mapKeys
 
 			if data.SpawnSelections then
@@ -368,6 +373,7 @@ function Lobby:render()
 		players = state.players,
 		maxPlayers = maxPlayers,
 		teamLayout = state.teamLayout,
+		startBlocker = state.startBlocker or nil,
 		localPlayerId = localPlayer.UserId,
 		spawnSelections = state.spawnSelections,
 		onAddAI = self.addAI,
@@ -477,9 +483,17 @@ function Lobby:render()
 			mapListRows[mapKey] = self:renderMapChip(mapKey, i, false)
 		end
 
+		-- THREE COLUMNS, NOT TWO.
+		--
+		-- The previous desktop layout put the map on the left and stacked
+		-- countdown + roster + team layout + settings into one scrolling column on
+		-- the right, which meant desktop players had to scroll a screen that has
+		-- plenty of horizontal room going spare. Spreading that stack across two
+		-- columns trades width (which there is a lot of) for height (which is what
+		-- ran out), so the whole lobby fits on one page.
 		local leftColumn = React.createElement("Frame", {
 			Name = "LeftColumn",
-			Size = UDim2.new(0.38, -gap / 2, 1, 0),
+			Size = UDim2.new(0.28, -gap, 1, 0),
 			BackgroundTransparency = 1,
 		}, {
 			Preview = mapPreview,
@@ -505,10 +519,12 @@ function Lobby:render()
 			}, mapListRows),
 		})
 
-		local rightColumn = React.createElement("ScrollingFrame", {
-			Name = "RightColumn",
-			Position = UDim2.new(0.4, 0, 0, 0),
-			Size = UDim2.new(0.6, 0, 1, 0),
+		-- Middle: who is playing. Countdown sits above it because it is the thing
+		-- you look at last before the match begins.
+		local midColumn = React.createElement("ScrollingFrame", {
+			Name = "MidColumn",
+			Position = UDim2.new(0.28, 0, 0, 0),
+			Size = UDim2.new(0.36, -gap, 1, 0),
 			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
 			ScrollingDirection = Enum.ScrollingDirection.Y,
@@ -518,7 +534,7 @@ function Lobby:render()
 		}, {
 			Layout = React.createElement("UIListLayout", {
 				FillDirection = Enum.FillDirection.Vertical,
-				Padding = UDim.new(0, Theme.Metrics.GapLoose),
+				Padding = UDim.new(0, gap),
 				SortOrder = Enum.SortOrder.LayoutOrder,
 			}),
 			Countdown = countdownBanner,
@@ -528,14 +544,33 @@ function Lobby:render()
 				AutomaticSize = Enum.AutomaticSize.Y,
 				BackgroundTransparency = 1,
 			}, { List = playerList }),
+		})
+
+		-- Right: how the match is configured.
+		local rightColumn = React.createElement("ScrollingFrame", {
+			Name = "RightColumn",
+			Position = UDim2.new(0.64, 0, 0, 0),
+			Size = UDim2.new(0.36, 0, 1, 0),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			ScrollingDirection = Enum.ScrollingDirection.Y,
+			ScrollBarThickness = 4,
+			AutomaticCanvasSize = Enum.AutomaticSize.Y,
+			CanvasSize = UDim2.fromScale(0, 0),
+		}, {
+			Layout = React.createElement("UIListLayout", {
+				FillDirection = Enum.FillDirection.Vertical,
+				Padding = UDim.new(0, gap),
+				SortOrder = Enum.SortOrder.LayoutOrder,
+			}),
 			TeamLayout = React.createElement("Frame", {
-				LayoutOrder = 3,
+				LayoutOrder = 1,
 				Size = UDim2.new(1, 0, 0, 0),
 				AutomaticSize = Enum.AutomaticSize.Y,
 				BackgroundTransparency = 1,
 			}, { Picker = teamLayoutPicker }),
 			Settings = React.createElement("Frame", {
-				LayoutOrder = 4,
+				LayoutOrder = 2,
 				Size = UDim2.new(1, 0, 0, 0),
 				AutomaticSize = Enum.AutomaticSize.Y,
 				BackgroundTransparency = 1,
@@ -549,118 +584,126 @@ function Lobby:render()
 			BackgroundTransparency = 1,
 		}, {
 			Left = leftColumn,
+			Mid = midColumn,
 			Right = rightColumn,
 		})
 	end
 
-	return React.createElement("Frame", {
-		Name = "LobbyScreen",
-		Size = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 1,
+	return React.createElement("ScreenGui", {
+		Name = "LobbyGui",
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		IgnoreGuiInset = true,
+		ResetOnSpawn = false,
 	}, {
-		-- The SAME backdrop MainMenu uses, so the out-of-match flow reads as one
-		-- place. This screen previously had a fully transparent root with only a
-		-- glass wash over it, borrowing the in-match HUD's translucency -- but
-		-- there is no gameplay behind a lobby to see through to, so all that
-		-- achieved was text competing with whatever happened to be behind the
-		-- screen. Menus get a backdrop and a scrim; only the HUD is glass.
-		Backdrop = React.createElement("ImageLabel", {
-			Name = "Backdrop",
-			Image = Theme.MenuBackgroundImage,
-			ScaleType = Enum.ScaleType.Crop,
-			BackgroundTransparency = 1,
-			Size = UDim2.fromScale(1, 1),
-			ZIndex = 1,
-		}),
-
-		-- Darkens the backdrop so light text is legible over any part of it.
-		Scrim = React.createElement("Frame", {
-			Name = "Scrim",
-			Size = UDim2.fromScale(1, 1),
-			BackgroundColor3 = Theme.Color.Surface,
-			BackgroundTransparency = Theme.Transparency.ScreenScrim,
-			BorderSizePixel = 0,
-			ZIndex = 2,
-		}),
-
-		Content = React.createElement("Frame", {
+		LobbyScreen = React.createElement("Frame", {
+			Name = "LobbyScreen",
 			Size = UDim2.fromScale(1, 1),
 			BackgroundTransparency = 1,
-			ZIndex = 3,
 		}, {
-			Padding = React.createElement("UIPadding", {
-				PaddingTop = UDim.new(0, Theme.Metrics.PadLoose),
-				PaddingBottom = UDim.new(0, Theme.Metrics.PadLoose),
-				PaddingLeft = UDim.new(0, Theme.Metrics.PadLoose),
-				PaddingRight = UDim.new(0, Theme.Metrics.PadLoose),
+			-- The SAME backdrop MainMenu uses, so the out-of-match flow reads as one
+			-- place. This screen previously had a fully transparent root with only a
+			-- glass wash over it, borrowing the in-match HUD's translucency -- but
+			-- there is no gameplay behind a lobby to see through to, so all that
+			-- achieved was text competing with whatever happened to be behind the
+			-- screen. Menus get a backdrop and a scrim; only the HUD is glass.
+			Backdrop = React.createElement("ImageLabel", {
+				Name = "Backdrop",
+				Image = Theme.MenuBackgroundImage,
+				ScaleType = Enum.ScaleType.Crop,
+				BackgroundTransparency = 1,
+				Size = UDim2.fromScale(1, 1),
+				ZIndex = 1,
 			}),
 
-			Header = React.createElement("Frame", {
-				Name = "Header",
-				Size = UDim2.new(1, 0, 0, headerHeight),
+			-- Darkens the backdrop so light text is legible over any part of it.
+			Scrim = React.createElement("Frame", {
+				Name = "Scrim",
+				Size = UDim2.fromScale(1, 1),
+				BackgroundColor3 = Theme.Color.Surface,
+				BackgroundTransparency = Theme.Transparency.ScreenScrim,
+				BorderSizePixel = 0,
+				ZIndex = 2,
+			}),
+
+			Content = React.createElement("Frame", {
+				Size = UDim2.fromScale(1, 1),
 				BackgroundTransparency = 1,
+				ZIndex = 3,
 			}, {
-				Title = React.createElement("TextLabel", {
-					Size = UDim2.new(1, 0, 1, 0),
-					BackgroundTransparency = 1,
-					Text = "Lobby",
-					FontFace = Theme.FontFace.Display,
-					TextSize = Theme.TextSize.ScreenTitle,
-					TextColor3 = Theme.Color.TextPrimary,
-					TextXAlignment = Enum.TextXAlignment.Left,
+				Padding = React.createElement("UIPadding", {
+					PaddingTop = UDim.new(0, Theme.Metrics.PadLoose),
+					PaddingBottom = UDim.new(0, Theme.Metrics.PadLoose),
+					PaddingLeft = UDim.new(0, Theme.Metrics.PadLoose),
+					PaddingRight = UDim.new(0, Theme.Metrics.PadLoose),
 				}),
-			}),
 
-			Main = mainArea,
-
-			Footer = React.createElement("Frame", {
-				Name = "Footer",
-				Position = UDim2.new(0, 0, 1, 0),
-				AnchorPoint = Vector2.new(0, 1),
-				Size = UDim2.new(1, 0, 0, footerHeight),
-				BackgroundTransparency = 1,
-			}, {
-				-- Hidden entirely while the countdown banner is up -- that banner
-				-- is now the only Ready/Cancel affordance, so there's nothing for
-				-- this button to do until the countdown ends or gets cancelled.
-				ReadyButton = (not state.countdownActive) and React.createElement("TextButton", {
-					Size = UDim2.new(1, -120, 1, -Theme.Metrics.Pad),
-					BackgroundColor3 = if state.isReady then Theme.Color.Accent else Theme.Color.Action,
-					BackgroundTransparency = Theme.Transparency.ScreenCardActive,
-					AutoButtonColor = false,
-					Text = if state.isReady then "Ready ✓" else "Ready Up",
-					FontFace = Theme.FontFace.BodyBold,
-					TextSize = Theme.TextSize.ScreenHeading,
-					TextColor3 = if state.isReady then Theme.Color.Accent else Theme.Color.TextPrimary,
-					[React.Event.Activated] = self.toggleReady,
+				Header = React.createElement("Frame", {
+					Name = "Header",
+					Size = UDim2.new(1, 0, 0, headerHeight),
+					BackgroundTransparency = 1,
 				}, {
-					Corner = React.createElement("UICorner", { CornerRadius = Theme.corner() }),
-					Stroke = React.createElement("UIStroke", {
-						Color = if state.isReady then Theme.Color.Accent else Theme.Color.Border,
-						Transparency = if state.isReady then 0 else Theme.Transparency.Border,
-						Thickness = 1,
+					Title = React.createElement("TextLabel", {
+						Size = UDim2.new(1, 0, 1, 0),
+						BackgroundTransparency = 1,
+						Text = "Lobby",
+						FontFace = Theme.FontFace.Display,
+						TextSize = Theme.TextSize.ScreenTitle,
+						TextColor3 = Theme.Color.TextPrimary,
+						TextXAlignment = Enum.TextXAlignment.Left,
 					}),
-				}) or nil,
+				}),
 
-				BackButton = React.createElement("TextButton", {
-					Position = UDim2.new(1, 0, 0, 0),
-					AnchorPoint = Vector2.new(1, 0),
-					Size = UDim2.new(0, 110, 1, -Theme.Metrics.Pad),
-					BackgroundColor3 = Theme.Color.SurfaceRaised,
-					BackgroundTransparency = Theme.Transparency.ScreenCard,
-					AutoButtonColor = false,
-					Text = "Leave",
-					FontFace = Theme.FontFace.Body,
-					TextSize = Theme.TextSize.ScreenBody,
-					TextColor3 = Theme.Color.TextSecondary,
-					[React.Event.Activated] = function()
-						if navigate then
-							navigate("mainMenu")
-						end
-					end,
+				Main = mainArea,
+
+				Footer = React.createElement("Frame", {
+					Name = "Footer",
+					Position = UDim2.new(0, 0, 1, 0),
+					AnchorPoint = Vector2.new(0, 1),
+					Size = UDim2.new(1, 0, 0, footerHeight),
+					BackgroundTransparency = 1,
 				}, {
-					Corner = React.createElement("UICorner", { CornerRadius = Theme.corner() }),
-					Stroke = React.createElement("UIStroke", Theme.strokeProps()),
+					-- Hidden entirely while the countdown banner is up -- that banner
+					-- is now the only Ready/Cancel affordance, so there's nothing for
+					-- this button to do until the countdown ends or gets cancelled.
+					ReadyButton = (not state.countdownActive) and React.createElement("TextButton", {
+						Size = UDim2.new(1, -120, 1, -Theme.Metrics.Pad),
+						BackgroundColor3 = if state.isReady then Theme.Color.Accent else Theme.Color.Action,
+						BackgroundTransparency = Theme.Transparency.ScreenCardActive,
+						AutoButtonColor = false,
+						Text = if state.isReady then "Ready ✓" else "Ready Up",
+						FontFace = Theme.FontFace.BodyBold,
+						TextSize = Theme.TextSize.ScreenHeading,
+						TextColor3 = if state.isReady then Theme.Color.Accent else Theme.Color.TextPrimary,
+						[React.Event.Activated] = self.toggleReady,
+					}, {
+						Corner = React.createElement("UICorner", { CornerRadius = Theme.corner() }),
+						Stroke = React.createElement("UIStroke", {
+							Color = if state.isReady then Theme.Color.Accent else Theme.Color.Border,
+							Transparency = if state.isReady then 0 else Theme.Transparency.Border,
+							Thickness = 1,
+						}),
+					}) or nil,
+
+					BackButton = React.createElement("TextButton", {
+						Position = UDim2.new(1, 0, 0, 0),
+						AnchorPoint = Vector2.new(1, 0),
+						Size = UDim2.new(0, 110, 1, -Theme.Metrics.Pad),
+						BackgroundColor3 = Theme.Color.SurfaceRaised,
+						BackgroundTransparency = Theme.Transparency.ScreenCard,
+						AutoButtonColor = false,
+						Text = "Leave",
+						FontFace = Theme.FontFace.Body,
+						TextSize = Theme.TextSize.ScreenBody,
+						TextColor3 = Theme.Color.TextSecondary,
+						[React.Event.Activated] = function()
+							if navigate then
+								navigate("mainMenu")
+							end
+						end,
+					}, {
+						Corner = React.createElement("UICorner", { CornerRadius = Theme.corner() }),
+						Stroke = React.createElement("UIStroke", Theme.strokeProps()),
+					}),
 				}),
 			}),
 		}),
