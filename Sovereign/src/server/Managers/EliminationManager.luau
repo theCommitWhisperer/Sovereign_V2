@@ -257,9 +257,11 @@ end
 
 -- One kingdom/team standing (human or AI) ? fire the victory flow for every
 -- surviving HUMAN (AI has no client to notify). A human only wins once every
--- OTHER kingdom — AI or human — is eliminated; there is no team/alliance
--- system beyond "same faction name" (FactionManager.areEnemies), so this is
--- inherently free-for-all unless two kingdoms happen to share a faction.
+-- OTHER kingdom — AI or human — is eliminated, OR every survivor is allied
+-- with them. Teams need no change here: the mutual-non-hostility test below
+-- already expresses shared victory, and FactionManager.applyTeamLayout is what
+-- makes teammates non-hostile. Before team layouts existed this was
+-- inherently free-for-all; now a 2v2 correctly ends with both allies winning.
 local function checkForWinner()
 	if matchEnded then
 		return
