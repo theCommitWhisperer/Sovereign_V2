@@ -2133,6 +2133,11 @@ LobbyEvent.OnServerEvent:Connect(function(player, action, ...)
 	elseif action == "SelectFaction" then
 		local faction, targetUserId = ...
 		LobbyManager.selectFaction(player, faction, targetUserId)
+	elseif action == "RenamePlayer" then
+		-- Players may rename the AI kingdoms they are about to fight, and their
+		-- own entry. LobbyManager refuses renaming another human.
+		local targetUserId, newName = ...
+		LobbyManager.renamePlayer(player, targetUserId, newName)
 	elseif action == "ToggleReady" then
 		LobbyManager.toggleReady(player)
 	elseif action == "ListUserMaps" then

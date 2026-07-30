@@ -27,17 +27,21 @@ export type Props = {
 	LayoutOrder: number?,
 }
 
-local function optionRow(
+-- One layout as a square tile. The label ("2v2") is the thing you scan for, so
+-- it dominates; the description is a caption under it and the asymmetry warning
+-- replaces that caption rather than adding a line.
+local TILE = 78
+
+local function optionTile(
 	layout: TeamLayoutsData.Layout,
 	isSelected: boolean,
-	rowHeight: number,
 	order: number,
 	onSelect: (string) -> ()
 )
 	return React.createElement("TextButton", {
 		Name = layout.id,
 		LayoutOrder = order,
-		Size = UDim2.new(1, 0, 0, rowHeight),
+		Size = UDim2.fromOffset(TILE, TILE),
 		BackgroundColor3 = if isSelected then Theme.Color.Accent else Theme.Color.SurfaceRaised,
 		BackgroundTransparency = if isSelected then 0 else Theme.Transparency.ScreenCard,
 		AutoButtonColor = true,
@@ -47,40 +51,51 @@ local function optionRow(
 		end,
 	}, {
 		Corner = React.createElement("UICorner", { CornerRadius = Theme.corner(Theme.Metrics.RadiusSmall) }),
+		Stroke = React.createElement("UIStroke", {
+			Color = if isSelected then Theme.Color.Accent else Theme.Color.Border,
+			Transparency = if isSelected then 0 else Theme.Transparency.Border,
+			Thickness = if isSelected then 2 else 1,
+		}),
 		Pad = React.createElement("UIPadding", {
-			PaddingLeft = UDim.new(0, Theme.Metrics.Pad),
-			PaddingRight = UDim.new(0, Theme.Metrics.Pad),
+			PaddingTop = UDim.new(0, Theme.Metrics.PadTight),
+			PaddingBottom = UDim.new(0, Theme.Metrics.PadTight),
+			PaddingLeft = UDim.new(0, Theme.Metrics.PadTight),
+			PaddingRight = UDim.new(0, Theme.Metrics.PadTight),
+		}),
+		Layout = React.createElement("UIListLayout", {
+			FillDirection = Enum.FillDirection.Vertical,
+			HorizontalAlignment = Enum.HorizontalAlignment.Center,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			Padding = UDim.new(0, 2),
+			SortOrder = Enum.SortOrder.LayoutOrder,
 		}),
 		Label = React.createElement("TextLabel", {
-			Size = UDim2.new(0.3, 0, 1, 0),
+			LayoutOrder = 1,
+			Size = UDim2.new(1, 0, 0, 22),
 			BackgroundTransparency = 1,
 			Text = layout.label,
-			FontFace = Theme.FontFace.BodyBold,
-			TextSize = Theme.TextSize.ScreenSmall,
+			FontFace = Theme.FontFace.Display,
+			TextSize = Theme.TextSize.ScreenHeading,
 			TextColor3 = if isSelected then Theme.Color.OnAccent else Theme.Color.TextPrimary,
-			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
-		-- The asymmetry warning rides on the description line rather than taking
-		-- a row of its own.
 		Detail = React.createElement("TextLabel", {
-			Position = UDim2.fromScale(0.3, 0),
-			Size = UDim2.new(0.7, 0, 1, 0),
+			LayoutOrder = 2,
+			Size = UDim2.new(1, 0, 0, 30),
 			BackgroundTransparency = 1,
-			Text = if layout.asymmetric
-				then "uneven teams · " .. layout.description
-				else layout.description,
+			Text = if layout.asymmetric then "uneven teams" else layout.description,
 			FontFace = Theme.FontFace.Body,
-			TextSize = Theme.TextSize.ScreenCaption,
-			TextColor3 = if layout.asymmetric then Theme.Color.Warning else Theme.Color.TextMuted,
-			TextXAlignment = Enum.TextXAlignment.Right,
-			TextTruncate = Enum.TextTruncate.AtEnd,
+			TextSize = Theme.TextSize.Caption,
+			TextColor3 = if isSelected then Theme.Color.OnAccent
+				elseif layout.asymmetric then Theme.Color.Warning
+				else Theme.Color.TextMuted,
+			TextWrapped = true,
 		}),
 	})
 end
 
 local function TeamLayoutPicker(props: Props)
 	local open, setOpen = React.useState(false)
-	local rowHeight = if props.compact then Theme.Metrics.TouchTarget else Theme.Metrics.DesktopTarget
+	local triggerHeight = if props.compact then Theme.Metrics.TouchTarget else Theme.Metrics.DesktopTarget
 	local selected = TeamLayoutsData.getOrDefault(props.selectedLayout)
 
 	local children: { [string]: any } = {
@@ -92,7 +107,7 @@ local function TeamLayoutPicker(props: Props)
 
 		Trigger = React.createElement("TextButton", {
 			LayoutOrder = 1,
-			Size = UDim2.new(1, 0, 0, rowHeight),
+			Size = UDim2.new(1, 0, 0, triggerHeight),
 			BackgroundColor3 = Theme.Color.SurfaceRaised,
 			BackgroundTransparency = Theme.Transparency.ScreenCard,
 			AutoButtonColor = true,
@@ -146,40 +161,77 @@ local function TeamLayoutPicker(props: Props)
 	}
 
 	if open then
-		local listChildren: { [string]: any } = {
-			Layout = React.createElement("UIListLayout", {
-				FillDirection = Enum.FillDirection.Vertical,
-				Padding = UDim.new(0, 2),
-				SortOrder = Enum.SortOrder.LayoutOrder,
-			}),
-		}
-		-- Grouped by category ("Free for all" / "Teams"). A flat list of six
-		-- reads as arbitrary; split, it reads as two kinds of match.
-		local order = 0
-		local lastCategory: string? = nil
+		-- TWO COLUMNS, ONE PER CATEGORY. Free-for-all on the left, allied play on
+		-- the right, each a grid of square tiles. A single vertical list made the
+		-- two kinds of match look like one arbitrary run of six options.
+		local byCategory: { [string]: { TeamLayoutsData.Layout } } = {}
+		local categoryOrder: { string } = {}
 		for _, id in props.layoutIds do
 			local layout = TeamLayoutsData.get(id)
 			if layout then
-				if layout.category ~= lastCategory then
-					lastCategory = layout.category
-					order += 1
-					listChildren["Cat" .. layout.category] = React.createElement("TextLabel", {
-						LayoutOrder = order,
-						Size = UDim2.new(1, 0, 0, 20),
-						BackgroundTransparency = 1,
-						Text = layout.category,
-						FontFace = Theme.FontFace.Display,
-						TextSize = Theme.TextSize.ScreenCaption,
-						TextColor3 = Theme.Color.AccentMuted,
-						TextXAlignment = Enum.TextXAlignment.Left,
-					})
+				if not byCategory[layout.category] then
+					byCategory[layout.category] = {}
+					table.insert(categoryOrder, layout.category)
 				end
-				order += 1
-				listChildren[id] = optionRow(layout, id == props.selectedLayout, rowHeight, order, function(chosen)
-					props.onSelect(chosen)
-					setOpen(false)
-				end)
+				table.insert(byCategory[layout.category], layout)
 			end
+		end
+
+		local columns: { [string]: any } = {
+			Layout = React.createElement("UIListLayout", {
+				FillDirection = Enum.FillDirection.Horizontal,
+				VerticalAlignment = Enum.VerticalAlignment.Top,
+				Padding = UDim.new(0, Theme.Metrics.Gap),
+				SortOrder = Enum.SortOrder.LayoutOrder,
+			}),
+		}
+
+		for colIndex, category in categoryOrder do
+			local tiles: { [string]: any } = {
+				Header = React.createElement("TextLabel", {
+					LayoutOrder = 1,
+					Size = UDim2.new(1, 0, 0, 20),
+					BackgroundTransparency = 1,
+					Text = category,
+					FontFace = Theme.FontFace.Display,
+					TextSize = Theme.TextSize.ScreenCaption,
+					TextColor3 = Theme.Color.AccentMuted,
+					TextXAlignment = Enum.TextXAlignment.Left,
+				}),
+				Grid = React.createElement("Frame", {
+					LayoutOrder = 2,
+					Size = UDim2.new(1, 0, 0, 0),
+					AutomaticSize = Enum.AutomaticSize.Y,
+					BackgroundTransparency = 1,
+				}, (function()
+					local cells: { [string]: any } = {
+						Layout = React.createElement("UIGridLayout", {
+							CellSize = UDim2.fromOffset(TILE, TILE),
+							CellPadding = UDim2.fromOffset(Theme.Metrics.GapTight, Theme.Metrics.GapTight),
+							SortOrder = Enum.SortOrder.LayoutOrder,
+						}),
+					}
+					for i, layout in byCategory[category] do
+						cells[layout.id] = optionTile(layout, layout.id == props.selectedLayout, i, function(chosen)
+							props.onSelect(chosen)
+							setOpen(false)
+						end)
+					end
+					return cells
+				end)()),
+				Stack = React.createElement("UIListLayout", {
+					FillDirection = Enum.FillDirection.Vertical,
+					Padding = UDim.new(0, Theme.Metrics.GapTight),
+					SortOrder = Enum.SortOrder.LayoutOrder,
+				}),
+			}
+
+			columns["Col" .. colIndex] = React.createElement("Frame", {
+				LayoutOrder = colIndex,
+				Size = UDim2.new(0.5, -Theme.Metrics.Gap / 2, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundTransparency = 1,
+			}, tiles)
 		end
 
 		children.Options = React.createElement("Frame", {
@@ -187,7 +239,7 @@ local function TeamLayoutPicker(props: Props)
 			Size = UDim2.new(1, 0, 0, 0),
 			AutomaticSize = Enum.AutomaticSize.Y,
 			BackgroundTransparency = 1,
-		}, listChildren)
+		}, columns)
 	end
 
 	return React.createElement("Frame", {

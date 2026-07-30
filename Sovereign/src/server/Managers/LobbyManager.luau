@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local MapData = require(ReplicatedStorage.Shared.GameData.MapData)
 local TeamLayoutsData = require(ReplicatedStorage.Shared.GameData.TeamLayoutsData)
+local CelticNamesData = require(ReplicatedStorage.Shared.GameData.CelticNamesData)
 local LobbyDebug = DebugManager.createChannel("LobbyManager", false)
 
 local LobbyManager = {}
@@ -229,6 +230,15 @@ end
 -- yank the layout out from under the remaining players when someone leaves, and
 -- escalating an explicitly-chosen 2v2 into a three-way FFA would silently change
 -- the kind of match they picked.
+-- Names currently in the lobby, so a new AI never duplicates one.
+local function takenNames(lobby: LobbySession): { [string]: boolean }
+	local taken: { [string]: boolean } = {}
+	for _, entry in lobby.Players do
+		taken[entry.Name] = true
+	end
+	return taken
+end
+
 local function escalateLayoutForPlayers(lobby: LobbySession): boolean
 	local current = lobby.Settings.teamLayout
 	if not TeamLayoutsData.isFreeForAll(current) then
@@ -338,15 +348,16 @@ local function fillEmptySeatsWithAI(lobby: LobbySession)
 			-- overwrite, otherwise the loop cannot terminate.
 			aiId -= slots
 		end
+		local aiName = CelticNamesData.takeName(takenNames(lobby))
 		lobby.Players[aiId] = {
 			Player = nil :: any,
 			UserId = aiId,
-			Name = "AI_Opponent" .. index,
+			Name = aiName,
 			IsReady = true,
 			SelectedFaction = nil,
 			IsAI = true,
 		}
-		autoAssignSpawn(lobby, aiId, "AI_Opponent" .. index)
+		autoAssignSpawn(lobby, aiId, aiName)
 		LobbyDebug:info(`Auto-seated AI for empty slot {index}/{slots}`)
 	end
 end
@@ -381,7 +392,9 @@ function LobbyManager.addAI(requestingPlayer: Player)
 
 	-- Create unique AI ID
 	local aiId = -1 * (totalPlayers + 1) -- Negative IDs for AI
-	local aiName = "AI_Opponent" .. (totalPlayers)
+	-- A Celtic ruler rather than "AI_Opponent3". The id stays numeric and
+	-- negative; only the display name changes.
+	local aiName = CelticNamesData.takeName(takenNames(lobby))
 
 	local aiPlayer: LobbyPlayer = {
 		Player = nil :: any, -- AI doesn't have a Player instance
@@ -862,6 +875,54 @@ function LobbyManager.startGame()
 end
 
 -- Broadcast current lobby state to all players
+--- Renames a lobby entry.
+---
+--- Players may rename the AI kingdoms they are about to fight -- naming your
+--- opponent is half the fun of a skirmish -- and their own entry. They may not
+--- rename another human, which would be griefing.
+function LobbyManager.renamePlayer(player: Player, targetUserId: number, newName: string)
+	local lobby = getOrCreateLobby()
+
+	local target = lobby.Players[targetUserId]
+	if not target then
+		LobbyDebug:warn("Rename target not in lobby", { userId = targetUserId })
+		return
+	end
+
+	if not target.IsAI and targetUserId ~= player.UserId then
+		LobbyDebug:warn(`{player.Name} tried to rename another human; refused`)
+		return
+	end
+
+	-- Trim, cap, and reject empty. The cap is generous enough for the longest
+	-- shipped ruler name ("Conchobar mac Nessa") plus room to invent one.
+	local trimmed = (newName or ""):gsub("^%s+", ""):gsub("%s+$", "")
+	if #trimmed == 0 then
+		return
+	end
+	if #trimmed > 24 then
+		trimmed = trimmed:sub(1, 24)
+	end
+
+	for userId, entry in lobby.Players do
+		if userId ~= targetUserId and entry.Name == trimmed then
+			LobbyDebug:warn(`Name {trimmed} already taken in this lobby`)
+			return
+		end
+	end
+
+	target.Name = trimmed
+
+	-- The spawn record carries a copy of the name for the map preview.
+	for slot, selection in pairs(lobby.SpawnSelections) do
+		if selection.userId == targetUserId then
+			lobby.SpawnSelections[slot] = { userId = targetUserId, name = trimmed }
+		end
+	end
+
+	LobbyManager.broadcastLobbyState()
+end
+
 function LobbyManager.broadcastLobbyState()
 	local lobby = getOrCreateLobby()
 
