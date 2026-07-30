@@ -59,7 +59,7 @@ local function optionChip(
 		AutomaticSize = Enum.AutomaticSize.X,
 		Size = UDim2.new(0, 0, 0, rowHeight),
 		BackgroundColor3 = if isCurrent then Theme.Color.Accent else Theme.Color.SurfaceRaised,
-		BackgroundTransparency = if isCurrent then Theme.Transparency.ScreenCardActive else Theme.Transparency.ScreenCard,
+		BackgroundTransparency = if isCurrent then 0 else Theme.Transparency.ScreenCard,
 		AutoButtonColor = false,
 		Text = "",
 		[React.Event.Activated] = function()
@@ -82,7 +82,7 @@ local function optionChip(
 			Text = optionLabel(setting, option),
 			FontFace = if isCurrent then Theme.FontFace.BodyBold else Theme.FontFace.Body,
 			TextSize = Theme.TextSize.ScreenCaption,
-			TextColor3 = if isCurrent then Theme.Color.Accent else Theme.Color.TextSecondary,
+			TextColor3 = if isCurrent then Theme.Color.OnAccent else Theme.Color.TextSecondary,
 		}),
 	})
 end

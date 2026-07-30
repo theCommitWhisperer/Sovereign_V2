@@ -323,7 +323,7 @@ function Lobby:renderMapChip(mapKey: string, order: number, horizontal: boolean)
 			Text = displayName,
 			FontFace = if isSelected then Theme.FontFace.BodyBold else Theme.FontFace.Body,
 			TextSize = Theme.TextSize.ScreenBody,
-			TextColor3 = if isSelected then Theme.Color.Accent else Theme.Color.TextSecondary,
+			TextColor3 = if isSelected then Theme.Color.OnAccent else Theme.Color.TextSecondary,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
 	})
@@ -538,8 +538,17 @@ function Lobby:render()
 				SortOrder = Enum.SortOrder.LayoutOrder,
 			}),
 			Countdown = countdownBanner,
-			Players = React.createElement("Frame", {
+			-- The team layout belongs with the roster, not with the game settings:
+			-- "who is playing" and "how are they split" are one question, and the
+			-- picker's own label already says Teams.
+			TeamLayout = React.createElement("Frame", {
 				LayoutOrder = 2,
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundTransparency = 1,
+			}, { Picker = teamLayoutPicker }),
+			Players = React.createElement("Frame", {
+				LayoutOrder = 3,
 				Size = UDim2.new(1, 0, 0, 0),
 				AutomaticSize = Enum.AutomaticSize.Y,
 				BackgroundTransparency = 1,
@@ -563,14 +572,8 @@ function Lobby:render()
 				Padding = UDim.new(0, gap),
 				SortOrder = Enum.SortOrder.LayoutOrder,
 			}),
-			TeamLayout = React.createElement("Frame", {
-				LayoutOrder = 1,
-				Size = UDim2.new(1, 0, 0, 0),
-				AutomaticSize = Enum.AutomaticSize.Y,
-				BackgroundTransparency = 1,
-			}, { Picker = teamLayoutPicker }),
 			Settings = React.createElement("Frame", {
-				LayoutOrder = 2,
+				LayoutOrder = 1,
 				Size = UDim2.new(1, 0, 0, 0),
 				AutomaticSize = Enum.AutomaticSize.Y,
 				BackgroundTransparency = 1,
@@ -673,7 +676,7 @@ function Lobby:render()
 						Text = if state.isReady then "Ready ✓" else "Ready Up",
 						FontFace = Theme.FontFace.BodyBold,
 						TextSize = Theme.TextSize.ScreenHeading,
-						TextColor3 = if state.isReady then Theme.Color.Accent else Theme.Color.TextPrimary,
+						TextColor3 = if state.isReady then Theme.Color.OnAccent else Theme.Color.TextPrimary,
 						[React.Event.Activated] = self.toggleReady,
 					}, {
 						Corner = React.createElement("UICorner", { CornerRadius = Theme.corner() }),

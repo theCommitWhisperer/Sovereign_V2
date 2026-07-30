@@ -61,12 +61,12 @@ local function railButton(icon: string, label: string, active: boolean, layoutOr
 	return React.createElement("TextButton", {
 		Name = label .. "RailButton",
 		BackgroundColor3 = if active then Theme.Color.Accent else Theme.Color.SurfaceRaised,
-		BackgroundTransparency = if active then Theme.Transparency.CardActive else Theme.Transparency.Card,
+		BackgroundTransparency = if active then 0 else Theme.Transparency.Card,
 		AutoButtonColor = true,
 		Text = icon,
 		FontFace = Theme.FontFace.Body,
 		TextSize = Theme.TextSize.Title,
-		TextColor3 = if active then Theme.Color.Accent else Theme.Color.TextSecondary,
+		TextColor3 = if active then Theme.Color.OnAccent else Theme.Color.TextSecondary,
 		LayoutOrder = layoutOrder,
 		[React.Event.Activated] = onClick,
 	}, {

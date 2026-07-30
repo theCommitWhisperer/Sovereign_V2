@@ -34,20 +34,25 @@ Theme.Color = {
 	-- this used to read as a solid black slab across the bottom third of the
 	-- screen -- the world behind it was completely hidden, which is the opposite
 	-- of what a translucent overlay is for.
-	Surface = Color3.fromRGB(26, 32, 41), -- panel/base
-	SurfaceRaised = Color3.fromRGB(36, 44, 56), -- drawer, cards
+	Surface = Color3.fromRGB(32, 28, 24), -- panel/base: peat, not slate
+	SurfaceRaised = Color3.fromRGB(45, 39, 33), -- drawer, cards
 	Overlay = Color3.fromRGB(255, 255, 255), -- used at high transparency as a wash
 
 	Accent = Color3.fromRGB(239, 159, 39), -- gold
 	AccentMuted = Color3.fromRGB(160, 106, 26),
+	-- Text and icons drawn ON a gold fill. Selected controls were using Accent
+	-- for BOTH the background and the label, which is gold on gold -- legible
+	-- only because the fill happened to be semi-transparent, and not legible at
+	-- all once it wasn't. Anything sitting on Accent uses this.
+	OnAccent = Color3.fromRGB(26, 18, 4),
 	Action = Color3.fromRGB(24, 95, 165), -- primary buttons (assign, confirm)
 
-	TextPrimary = Color3.fromRGB(240, 237, 230),
-	TextSecondary = Color3.fromRGB(169, 167, 160),
-	TextMuted = Color3.fromRGB(141, 139, 132),
+	TextPrimary = Color3.fromRGB(244, 235, 216), -- warm parchment white
+	TextSecondary = Color3.fromRGB(186, 172, 148),
+	TextMuted = Color3.fromRGB(150, 137, 118),
 
 	Danger = Color3.fromRGB(240, 149, 149),
-	Success = Color3.fromRGB(159, 225, 203),
+	Success = Color3.fromRGB(143, 196, 122), -- Irish green: allied, ready, output
 	Warning = Color3.fromRGB(239, 159, 39),
 
 	Border = Color3.fromRGB(255, 255, 255), -- at BorderTransparency

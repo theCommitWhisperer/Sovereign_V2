@@ -65,7 +65,7 @@ local function utilityButton(icon: string, active: boolean, layoutOrder: number,
 		Text = icon,
 		FontFace = Theme.FontFace.Body,
 		TextSize = Theme.TextSize.Heading,
-		TextColor3 = if active then Theme.Color.Surface else Theme.Color.TextPrimary,
+		TextColor3 = if active then Theme.Color.OnAccent else Theme.Color.TextPrimary,
 		LayoutOrder = layoutOrder,
 		[React.Event.Activated] = onClick,
 	}, {

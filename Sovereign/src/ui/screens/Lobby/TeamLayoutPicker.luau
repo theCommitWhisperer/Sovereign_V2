@@ -39,7 +39,7 @@ local function optionRow(
 		LayoutOrder = order,
 		Size = UDim2.new(1, 0, 0, rowHeight),
 		BackgroundColor3 = if isSelected then Theme.Color.Accent else Theme.Color.SurfaceRaised,
-		BackgroundTransparency = if isSelected then 0.75 else Theme.Transparency.ScreenCard,
+		BackgroundTransparency = if isSelected then 0 else Theme.Transparency.ScreenCard,
 		AutoButtonColor = true,
 		Text = "",
 		[React.Event.Activated] = function()
@@ -57,7 +57,7 @@ local function optionRow(
 			Text = layout.label,
 			FontFace = Theme.FontFace.BodyBold,
 			TextSize = Theme.TextSize.ScreenSmall,
-			TextColor3 = if isSelected then Theme.Color.Accent else Theme.Color.TextPrimary,
+			TextColor3 = if isSelected then Theme.Color.OnAccent else Theme.Color.TextPrimary,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
 		-- The asymmetry warning rides on the description line rather than taking
@@ -126,7 +126,7 @@ local function TeamLayoutPicker(props: Props)
 				Position = UDim2.fromScale(0.45, 0),
 				Size = UDim2.new(0.55, -14, 1, 0),
 				BackgroundTransparency = 1,
-				Text = selected.label,
+				Text = `{selected.label}  ·  {selected.category}`,
 				FontFace = Theme.FontFace.BodyBold,
 				TextSize = Theme.TextSize.ScreenSmall,
 				TextColor3 = Theme.Color.Accent,
@@ -153,10 +153,29 @@ local function TeamLayoutPicker(props: Props)
 				SortOrder = Enum.SortOrder.LayoutOrder,
 			}),
 		}
-		for i, id in props.layoutIds do
+		-- Grouped by category ("Free for all" / "Teams"). A flat list of six
+		-- reads as arbitrary; split, it reads as two kinds of match.
+		local order = 0
+		local lastCategory: string? = nil
+		for _, id in props.layoutIds do
 			local layout = TeamLayoutsData.get(id)
 			if layout then
-				listChildren[id] = optionRow(layout, id == props.selectedLayout, rowHeight, i, function(chosen)
+				if layout.category ~= lastCategory then
+					lastCategory = layout.category
+					order += 1
+					listChildren["Cat" .. layout.category] = React.createElement("TextLabel", {
+						LayoutOrder = order,
+						Size = UDim2.new(1, 0, 0, 20),
+						BackgroundTransparency = 1,
+						Text = layout.category,
+						FontFace = Theme.FontFace.Display,
+						TextSize = Theme.TextSize.ScreenCaption,
+						TextColor3 = Theme.Color.AccentMuted,
+						TextXAlignment = Enum.TextXAlignment.Left,
+					})
+				end
+				order += 1
+				listChildren[id] = optionRow(layout, id == props.selectedLayout, rowHeight, order, function(chosen)
 					props.onSelect(chosen)
 					setOpen(false)
 				end)

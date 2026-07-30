@@ -140,7 +140,7 @@ local function optionButton(
 		Name = name,
 		Size = UDim2.new(1, 0, 0, height),
 		BackgroundColor3 = if active then Theme.Color.Accent else Theme.Color.SurfaceRaised,
-		BackgroundTransparency = if active then Theme.Transparency.CardActive else Theme.Transparency.Card,
+		BackgroundTransparency = if active then 0 else Theme.Transparency.Card,
 		AutoButtonColor = enabled,
 		Text = "",
 		LayoutOrder = order,
@@ -165,7 +165,7 @@ local function optionButton(
 			TextSize = Theme.TextSize.Body,
 			TextColor3 = if not enabled
 				then Theme.Color.TextMuted
-				elseif active then Theme.Color.Accent
+				elseif active then Theme.Color.OnAccent
 				else Theme.Color.TextPrimary,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextTruncate = Enum.TextTruncate.AtEnd,
@@ -177,7 +177,10 @@ local function optionButton(
 			Text = blocked or sublabel,
 			FontFace = Theme.FontFace.Body,
 			TextSize = Theme.TextSize.Caption,
-			TextColor3 = if blocked then Theme.Color.Danger else Theme.Color.Success,
+			TextColor3 = if blocked
+					then Theme.Color.Danger
+					elseif active then Theme.Color.OnAccent
+					else Theme.Color.Success,
 			TextXAlignment = Enum.TextXAlignment.Right,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 		}),

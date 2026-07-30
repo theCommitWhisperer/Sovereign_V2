@@ -219,6 +219,42 @@ local function getOrCreateLobby(): LobbySession
 end
 
 -- Add a player to the lobby
+-- Grows the team layout to fit the humans present.
+--
+-- The lobby opens on 1v1 so the first player sees a startable match rather than
+-- a 1v1v1v1 waiting on three strangers. As people arrive it steps up:
+-- 1v1 -> 1v1v1 -> 1v1v1v1.
+--
+-- Only ever GROWS, and only ever between free-for-all layouts. Shrinking would
+-- yank the layout out from under the remaining players when someone leaves, and
+-- escalating an explicitly-chosen 2v2 into a three-way FFA would silently change
+-- the kind of match they picked.
+local function escalateLayoutForPlayers(lobby: LobbySession): boolean
+	local current = lobby.Settings.teamLayout
+	if not TeamLayoutsData.isFreeForAll(current) then
+		return false
+	end
+
+	local humans = countHumans(lobby)
+	if humans <= TeamLayoutsData.getSlotCount(current) then
+		return false
+	end
+
+	local grown = TeamLayoutsData.smallestFreeForAllFor(humans)
+	if not grown or grown == current then
+		return false
+	end
+
+	-- Never past what the map can seat.
+	if TeamLayoutsData.getSlotCount(grown) > getLobbyMaxPlayers(lobby) then
+		return false
+	end
+
+	lobby.Settings.teamLayout = grown
+	LobbyDebug:info(`Grew team layout {current} -> {grown} for {humans} players`)
+	return true
+end
+
 function LobbyManager.addPlayer(player: Player)
 	local lobby = getOrCreateLobby()
 
@@ -243,6 +279,9 @@ function LobbyManager.addPlayer(player: Player)
 	autoAssignSpawn(lobby, player.UserId, player.Name)
 
 	-- Broadcast updated lobby state to all players
+
+	-- A new arrival may need a bigger layout than the duel we opened on.
+	escalateLayoutForPlayers(lobby)
 	LobbyManager.broadcastLobbyState()
 end
 

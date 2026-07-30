@@ -31,6 +31,10 @@ export type Layout = {
 	-- Asymmetric layouts hand one side a numerical disadvantage on purpose, so
 	-- the lobby can warn rather than let someone pick it by accident.
 	asymmetric: boolean?,
+	-- Grouping for the picker: "Free for all" or "Teams". Every-team-of-one is
+	-- a different KIND of match from allied play, and the dropdown reads far
+	-- better split than as one flat list of ten.
+	category: string,
 }
 
 local LAYOUTS: { [string]: Layout } = {}
@@ -43,6 +47,7 @@ end
 
 define({
 	id = "FFA4",
+	category = "Free for all",
 	label = "1v1v1v1",
 	description = "Four-way free-for-all. Everyone against everyone.",
 	teams = { 1, 1, 1, 1 },
@@ -50,6 +55,7 @@ define({
 
 define({
 	id = "FFA3",
+	category = "Free for all",
 	label = "1v1v1",
 	description = "Three-way free-for-all.",
 	teams = { 1, 1, 1 },
@@ -57,6 +63,7 @@ define({
 
 define({
 	id = "DUEL",
+	category = "Free for all",
 	label = "1v1",
 	description = "A duel.",
 	teams = { 1, 1 },
@@ -64,6 +71,7 @@ define({
 
 define({
 	id = "TEAM22",
+	category = "Teams",
 	label = "2v2",
 	description = "Two allied pairs. Shared victory, allied vision, no friendly fire.",
 	teams = { 2, 2 },
@@ -71,6 +79,7 @@ define({
 
 define({
 	id = "TEAM31",
+	category = "Teams",
 	label = "3v1",
 	description = "Three allies against one. The lone kingdom starts with a handicap bonus.",
 	teams = { 3, 1 },
@@ -79,13 +88,18 @@ define({
 
 define({
 	id = "TEAM211",
+	category = "Teams",
 	label = "2v1v1",
 	description = "One allied pair against two lone kingdoms.",
 	teams = { 2, 1, 1 },
 	asymmetric = true,
 })
 
-TeamLayoutsData.Default = "FFA4"
+-- Start at a duel and grow. A lobby that opens on 1v1v1v1 needs four bodies
+-- before it means anything, so the first player sees a match they could
+-- actually start; LobbyManager escalates this as humans arrive (see
+-- escalateForPlayerCount below).
+TeamLayoutsData.Default = "DUEL"
 
 function TeamLayoutsData.get(id: string): Layout?
 	return LAYOUTS[id]
@@ -156,9 +170,27 @@ function TeamLayoutsData.getPlayableOn(mapMaxPlayers: number): { string }
 	return out
 end
 
+--- The smallest free-for-all layout that seats `humans`, or nil if none does.
+---
+--- Used to grow the default as players join: 1v1 -> 1v1v1 -> 1v1v1v1. Only
+--- free-for-all layouts are considered, because escalating someone's explicitly
+--- chosen 2v2 into a 3-way FFA would silently change the kind of match they
+--- picked. Never shrinks -- a player leaving a 1v1v1 should not collapse the
+--- lobby back to a duel underneath the remaining two.
+function TeamLayoutsData.smallestFreeForAllFor(humans: number): string?
+	local best, bestSlots = nil, math.huge
+	for _, id in ORDER do
+		local slots = TeamLayoutsData.getSlotCount(id)
+		if TeamLayoutsData.isFreeForAll(id) and slots >= humans and slots < bestSlots then
+			best, bestSlots = id, slots
+		end
+	end
+	return best
+end
+
 --- Is this layout a genuine free-for-all (every team of size one)? Used to skip
---- alliance setup entirely, and to decide whether the UI should even show team
---- grouping.
+--- alliance setup entirely, and to decide whether the UI should show team
+--- grouping at all.
 function TeamLayoutsData.isFreeForAll(id: string?): boolean
 	for _, size in TeamLayoutsData.getOrDefault(id).teams do
 		if size > 1 then
