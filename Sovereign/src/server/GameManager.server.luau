@@ -174,6 +174,9 @@ local studioResourcePatchesSpawned = false
 local matchMapConfig: any? = nil
 local mapWorldInitialized = false
 local workerLoopStarted = false
+-- Set once per match by the first StartGame to carry a teamOf map (see
+-- LobbyManager.buildTeamOf) -- every player's server-authored settings carry
+-- the same map, so only the first arrival needs to apply it.
 
 -- Initialize systems that depend on RemoteEvents
 WallSystemServer.initialize()
@@ -1037,6 +1040,29 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 				math.clamp(playerColor[3], 0, 255)
 			)
 			GameManagerDebug:info(`Stored banner color for {player.Name}`)
+		end
+
+		-- Wire up team alliances BEFORE any kingdom is registered or victory
+		-- checks begin: EliminationManager.checkForWinner requires survivors to
+		-- be mutually non-hostile, so a 2v2's shared victory only works if
+		-- FactionManager already knows the two allied factions aren't enemies
+		-- by the time the first kingdom (human or AI) is registered below.
+		-- Only a multiplayer lobby start carries a teamOf map; a solo game has
+		-- no layout to apply and keeps the plain FFA relationships from
+		-- FactionManager.init().
+		--
+		-- Applied unconditionally, NOT once-per-match behind a flag. A flag would
+		-- have to be reset on every path out of a match, and the reset currently
+		-- lives only in the LeaveGame handler's "nobody left in game" branch --
+		-- so a lobby that starts a second match without everyone first returning
+		-- to the menu would silently inherit the PREVIOUS match's alliances, which
+		-- is a wrong-teams bug that would look like a combat or victory bug.
+		--
+		-- applyTeamLayout rewrites relationships wholesale and is idempotent, and
+		-- with at most four factions it is a handful of table writes, so repeating
+		-- it per joining player is cheaper than owning that invalidation problem.
+		if typeof(settings.teamOf) == "table" then
+			FactionManager.applyTeamLayout(settings.teamOf)
 		end
 
 		-- Tell VictoryConditionManager when the game started and how long peace time is

@@ -1,10 +1,17 @@
 --!strict
 -- PlayerList: the lobby roster. Every slot must answer, at a glance, who this
 -- is, whether it's you, whether it's AI, whether they're ready, and what
--- faction/colour/spawn they picked -- see the Lobby rebuild brief. Slot COUNT
--- comes from `maxPlayers` (derived from the selected map's real capacity in
--- Lobby.luau), not a hardcoded 4, and empty slots read as invitations rather
--- than blanks.
+-- faction/colour/spawn they picked -- see the Lobby rebuild brief. `maxPlayers`
+-- (the map's real capacity) still bounds the flat free-for-all view's empty
+-- "Add AI" invitations, but a non-FFA layout instead sizes and groups its
+-- slots off `teamLayout` (TeamLayoutsData) -- a 2v2 shows exactly 4 slots
+-- split into two headed pairs regardless of how many spawns the map has.
+--
+-- TEAM GROUPING: TeamLayoutsData.isFreeForAll gates it -- four headers each
+-- holding one player would be noise for a genuine free-for-all, so that case
+-- keeps the old flat, sorted list. Everything else groups by team with a
+-- header, slots rendered in the layout's own order so a 2v2 reads as two
+-- pairs, not four independent cards.
 --
 -- INTERACTIVE VS READ-ONLY: only the LOCAL player's card exposes faction and
 -- colour pickers. Other players' cards show the same data as plain chips --
@@ -18,7 +25,9 @@
 -- TextMuted, not Danger -- being unavailable isn't an error state.
 
 local React = require(game.ReplicatedStorage.Packages.react)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Theme = require(script.Parent.Parent.Parent.Theme)
+local TeamLayoutsData = require(ReplicatedStorage.Shared.GameData.TeamLayoutsData)
 
 export type PlayerEntry = {
 	userId: number,
@@ -27,6 +36,7 @@ export type PlayerEntry = {
 	isReady: boolean,
 	faction: string?,
 	selectedColor: { number }?,
+	teamIndex: number?,
 }
 
 export type SpawnSelection = {
@@ -37,6 +47,7 @@ export type SpawnSelection = {
 export type Props = {
 	players: { PlayerEntry },
 	maxPlayers: number,
+	teamLayout: string,
 	localPlayerId: number,
 	spawnSelections: { [number]: SpawnSelection },
 	onAddAI: () -> (),
@@ -369,27 +380,48 @@ local function emptySlot(order: number, compact: boolean, onAddAI: () -> ())
 	})
 end
 
+--- Section header for one team when the layout isn't a free-for-all -- see
+--- the module comment. Plain caption text, same weight/colour as the map
+--- list's "Maps" label in Lobby.luau, so it reads as structure, not a card.
+local function teamHeader(teamIndex: number, order: number)
+	return React.createElement("TextLabel", {
+		key = "TeamHeader" .. teamIndex,
+		LayoutOrder = order,
+		Size = UDim2.new(1, 0, 0, 16),
+		BackgroundTransparency = 1,
+		Text = `Team {teamIndex}`,
+		FontFace = Theme.FontFace.BodyBold,
+		TextSize = Theme.TextSize.Small,
+		TextColor3 = Theme.Color.TextSecondary,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	})
+end
+
+--- Blocker shown when the roster can't fill the chosen layout's teams --
+--- either direction (too few or too many) means there's no valid split, so
+--- Ready-driven start has to be refused (see LobbyManager.lobbyFitsLayout).
+local function rosterBlocker(layoutId: string, playerCount: number, order: number)
+	local layout = TeamLayoutsData.getOrDefault(layoutId)
+	local needed = TeamLayoutsData.getSlotCount(layoutId)
+
+	return React.createElement("TextLabel", {
+		key = "RosterBlocker",
+		LayoutOrder = order,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		Text = `{layout.label} needs {needed} players — {playerCount} in lobby`,
+		FontFace = Theme.FontFace.BodyBold,
+		TextSize = Theme.TextSize.Caption,
+		TextColor3 = Theme.Color.Warning,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	})
+end
+
 local function PlayerList(props: Props)
 	local players = props.players or {}
-
-	local spawnByUserId: { [number]: number } = {}
-	for spawnNum, selection in pairs(props.spawnSelections or {}) do
-		spawnByUserId[selection.userId] = (tonumber(spawnNum) :: number?) or spawnNum
-	end
-
-	-- Local player first, then humans before AI, alphabetical within each group.
-	local sorted = table.clone(players)
-	table.sort(sorted, function(a, b)
-		if a.userId == props.localPlayerId then
-			return true
-		elseif b.userId == props.localPlayerId then
-			return false
-		elseif a.isAI ~= b.isAI then
-			return not a.isAI
-		else
-			return a.name < b.name
-		end
-	end)
+	local isFFA = TeamLayoutsData.isFreeForAll(props.teamLayout)
 
 	local rowChildren: { [string]: any } = {
 		Layout = React.createElement("UIListLayout", {
@@ -400,18 +432,82 @@ local function PlayerList(props: Props)
 	}
 
 	local order = 0
-	for _, entry in sorted do
-		order += 1
-		local spawnNum = spawnByUserId[entry.userId]
-		local spawnLabel = if spawnNum then ("#" .. spawnNum) else "not chosen"
-		rowChildren["Player" .. entry.userId] = playerCard(entry, entry.userId == props.localPlayerId, spawnLabel, players, props, order)
+
+	if isFFA then
+		-- Four independent headers each holding one player would just be
+		-- noise for a genuine free-for-all -- flat list, same as before teams
+		-- existed.
+		local spawnByUserId: { [number]: number } = {}
+		for spawnNum, selection in pairs(props.spawnSelections or {}) do
+			spawnByUserId[selection.userId] = (tonumber(spawnNum) :: number?) or spawnNum
+		end
+
+		-- Local player first, then humans before AI, alphabetical within each group.
+		local sorted = table.clone(players)
+		table.sort(sorted, function(a, b)
+			if a.userId == props.localPlayerId then
+				return true
+			elseif b.userId == props.localPlayerId then
+				return false
+			elseif a.isAI ~= b.isAI then
+				return not a.isAI
+			else
+				return a.name < b.name
+			end
+		end)
+
+		for _, entry in sorted do
+			order += 1
+			local spawnNum = spawnByUserId[entry.userId]
+			local spawnLabel = if spawnNum then ("#" .. spawnNum) else "not chosen"
+			rowChildren["Player" .. entry.userId] = playerCard(entry, entry.userId == props.localPlayerId, spawnLabel, players, props, order)
+		end
+
+		local emptyCount = math.max(0, props.maxPlayers - #players)
+		for i = 1, emptyCount do
+			order += 1
+			rowChildren["Empty" .. i] = emptySlot(order, props.compact, props.onAddAI)
+		end
+	else
+		-- Grouped by team so a 2v2 reads as two pairs rather than four
+		-- independent slots -- one section per team, slots rendered in the
+		-- layout's own order (see TeamLayoutsData.slotsForTeam).
+		local playerByUserId: { [number]: PlayerEntry } = {}
+		for _, entry in players do
+			playerByUserId[entry.userId] = entry
+		end
+
+		local userIdBySlot: { [number]: number } = {}
+		for spawnNum, selection in pairs(props.spawnSelections or {}) do
+			userIdBySlot[(tonumber(spawnNum) :: number?) or spawnNum] = selection.userId
+		end
+
+		local teamCount = TeamLayoutsData.getTeamCount(props.teamLayout)
+		for teamIndex = 1, teamCount do
+			order += 1
+			rowChildren["TeamHeader" .. teamIndex] = teamHeader(teamIndex, order)
+
+			for _, slotNum in TeamLayoutsData.slotsForTeam(props.teamLayout, teamIndex) do
+				order += 1
+				local userId = userIdBySlot[slotNum]
+				local entry: PlayerEntry? = if userId then playerByUserId[userId] else nil
+				if entry then
+					rowChildren["Player" .. entry.userId] =
+						playerCard(entry, entry.userId == props.localPlayerId, "#" .. slotNum, players, props, order)
+				else
+					rowChildren["EmptySlot" .. slotNum] = emptySlot(order, props.compact, props.onAddAI)
+				end
+			end
+		end
 	end
 
-	local emptyCount = math.max(0, props.maxPlayers - #players)
-	for i = 1, emptyCount do
-		order += 1
-		rowChildren["Empty" .. i] = emptySlot(order, props.compact, props.onAddAI)
-	end
+	-- A layout's teams have to be exactly full to start (see
+	-- LobbyManager.lobbyFitsLayout) -- surface that as a clear blocker rather
+	-- than let Ready silently do nothing.
+	local neededPlayers = TeamLayoutsData.getSlotCount(props.teamLayout)
+	local blocker = if #players ~= neededPlayers
+		then rosterBlocker(props.teamLayout, #players, 2)
+		else nil
 
 	return React.createElement("Frame", {
 		Name = "PlayerList",
@@ -435,8 +531,9 @@ local function PlayerList(props: Props)
 			TextColor3 = Theme.Color.TextPrimary,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
+		Blocker = blocker,
 		List = React.createElement("Frame", {
-			LayoutOrder = 2,
+			LayoutOrder = 3,
 			Size = UDim2.new(1, 0, 0, 0),
 			AutomaticSize = Enum.AutomaticSize.Y,
 			BackgroundTransparency = 1,

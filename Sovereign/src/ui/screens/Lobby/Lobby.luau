@@ -25,7 +25,9 @@ local LobbySettingsPanel = require(script.Parent.Parent.Parent.panels.LobbySetti
 local LobbyCountdownBanner = require(script.Parent.Parent.Parent.panels.LobbyCountdownBanner)
 local PlayerList = require(script.Parent.PlayerList)
 local MapPreview = require(script.Parent.MapPreview)
+local TeamLayoutPicker = require(script.Parent.TeamLayoutPicker)
 local MapData = require(ReplicatedStorage.Shared.GameData.MapData)
+local TeamLayoutsData = require(ReplicatedStorage.Shared.GameData.TeamLayoutsData)
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local LobbyDebug = DebugManager.createChannel("Lobby", false)
 
@@ -40,27 +42,17 @@ local SETTINGS_GROUPS = {
 	{ title = "Pacing & Economy", settings = LobbySettings.PacingAndEconomy },
 }
 
--- LobbyManager keeps this same rule server-side (getLobbyMaxPlayers) but never
--- broadcasts the result -- only Settings.selectedMap goes over the wire, so
--- this mirrors the server's own logic from that. See the "gaps" note in the
--- final report: LobbyManager should really send maxPlayers directly so this
--- can't drift from the server's copy.
-local function computeMaxPlayers(mapKey: string?): number
-	local mapConfig = mapKey and MapData.getMap(mapKey)
-	if mapConfig then
-		if mapConfig.KeepSpawnZones and #mapConfig.KeepSpawnZones > 0 then
-			return #mapConfig.KeepSpawnZones
-		end
-		return mapConfig.MaxPlayers or 4
-	end
-	return 4
-end
-
 local function getInitialState()
 	local state: any = {
 		players = {},
 		mapKeys = MapData.getMapList(),
 		selectedMap = MapData.DefaultMap,
+		-- Real map capacity now comes from the server's own broadcast
+		-- (LobbyManager.broadcastLobbyState -> MaxPlayers) instead of being
+		-- re-derived here from selectedMap -- see the FIX note in
+		-- LobbyManager.luau's broadcastLobbyState.
+		maxPlayers = 4,
+		teamLayout = TeamLayoutsData.Default,
 		spawnSelections = {}, -- { [spawnNumber] = { userId, name } }
 		mySpawn = nil,
 		myFaction = nil,
@@ -108,6 +100,7 @@ function Lobby:init()
 					isReady = playerData.IsReady,
 					faction = playerData.SelectedFaction,
 					selectedColor = playerData.SelectedColor,
+					teamIndex = playerData.TeamIndex,
 				})
 			end
 
@@ -120,6 +113,10 @@ function Lobby:init()
 
 			for key, value in pairs(data.Settings) do
 				newState[key] = value
+			end
+
+			if data.MaxPlayers then
+				newState.maxPlayers = data.MaxPlayers
 			end
 
 			newState.mapKeys = self.state.mapKeys
@@ -208,6 +205,11 @@ function Lobby:init()
 	self.selectMap = function(mapName)
 		LobbyEvent:FireServer("VoteSetting", "selectedMap", mapName)
 		self:recordVote("selectedMap", mapName)
+	end
+
+	self.selectTeamLayout = function(layoutId)
+		LobbyEvent:FireServer("VoteSetting", "teamLayout", layoutId)
+		self:recordVote("teamLayout", layoutId)
 	end
 
 	self.onSettingChanged = function(settingId, newValue)
@@ -326,8 +328,11 @@ function Lobby:render()
 	local navigate = self.props.navigate
 	local state = self.state
 	local compact = state.compact
-	local maxPlayers = computeMaxPlayers(state.selectedMap)
+	local maxPlayers = state.maxPlayers
 	local mapKeys = state.mapKeys or MapData.getMapList()
+	-- Only offer layouts the current map can actually seat -- a 2v2 needs
+	-- four spawns and must not be pickable on a two-spawn map.
+	local playableLayouts = TeamLayoutsData.getPlayableOn(maxPlayers)
 
 	-- Fixed row constants for the pinned Header/Footer; see the module comment
 	-- for why MainArea's fill-remaining math only ever depends on these two.
@@ -362,12 +367,21 @@ function Lobby:render()
 	local playerList = React.createElement(PlayerList, {
 		players = state.players,
 		maxPlayers = maxPlayers,
+		teamLayout = state.teamLayout,
 		localPlayerId = localPlayer.UserId,
 		spawnSelections = state.spawnSelections,
 		onAddAI = self.addAI,
 		onRemovePlayer = self.removePlayer,
 		onSelectFaction = self.selectFaction,
 		onSelectColor = self.selectColor,
+		compact = compact,
+	})
+
+	local teamLayoutPicker = React.createElement(TeamLayoutPicker, {
+		LayoutOrder = 1,
+		layoutIds = playableLayouts,
+		selectedLayout = state.teamLayout,
+		onSelect = self.selectTeamLayout,
 		compact = compact,
 	})
 
@@ -438,8 +452,14 @@ function Lobby:render()
 				AutomaticSize = Enum.AutomaticSize.Y,
 				BackgroundTransparency = 1,
 			}, { List = playerList }),
-			Settings = React.createElement("Frame", {
+			TeamLayout = React.createElement("Frame", {
 				LayoutOrder = 4,
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundTransparency = 1,
+			}, { Picker = teamLayoutPicker }),
+			Settings = React.createElement("Frame", {
+				LayoutOrder = 5,
 				Size = UDim2.new(1, 0, 0, 0),
 				AutomaticSize = Enum.AutomaticSize.Y,
 				BackgroundTransparency = 1,
@@ -508,8 +528,14 @@ function Lobby:render()
 				AutomaticSize = Enum.AutomaticSize.Y,
 				BackgroundTransparency = 1,
 			}, { List = playerList }),
-			Settings = React.createElement("Frame", {
+			TeamLayout = React.createElement("Frame", {
 				LayoutOrder = 3,
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundTransparency = 1,
+			}, { Picker = teamLayoutPicker }),
+			Settings = React.createElement("Frame", {
+				LayoutOrder = 4,
 				Size = UDim2.new(1, 0, 0, 0),
 				AutomaticSize = Enum.AutomaticSize.Y,
 				BackgroundTransparency = 1,

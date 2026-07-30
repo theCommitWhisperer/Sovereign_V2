@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local MapData = require(ReplicatedStorage.Shared.GameData.MapData)
+local TeamLayoutsData = require(ReplicatedStorage.Shared.GameData.TeamLayoutsData)
 local LobbyDebug = DebugManager.createChannel("LobbyManager", false)
 
 local LobbyManager = {}
@@ -43,6 +44,10 @@ export type LobbySettings = {
 	showTutorial: string,
 	customMapId: string?,
 	customMapAuthorId: number?,
+	-- Team arrangement for the match ("2v2", "1v1v1v1", ...) -- see
+	-- TeamLayoutsData. Voted on through the same voteSetting mechanism as
+	-- every other lobby setting, not a bespoke remote.
+	teamLayout: string,
 }
 
 export type SpawnSelection = {
@@ -82,6 +87,48 @@ local function getLobbyMaxPlayers(lobby: LobbySession): number
 		return mapConfig.MaxPlayers or 4
 	end
 	return 4
+end
+
+-- Total players (human + AI) currently seated in the lobby.
+local function countLobbyPlayers(lobby: LobbySession): number
+	local total = 0
+	for _ in pairs(lobby.Players) do
+		total += 1
+	end
+	return total
+end
+
+-- A layout's teams must be exactly full to start -- a 2v2 with 3 players has
+-- no valid way to split the roster, so "fits" means an exact match, not just
+-- "enough room".
+local function lobbyFitsLayout(lobby: LobbySession): boolean
+	return countLobbyPlayers(lobby) == TeamLayoutsData.getSlotCount(lobby.Settings.teamLayout)
+end
+
+-- Faction -> teamIndex for every seated player (human and AI alike), derived
+-- from each player's assigned spawn slot and the lobby's chosen layout. This
+-- is what FactionManager.applyTeamLayout needs to wire up alliances at match
+-- start; built here (not in GameManager) because the lobby session -- the
+-- only place SpawnSelections and SelectedFaction both live -- is gone by the
+-- time the match starts.
+local function buildTeamOf(lobby: LobbySession): { [string]: number }
+	local slotByUserId: { [number]: number } = {}
+	for spawnNum, selection in pairs(lobby.SpawnSelections) do
+		slotByUserId[selection.userId] = spawnNum
+	end
+
+	local teamOf: { [string]: number } = {}
+	for userId, lobbyPlayer in pairs(lobby.Players) do
+		local faction = lobbyPlayer.SelectedFaction
+		local slot = slotByUserId[userId]
+		if faction and slot then
+			local teamIndex = TeamLayoutsData.teamForSlot(lobby.Settings.teamLayout, slot)
+			if teamIndex then
+				teamOf[faction] = teamIndex
+			end
+		end
+	end
+	return teamOf
 end
 
 -- Auto-assign the first available spawn to a player
@@ -128,6 +175,7 @@ local function getOrCreateLobby(): LobbySession
 				showTutorial = true,
 				customMapId = nil,
 				customMapAuthorId = nil,
+				teamLayout = TeamLayoutsData.Default,
 			},
 			SettingsVotes = {},
 			CountdownActive = false,
@@ -204,14 +252,13 @@ end
 function LobbyManager.addAI(requestingPlayer: Player)
 	local lobby = getOrCreateLobby()
 
-	-- Count current players (human + AI)
-	local totalPlayers = 0
-	for _ in pairs(lobby.Players) do
-		totalPlayers += 1
-	end
+	-- Count current players (human + AI) against the CURRENT layout's slot
+	-- count, not a flat cap -- a 2v2 tops out at 4, a 3v1 also at 4, but a
+	-- 2v1v1 needs the same 4; the cap has to move with whatever's selected.
+	local totalPlayers = countLobbyPlayers(lobby)
 
-	if totalPlayers >= 4 then
-		LobbyDebug:warn("Lobby is full, cannot add AI")
+	if totalPlayers >= TeamLayoutsData.getSlotCount(lobby.Settings.teamLayout) then
+		LobbyDebug:warn("Lobby is full for the current team layout, cannot add AI")
 		return
 	end
 
@@ -287,6 +334,14 @@ function LobbyManager.voteSetting(player: Player, settingId: string, value: any)
 		end
 	end
 
+	if settingId == "teamLayout" then
+		local playable = TeamLayoutsData.getPlayableOn(getLobbyMaxPlayers(lobby))
+		if typeof(value) ~= "string" or not table.find(playable, value) then
+			LobbyDebug:warn("Rejected team layout vote not playable on this map", { player = player.Name, value = value })
+			return
+		end
+	end
+
 	if not lobby.SettingsVotes[settingId] then
 		lobby.SettingsVotes[settingId] = {}
 	end
@@ -312,6 +367,20 @@ function LobbyManager.voteSetting(player: Player, settingId: string, value: any)
 
 	-- Update the setting to the winning value
 	lobby.Settings[settingId] = winningValue
+
+	-- A map change can shrink the available spawns out from under the
+	-- currently selected layout (a 2v2 needs 4, the new map only has 2) --
+	-- fall back to the default rather than leave an unplayable layout selected.
+	if settingId == "selectedMap" then
+		local stillPlayable = table.find(TeamLayoutsData.getPlayableOn(getLobbyMaxPlayers(lobby)), lobby.Settings.teamLayout)
+		if not stillPlayable then
+			LobbyDebug:info("Team layout no longer playable after map change; reverting to default", {
+				from = lobby.Settings.teamLayout,
+				to = TeamLayoutsData.Default,
+			})
+			lobby.Settings.teamLayout = TeamLayoutsData.Default
+		end
+	end
 
 	-- Broadcast updated lobby state
 	LobbyManager.broadcastLobbyState()
@@ -462,8 +531,9 @@ function LobbyManager.toggleReady(player: Player)
 		end
 	end
 
-	-- Need at least 1 human player
-	if allReady and humanCount > 0 and not lobby.CountdownActive then
+	-- Need at least 1 human player, and the roster has to exactly fill the
+	-- chosen layout's teams -- a 2v2 with 3 players has no valid split.
+	if allReady and humanCount > 0 and not lobby.CountdownActive and lobbyFitsLayout(lobby) then
 		LobbyManager.startCountdown()
 	elseif not allReady and lobby.CountdownActive then
 		LobbyManager.cancelCountdown()
@@ -476,6 +546,14 @@ end
 -- Start the countdown
 function LobbyManager.startCountdown()
 	local lobby = getOrCreateLobby()
+
+	-- Defense in depth: toggleReady is the normal gate, but a roster change
+	-- between that check and this call (e.g. an AI added mid-toggle) must not
+	-- be allowed to start a countdown for a layout that no longer fits.
+	if not lobbyFitsLayout(lobby) then
+		LobbyDebug:warn("Roster does not fit the current team layout; refusing to start countdown")
+		return
+	end
 
 	lobby.CountdownActive = true
 	lobby.CountdownStartTime = tick()
@@ -543,6 +621,36 @@ end
 function LobbyManager.startGame()
 	local lobby = getOrCreateLobby()
 
+	-- Same defense-in-depth as startCountdown: the countdown thread wakes up
+	-- COUNTDOWN_DURATION seconds after being scheduled, and the roster can
+	-- have changed underneath it since. Refuse rather than start a match that
+	-- can't seat everyone into the chosen layout.
+	if not lobbyFitsLayout(lobby) then
+		LobbyDebug:warn("Roster no longer fits the current team layout; refusing to start game")
+
+		-- Reset the countdown state directly instead of calling
+		-- cancelCountdown(): this guard runs INSIDE the countdown's own thread
+		-- (the task.spawn body in startCountdown), and task.cancel on the
+		-- currently running thread halts execution at that exact call --
+		-- everything after it, including the broadcasts below, would never run.
+		lobby.CountdownActive = false
+		lobby.CountdownStartTime = nil
+		countdownThread = nil
+
+		local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
+		local LobbyEvent = RemoteEvents:FindFirstChild("LobbyEvent")
+		if LobbyEvent then
+			for _, lobbyPlayer in pairs(lobby.Players) do
+				if not lobbyPlayer.IsAI and lobbyPlayer.Player then
+					LobbyEvent:FireClient(lobbyPlayer.Player, "CountdownCancelled")
+				end
+			end
+		end
+
+		LobbyManager.broadcastLobbyState()
+		return
+	end
+
 	LobbyDebug:info("Starting game with settings:", lobby.Settings)
 
 	-- Auto-assign factions to players who haven't chosen
@@ -567,6 +675,11 @@ function LobbyManager.startGame()
 			LobbyDebug:info("Auto-assigned faction to " .. lobbyPlayer.Name .. ":", faction)
 		end
 	end
+
+	-- Faction -> teamIndex for every seated player, human and AI alike. Built
+	-- here (not in GameManager) because SpawnSelections and SelectedFaction
+	-- both live only in this lobby session, which is cleared below.
+	local teamOf = buildTeamOf(lobby)
 
 	-- Notify clients and start game for all players
 	local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
@@ -602,6 +715,7 @@ function LobbyManager.startGame()
 			playerSettings.map = lobby.Settings.selectedMap
 			playerSettings.allPlayers = lobbyData.Players -- Send all players including AI
 			playerSettings.isMultiplayer = true -- Flag to indicate this is a multiplayer game
+			playerSettings.teamOf = teamOf -- faction -> teamIndex, for FactionManager.applyTeamLayout
 
 			-- Find player's chosen spawn
 			for spawnNum, selection in pairs(lobby.SpawnSelections) do
@@ -639,9 +753,18 @@ function LobbyManager.broadcastLobbyState()
 		LobbyEvent.Parent = RemoteEvents
 	end
 
+	-- Slot each player belongs to, so their team can be derived below. Built
+	-- once here rather than per-player -- SpawnSelections is keyed by slot,
+	-- not by user.
+	local slotByUserId: { [number]: number } = {}
+	for spawnNum, selection in pairs(lobby.SpawnSelections) do
+		slotByUserId[selection.userId] = spawnNum
+	end
+
 	-- Prepare lobby state for transmission (serialize Player instances)
 	local serializedPlayers = {}
 	for userId, lobbyPlayer in pairs(lobby.Players) do
+		local slot = slotByUserId[userId]
 		serializedPlayers[userId] = {
 			UserId = lobbyPlayer.UserId,
 			Name = lobbyPlayer.Name,
@@ -649,6 +772,7 @@ function LobbyManager.broadcastLobbyState()
 			SelectedFaction = lobbyPlayer.SelectedFaction,
 			SelectedColor = lobbyPlayer.SelectedColor,
 			IsAI = lobbyPlayer.IsAI,
+			TeamIndex = slot and TeamLayoutsData.teamForSlot(lobby.Settings.teamLayout, slot),
 		}
 	end
 
@@ -657,6 +781,11 @@ function LobbyManager.broadcastLobbyState()
 		Players = serializedPlayers,
 		Settings = lobby.Settings,
 		SpawnSelections = lobby.SpawnSelections,
+		-- The client used to re-derive this from Settings.selectedMap by
+		-- duplicating this exact function's logic (see the removed
+		-- computeMaxPlayers in Lobby.luau) -- broadcast the real number
+		-- instead so that copy can't drift from this one.
+		MaxPlayers = getLobbyMaxPlayers(lobby),
 		CountdownActive = lobby.CountdownActive,
 		CountdownTimeRemaining = if lobby.CountdownActive and lobby.CountdownStartTime
 			then math.max(0, COUNTDOWN_DURATION - (tick() - lobby.CountdownStartTime))
