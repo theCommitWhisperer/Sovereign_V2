@@ -59,7 +59,7 @@ local function optionChip(
 		AutomaticSize = Enum.AutomaticSize.X,
 		Size = UDim2.new(0, 0, 0, rowHeight),
 		BackgroundColor3 = if isCurrent then Theme.Color.Accent else Theme.Color.SurfaceRaised,
-		BackgroundTransparency = if isCurrent then Theme.Transparency.CardActive else Theme.Transparency.Card,
+		BackgroundTransparency = if isCurrent then Theme.Transparency.ScreenCardActive else Theme.Transparency.ScreenCard,
 		AutoButtonColor = false,
 		Text = "",
 		[React.Event.Activated] = function()
@@ -81,7 +81,7 @@ local function optionChip(
 			BackgroundTransparency = 1,
 			Text = optionLabel(setting, option),
 			FontFace = if isCurrent then Theme.FontFace.BodyBold else Theme.FontFace.Body,
-			TextSize = Theme.TextSize.Caption,
+			TextSize = Theme.TextSize.ScreenCaption,
 			TextColor3 = if isCurrent then Theme.Color.Accent else Theme.Color.TextSecondary,
 		}),
 	})
@@ -121,11 +121,11 @@ local function settingRow(
 		}),
 		Label = React.createElement("TextLabel", {
 			LayoutOrder = 1,
-			Size = UDim2.new(1, 0, 0, 16),
+			Size = UDim2.new(1, 0, 0, 22),
 			BackgroundTransparency = 1,
 			Text = setting.label,
 			FontFace = Theme.FontFace.Body,
-			TextSize = Theme.TextSize.Small,
+			TextSize = Theme.TextSize.ScreenSmall,
 			TextColor3 = Theme.Color.TextSecondary,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
@@ -139,11 +139,11 @@ local function settingRow(
 	if outvoted then
 		children.Outvoted = React.createElement("TextLabel", {
 			LayoutOrder = 3,
-			Size = UDim2.new(1, 0, 0, 14),
+			Size = UDim2.new(1, 0, 0, 20),
 			BackgroundTransparency = 1,
 			Text = `Your vote ({optionLabel(setting, myVote)}) was outvoted`,
 			FontFace = Theme.FontFace.Body,
-			TextSize = Theme.TextSize.Caption,
+			TextSize = Theme.TextSize.ScreenCaption,
 			TextColor3 = Theme.Color.TextMuted,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		})
@@ -167,11 +167,11 @@ local function settingsGroup(group: SettingGroup, values: { [string]: any }, myV
 		}),
 		Title = React.createElement("TextLabel", {
 			LayoutOrder = 1,
-			Size = UDim2.new(1, 0, 0, 20),
+			Size = UDim2.new(1, 0, 0, 24),
 			BackgroundTransparency = 1,
 			Text = group.title,
 			FontFace = Theme.FontFace.Display,
-			TextSize = Theme.TextSize.Heading,
+			TextSize = Theme.TextSize.ScreenHeading,
 			TextColor3 = Theme.Color.TextPrimary,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
@@ -205,12 +205,24 @@ local function LobbySettingsPanel(props: Props)
 		content["Group" .. i] = settingsGroup(group, props.values, props.myVotes, props.onVote, rowHeight, i)
 	end
 
+	content.Corner = React.createElement("UICorner", { CornerRadius = Theme.corner() })
+	content.Stroke = React.createElement("UIStroke", Theme.strokeProps())
+	content.Pad = React.createElement("UIPadding", {
+		PaddingTop = UDim.new(0, Theme.Metrics.Pad),
+		PaddingBottom = UDim.new(0, Theme.Metrics.Pad),
+		PaddingLeft = UDim.new(0, Theme.Metrics.Pad),
+		PaddingRight = UDim.new(0, Theme.Metrics.Pad),
+	})
+
 	return React.createElement("Frame", {
 		Name = "LobbySettingsPanel",
 		LayoutOrder = props.LayoutOrder,
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
-		BackgroundTransparency = 1,
+		-- A real card, not a transparent container. Section labels sitting directly
+		-- on the backdrop image were part of why this screen was unreadable.
+		BackgroundColor3 = Theme.Color.Surface,
+		BackgroundTransparency = Theme.Transparency.ScreenPanel,
 	}, content)
 end
 

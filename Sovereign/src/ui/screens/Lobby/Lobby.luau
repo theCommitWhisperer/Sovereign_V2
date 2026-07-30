@@ -294,7 +294,7 @@ function Lobby:renderMapChip(mapKey: string, order: number, horizontal: boolean)
 			else UDim2.new(1, 0, 0, Theme.Metrics.DesktopTarget),
 		AutomaticSize = if horizontal then Enum.AutomaticSize.X else Enum.AutomaticSize.None,
 		BackgroundColor3 = if isSelected then Theme.Color.Accent else Theme.Color.SurfaceRaised,
-		BackgroundTransparency = if isSelected then Theme.Transparency.CardActive else Theme.Transparency.Card,
+		BackgroundTransparency = if isSelected then Theme.Transparency.ScreenCardActive else Theme.Transparency.ScreenCard,
 		AutoButtonColor = false,
 		Text = "",
 		[React.Event.Activated] = function()
@@ -317,7 +317,7 @@ function Lobby:renderMapChip(mapKey: string, order: number, horizontal: boolean)
 			BackgroundTransparency = 1,
 			Text = displayName,
 			FontFace = if isSelected then Theme.FontFace.BodyBold else Theme.FontFace.Body,
-			TextSize = Theme.TextSize.Body,
+			TextSize = Theme.TextSize.ScreenBody,
 			TextColor3 = if isSelected then Theme.Color.Accent else Theme.Color.TextSecondary,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
@@ -485,11 +485,11 @@ function Lobby:render()
 			Preview = mapPreview,
 			MapListLabel = React.createElement("TextLabel", {
 				Position = UDim2.new(0, 0, 0, mapPreviewHeight + gap),
-				Size = UDim2.new(1, 0, 0, 16),
+				Size = UDim2.new(1, 0, 0, 22),
 				BackgroundTransparency = 1,
 				Text = "Maps",
 				FontFace = Theme.FontFace.BodyBold,
-				TextSize = Theme.TextSize.Small,
+				TextSize = Theme.TextSize.ScreenSmall,
 				TextColor3 = Theme.Color.TextSecondary,
 				TextXAlignment = Enum.TextXAlignment.Left,
 			}),
@@ -558,21 +558,35 @@ function Lobby:render()
 		Size = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
 	}, {
-		-- Flat glass wash over whatever sits behind the lobby (main-menu scene),
-		-- not an opaque ImageLabel backdrop -- same "glass, not a slab" rule as
-		-- the in-match HUD panels.
-		Wash = React.createElement("Frame", {
+		-- The SAME backdrop MainMenu uses, so the out-of-match flow reads as one
+		-- place. This screen previously had a fully transparent root with only a
+		-- glass wash over it, borrowing the in-match HUD's translucency -- but
+		-- there is no gameplay behind a lobby to see through to, so all that
+		-- achieved was text competing with whatever happened to be behind the
+		-- screen. Menus get a backdrop and a scrim; only the HUD is glass.
+		Backdrop = React.createElement("ImageLabel", {
+			Name = "Backdrop",
+			Image = Theme.MenuBackgroundImage,
+			ScaleType = Enum.ScaleType.Crop,
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 1),
+			ZIndex = 1,
+		}),
+
+		-- Darkens the backdrop so light text is legible over any part of it.
+		Scrim = React.createElement("Frame", {
+			Name = "Scrim",
 			Size = UDim2.fromScale(1, 1),
 			BackgroundColor3 = Theme.Color.Surface,
-			BackgroundTransparency = Theme.Transparency.Panel,
+			BackgroundTransparency = Theme.Transparency.ScreenScrim,
 			BorderSizePixel = 0,
-			ZIndex = 1,
+			ZIndex = 2,
 		}),
 
 		Content = React.createElement("Frame", {
 			Size = UDim2.fromScale(1, 1),
 			BackgroundTransparency = 1,
-			ZIndex = 2,
+			ZIndex = 3,
 		}, {
 			Padding = React.createElement("UIPadding", {
 				PaddingTop = UDim.new(0, Theme.Metrics.PadLoose),
@@ -591,7 +605,7 @@ function Lobby:render()
 					BackgroundTransparency = 1,
 					Text = "Lobby",
 					FontFace = Theme.FontFace.Display,
-					TextSize = Theme.TextSize.Title,
+					TextSize = Theme.TextSize.ScreenTitle,
 					TextColor3 = Theme.Color.TextPrimary,
 					TextXAlignment = Enum.TextXAlignment.Left,
 				}),
@@ -612,11 +626,11 @@ function Lobby:render()
 				ReadyButton = (not state.countdownActive) and React.createElement("TextButton", {
 					Size = UDim2.new(1, -120, 1, -Theme.Metrics.Pad),
 					BackgroundColor3 = if state.isReady then Theme.Color.Accent else Theme.Color.Action,
-					BackgroundTransparency = Theme.Transparency.CardActive,
+					BackgroundTransparency = Theme.Transparency.ScreenCardActive,
 					AutoButtonColor = false,
 					Text = if state.isReady then "Ready ✓" else "Ready Up",
 					FontFace = Theme.FontFace.BodyBold,
-					TextSize = Theme.TextSize.Heading,
+					TextSize = Theme.TextSize.ScreenHeading,
 					TextColor3 = if state.isReady then Theme.Color.Accent else Theme.Color.TextPrimary,
 					[React.Event.Activated] = self.toggleReady,
 				}, {
@@ -633,11 +647,11 @@ function Lobby:render()
 					AnchorPoint = Vector2.new(1, 0),
 					Size = UDim2.new(0, 110, 1, -Theme.Metrics.Pad),
 					BackgroundColor3 = Theme.Color.SurfaceRaised,
-					BackgroundTransparency = Theme.Transparency.Card,
+					BackgroundTransparency = Theme.Transparency.ScreenCard,
 					AutoButtonColor = false,
 					Text = "Leave",
 					FontFace = Theme.FontFace.Body,
-					TextSize = Theme.TextSize.Body,
+					TextSize = Theme.TextSize.ScreenBody,
 					TextColor3 = Theme.Color.TextSecondary,
 					[React.Event.Activated] = function()
 						if navigate then

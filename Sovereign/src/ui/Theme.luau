@@ -96,6 +96,24 @@ Theme.Transparency = {
 	Border = 0.82,
 	BorderStrong = 0.62,
 	Ghost = 0.8, -- placement preview fill
+
+	-- ============================================================
+	-- FULL-SCREEN MENUS (lobby, settings, post-game)
+	--
+	-- These are DELIBERATELY far more opaque than the in-match values above, and
+	-- the distinction matters. The HUD is translucent because it sits over live
+	-- gameplay you need to keep seeing -- translucency there is the point. A
+	-- menu has no battlefield behind it, only a static backdrop image, so the
+	-- same values buy nothing and cost legibility.
+	--
+	-- Applying Panel/Card to the lobby is exactly what made it unreadable:
+	-- panels at 68% transparent over a fully transparent root, so text was
+	-- competing with whatever happened to be behind the screen.
+	-- ============================================================
+	ScreenScrim = 0.25, -- darkens the backdrop image so text can sit on it
+	ScreenPanel = 0.06, -- a menu card: essentially solid
+	ScreenCard = 0.14, -- a row/slot inside a menu card
+	ScreenCardActive = 0.0,
 }
 
 -- ============================================================
@@ -129,6 +147,17 @@ Theme.TextSize = {
 	Body = 13,
 	Heading = 15,
 	Title = 18,
+
+	-- Full-screen menus read LARGER than the HUD, for the same reason they are
+	-- more opaque. 11px is defensible for overlay data you glance at mid-battle
+	-- with the whole screen as context; it is not defensible for a lobby you sit
+	-- and read, and it was the main reason the lobby text was hard to make out
+	-- (13 of its labels were at Caption).
+	ScreenCaption = 13,
+	ScreenSmall = 14,
+	ScreenBody = 15,
+	ScreenHeading = 17,
+	ScreenTitle = 22,
 }
 
 -- ============================================================
@@ -192,5 +221,10 @@ end
 function Theme.corner(radius: number?)
 	return UDim.new(0, radius or Theme.Metrics.Radius)
 end
+
+-- The shared backdrop for full-screen menus. MainMenu owns this asset; the
+-- lobby and post-game screens reference it here so the whole out-of-match flow
+-- is visibly one place rather than three unrelated screens.
+Theme.MenuBackgroundImage = "rbxassetid://99876577284469"
 
 return Theme

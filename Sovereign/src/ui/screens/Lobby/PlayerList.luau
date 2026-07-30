@@ -108,7 +108,7 @@ local function pickChip(label: string, mine: boolean, takenBy: string?, swatch: 
 			BackgroundTransparency = 1,
 			Text = if takenBy then `{label} · {takenBy}` else label,
 			FontFace = Theme.FontFace.Body,
-			TextSize = Theme.TextSize.Caption,
+			TextSize = Theme.TextSize.ScreenCaption,
 			TextColor3 = if blocked then Theme.Color.TextMuted elseif mine then Theme.Color.Accent else Theme.Color.TextSecondary,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
@@ -129,7 +129,7 @@ local function pickChip(label: string, mine: boolean, takenBy: string?, swatch: 
 		AutomaticSize = Enum.AutomaticSize.X,
 		Size = UDim2.new(0, 0, 0, Theme.Metrics.DesktopTarget),
 		BackgroundColor3 = if mine then Theme.Color.Accent else Theme.Color.SurfaceRaised,
-		BackgroundTransparency = if mine then Theme.Transparency.CardActive else Theme.Transparency.Card,
+		BackgroundTransparency = if mine then Theme.Transparency.ScreenCardActive else Theme.Transparency.ScreenCard,
 		AutoButtonColor = false,
 		Active = not blocked,
 		Text = "",
@@ -141,11 +141,11 @@ local function readyPill(isReady: boolean, order: number)
 	return React.createElement("TextLabel", {
 		LayoutOrder = order,
 		AutomaticSize = Enum.AutomaticSize.X,
-		Size = UDim2.new(0, 0, 0, 18),
+		Size = UDim2.new(0, 0, 0, 24),
 		BackgroundTransparency = 1,
 		Text = if isReady then "● Ready" else "Not ready",
 		FontFace = Theme.FontFace.BodyBold,
-		TextSize = Theme.TextSize.Caption,
+		TextSize = Theme.TextSize.ScreenCaption,
 		TextColor3 = if isReady then Theme.Color.Accent else Theme.Color.TextMuted,
 		TextXAlignment = Enum.TextXAlignment.Right,
 	})
@@ -198,7 +198,7 @@ local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: stri
 			BackgroundTransparency = 1,
 			Text = entry.name .. (if isLocal then "  (You)" elseif entry.isAI then "  (AI)" else ""),
 			FontFace = Theme.FontFace.BodyBold,
-			TextSize = Theme.TextSize.Body,
+			TextSize = Theme.TextSize.ScreenBody,
 			TextColor3 = if isLocal then Theme.Color.Accent else Theme.Color.TextPrimary,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextTruncate = Enum.TextTruncate.AtEnd,
@@ -213,7 +213,7 @@ local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: stri
 			AutoButtonColor = false,
 			Text = "✕",
 			FontFace = Theme.FontFace.BodyBold,
-			TextSize = Theme.TextSize.Body,
+			TextSize = Theme.TextSize.ScreenBody,
 			TextColor3 = Theme.Color.Danger,
 			[React.Event.Activated] = function()
 				props.onRemovePlayer(entry)
@@ -222,7 +222,7 @@ local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: stri
 	end
 	children.IdentityRow = React.createElement("Frame", {
 		LayoutOrder = 1,
-		Size = UDim2.new(1, 0, 0, 20),
+		Size = UDim2.new(1, 0, 0, 24),
 		BackgroundTransparency = 1,
 	}, identityChildren)
 
@@ -258,11 +258,11 @@ local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: stri
 	else
 		children.Faction = React.createElement("TextLabel", {
 			LayoutOrder = 2,
-			Size = UDim2.new(1, 0, 0, 16),
+			Size = UDim2.new(1, 0, 0, 22),
 			BackgroundTransparency = 1,
 			Text = entry.faction or "No faction chosen yet",
 			FontFace = Theme.FontFace.Body,
-			TextSize = Theme.TextSize.Caption,
+			TextSize = Theme.TextSize.ScreenCaption,
 			TextColor3 = if entry.faction then Theme.Color.TextSecondary else Theme.Color.TextMuted,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		})
@@ -303,11 +303,11 @@ local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: stri
 	-- Row 4: spawn -- always read-only, chosen by clicking the map (MapPreview).
 	children.Spawn = React.createElement("TextLabel", {
 		LayoutOrder = 4,
-		Size = UDim2.new(1, 0, 0, 14),
+		Size = UDim2.new(1, 0, 0, 20),
 		BackgroundTransparency = 1,
 		Text = "Spawn: " .. spawnLabel,
 		FontFace = Theme.FontFace.Body,
-		TextSize = Theme.TextSize.Caption,
+		TextSize = Theme.TextSize.ScreenCaption,
 		TextColor3 = Theme.Color.TextMuted,
 		TextXAlignment = Enum.TextXAlignment.Left,
 	})
@@ -318,7 +318,7 @@ local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: stri
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundColor3 = Theme.Color.SurfaceRaised,
-		BackgroundTransparency = Theme.Transparency.Card,
+		BackgroundTransparency = Theme.Transparency.ScreenCard,
 		BorderSizePixel = 0,
 	}, children)
 end
@@ -332,7 +332,7 @@ local function emptySlot(order: number, compact: boolean, onAddAI: () -> ())
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundColor3 = Theme.Color.Surface,
-		BackgroundTransparency = Theme.Transparency.Card,
+		BackgroundTransparency = Theme.Transparency.ScreenCard,
 		BorderSizePixel = 0,
 	}, {
 		Corner = React.createElement("UICorner", { CornerRadius = Theme.corner() }),
@@ -359,7 +359,7 @@ local function emptySlot(order: number, compact: boolean, onAddAI: () -> ())
 			BackgroundTransparency = 1,
 			Text = "Waiting for players…",
 			FontFace = Theme.FontFace.Body,
-			TextSize = Theme.TextSize.Body,
+			TextSize = Theme.TextSize.ScreenBody,
 			TextColor3 = Theme.Color.TextMuted,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
@@ -367,11 +367,11 @@ local function emptySlot(order: number, compact: boolean, onAddAI: () -> ())
 			LayoutOrder = 2,
 			Size = UDim2.new(0, 90, 0, if compact then Theme.Metrics.TouchTarget else Theme.Metrics.DesktopTarget),
 			BackgroundColor3 = Theme.Color.Action,
-			BackgroundTransparency = Theme.Transparency.CardActive,
+			BackgroundTransparency = Theme.Transparency.ScreenCardActive,
 			AutoButtonColor = false,
 			Text = "+ Add AI",
 			FontFace = Theme.FontFace.BodyBold,
-			TextSize = Theme.TextSize.Small,
+			TextSize = Theme.TextSize.ScreenSmall,
 			TextColor3 = Theme.Color.TextPrimary,
 			[React.Event.Activated] = onAddAI,
 		}, {
@@ -387,11 +387,11 @@ local function teamHeader(teamIndex: number, order: number)
 	return React.createElement("TextLabel", {
 		key = "TeamHeader" .. teamIndex,
 		LayoutOrder = order,
-		Size = UDim2.new(1, 0, 0, 16),
+		Size = UDim2.new(1, 0, 0, 22),
 		BackgroundTransparency = 1,
 		Text = `Team {teamIndex}`,
 		FontFace = Theme.FontFace.BodyBold,
-		TextSize = Theme.TextSize.Small,
+		TextSize = Theme.TextSize.ScreenSmall,
 		TextColor3 = Theme.Color.TextSecondary,
 		TextXAlignment = Enum.TextXAlignment.Left,
 	})
@@ -412,7 +412,7 @@ local function rosterBlocker(layoutId: string, playerCount: number, order: numbe
 		BackgroundTransparency = 1,
 		Text = `{layout.label} needs {needed} players — {playerCount} in lobby`,
 		FontFace = Theme.FontFace.BodyBold,
-		TextSize = Theme.TextSize.Caption,
+		TextSize = Theme.TextSize.ScreenCaption,
 		TextColor3 = Theme.Color.Warning,
 		TextWrapped = true,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -523,11 +523,11 @@ local function PlayerList(props: Props)
 		}),
 		Header = React.createElement("TextLabel", {
 			LayoutOrder = 1,
-			Size = UDim2.new(1, 0, 0, 20),
+			Size = UDim2.new(1, 0, 0, 24),
 			BackgroundTransparency = 1,
 			Text = `Players · {#players}/{props.maxPlayers}`,
 			FontFace = Theme.FontFace.Display,
-			TextSize = Theme.TextSize.Heading,
+			TextSize = Theme.TextSize.ScreenHeading,
 			TextColor3 = Theme.Color.TextPrimary,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),

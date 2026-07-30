@@ -46,11 +46,11 @@ local function layoutCard(layout: TeamLayoutsData.Layout, isSelected: boolean, o
 		}),
 		Label = React.createElement("TextLabel", {
 			LayoutOrder = 1,
-			Size = UDim2.new(1, 0, 0, 16),
+			Size = UDim2.new(1, 0, 0, 22),
 			BackgroundTransparency = 1,
 			Text = layout.label,
 			FontFace = if isSelected then Theme.FontFace.BodyBold else Theme.FontFace.Body,
-			TextSize = Theme.TextSize.Body,
+			TextSize = Theme.TextSize.ScreenBody,
 			TextColor3 = if isSelected then Theme.Color.Accent else Theme.Color.TextPrimary,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
@@ -61,7 +61,7 @@ local function layoutCard(layout: TeamLayoutsData.Layout, isSelected: boolean, o
 			BackgroundTransparency = 1,
 			Text = layout.description,
 			FontFace = Theme.FontFace.Body,
-			TextSize = Theme.TextSize.Caption,
+			TextSize = Theme.TextSize.ScreenCaption,
 			TextColor3 = if isSelected then Theme.Color.TextPrimary else Theme.Color.TextSecondary,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextWrapped = true,
@@ -74,11 +74,11 @@ local function layoutCard(layout: TeamLayoutsData.Layout, isSelected: boolean, o
 	if layout.asymmetric then
 		children.AsymmetricTag = React.createElement("TextLabel", {
 			LayoutOrder = 3,
-			Size = UDim2.new(1, 0, 0, 14),
+			Size = UDim2.new(1, 0, 0, 20),
 			BackgroundTransparency = 1,
 			Text = "⚠ Asymmetric -- uneven teams",
 			FontFace = Theme.FontFace.BodyBold,
-			TextSize = Theme.TextSize.Caption,
+			TextSize = Theme.TextSize.ScreenCaption,
 			TextColor3 = Theme.Color.Warning,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		})
@@ -90,7 +90,7 @@ local function layoutCard(layout: TeamLayoutsData.Layout, isSelected: boolean, o
 		Size = UDim2.new(0, if compact then 158 else 196, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundColor3 = if isSelected then Theme.Color.Accent else Theme.Color.SurfaceRaised,
-		BackgroundTransparency = if isSelected then Theme.Transparency.CardActive else Theme.Transparency.Card,
+		BackgroundTransparency = if isSelected then Theme.Transparency.ScreenCardActive else Theme.Transparency.ScreenCard,
 		AutoButtonColor = false,
 		Text = "",
 		[React.Event.Activated] = function()
@@ -120,8 +120,19 @@ local function TeamLayoutPicker(props: Props)
 		LayoutOrder = props.LayoutOrder,
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
-		BackgroundTransparency = 1,
+		-- A real card, not a transparent container. Section labels sitting directly
+		-- on the backdrop image were part of why this screen was unreadable.
+		BackgroundColor3 = Theme.Color.Surface,
+		BackgroundTransparency = Theme.Transparency.ScreenPanel,
 	}, {
+		Corner = React.createElement("UICorner", { CornerRadius = Theme.corner() }),
+		Stroke = React.createElement("UIStroke", Theme.strokeProps()),
+		Pad = React.createElement("UIPadding", {
+			PaddingTop = UDim.new(0, Theme.Metrics.Pad),
+			PaddingBottom = UDim.new(0, Theme.Metrics.Pad),
+			PaddingLeft = UDim.new(0, Theme.Metrics.Pad),
+			PaddingRight = UDim.new(0, Theme.Metrics.Pad),
+		}),
 		Layout = React.createElement("UIListLayout", {
 			FillDirection = Enum.FillDirection.Vertical,
 			Padding = UDim.new(0, Theme.Metrics.GapTight),
@@ -129,11 +140,11 @@ local function TeamLayoutPicker(props: Props)
 		}),
 		Title = React.createElement("TextLabel", {
 			LayoutOrder = 1,
-			Size = UDim2.new(1, 0, 0, 20),
+			Size = UDim2.new(1, 0, 0, 24),
 			BackgroundTransparency = 1,
 			Text = "Team Layout",
 			FontFace = Theme.FontFace.Display,
-			TextSize = Theme.TextSize.Heading,
+			TextSize = Theme.TextSize.ScreenHeading,
 			TextColor3 = Theme.Color.TextPrimary,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
