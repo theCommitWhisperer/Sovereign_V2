@@ -249,12 +249,9 @@ function ViewToggleButton:render()
 
 	return React.createElement("Frame", {
 		Name = "ViewToggleCluster",
-		-- Right edge, below the top bar: clear of the minimap (bottom-right) and
-		-- the building menu (bottom). AnchorPoint on the right keeps it pinned to
-		-- the edge across every aspect ratio instead of drifting on ultrawide.
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -14, 0, self.props.topOffset or (UIConfig.HUD.TopBarHeight + 14)),
-		Size = UDim2.new(0, width, 0, height * 2 + 8),
+		AnchorPoint = if self.props.inline then Vector2.new(0, 0) else Vector2.new(1, 0),
+		Position = if self.props.inline then UDim2.new(0, 0, 0, 0) else UDim2.new(1, -14, 0, self.props.topOffset or (UIConfig.HUD.TopBarHeight + 14)),
+		Size = if self.props.inline then UDim2.new(1, 0, 0, height) else UDim2.new(0, width, 0, height * 2 + 8),
 		BackgroundTransparency = 1,
 		ZIndex = 60,
 	}, children)

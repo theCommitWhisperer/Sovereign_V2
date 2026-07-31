@@ -35,6 +35,7 @@ local Workspace = game:GetService("Workspace")
 
 local React = require(game.ReplicatedStorage.Packages.react)
 local GameData = require(ReplicatedStorage.Shared.GameData)
+local MinimapService = require(ReplicatedStorage.Shared.MinimapService)
 
 export type State = {
 	-- Resources / economy
@@ -334,6 +335,9 @@ function HUDStore.setGameStartData(data: any?)
 	if data.resources then
 		partial.resources = data.resources
 	end
+	-- Mirrors the "GameStarted" handler below: whichever path delivers the
+	-- payload first, the minimap must learn the map size from it.
+	MinimapService.setMapConfig(data.mapConfig)
 	HUDStore.setState(partial)
 end
 
@@ -1053,6 +1057,10 @@ function HUDStore.init()
 
 	trackConnection(event.OnClientEvent:Connect(function(action: string, data: any)
 		if action == "GameStarted" and data.resources then
+			-- Hand the map's real extent to the minimap before anything renders.
+			-- Without this it falls back to a 1000-stud assumption, which is
+			-- wrong on every shipped map.
+			MinimapService.setMapConfig(data.mapConfig)
 			local peaceTimeSecs = data.peaceTimeSeconds or 0
 			local tutorialEnabled = if data.showTutorial ~= nil then data.showTutorial else true
 			HUDStore.setState({
@@ -1076,6 +1084,9 @@ function HUDStore.init()
 			end
 		elseif action == "BuildingPlaced" and data.buildingType then
 			handleBuildingPlaced(data.buildingType)
+			HUDStore.setState({ isPlacingBuilding = false, selectedBuilding = HUDStore.None })
+		elseif action == "PlacementEnded" then
+			HUDStore.setState({ isPlacingBuilding = false, selectedBuilding = HUDStore.None })
 		elseif action == "UpdateResources" and data.resources then
 			HUDStore.setState({ resources = data.resources })
 		elseif action == "StartPlacement" and typeof(data) == "string" then

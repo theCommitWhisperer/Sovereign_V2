@@ -600,10 +600,22 @@ function LobbyManager.selectSpawn(player: Player, spawnNumber: number)
 end
 
 -- Select a color for a player
-function LobbyManager.selectColor(player: Player, color: { number })
+--- `targetUserId` lets a player set an AI kingdom's colour, matching
+--- selectFaction and renamePlayer. Another human's colour stays theirs.
+function LobbyManager.selectColor(player: Player, color: { number }, targetUserId: number?)
 	local lobby = getOrCreateLobby()
 
-	if not lobby.Players[player.UserId] then
+	local userId = targetUserId or player.UserId
+	local target = lobby.Players[userId]
+	if not target then
+		return
+	end
+	if not target.IsAI and userId ~= player.UserId then
+		LobbyDebug:warn(`{player.Name} tried to set another human's colour; refused`)
+		return
+	end
+
+	if not lobby.Players[userId] then
 		LobbyDebug:warn("Player not in lobby:", player.Name)
 		return
 	end
@@ -622,7 +634,7 @@ function LobbyManager.selectColor(player: Player, color: { number })
 
 	-- Check if color is already taken by someone else
 	for userId, lobbyPlayer in pairs(lobby.Players) do
-		if userId ~= player.UserId and lobbyPlayer.SelectedColor then
+		if userId ~= userId and lobbyPlayer.SelectedColor then
 			local sc = lobbyPlayer.SelectedColor
 			if sc[1] == color[1] and sc[2] == color[2] and sc[3] == color[3] then
 				LobbyDebug:warn("Color already taken by", lobbyPlayer.Name)
@@ -631,7 +643,7 @@ function LobbyManager.selectColor(player: Player, color: { number })
 		end
 	end
 
-	lobby.Players[player.UserId].SelectedColor = color
+	lobby.Players[userId].SelectedColor = color
 	LobbyDebug:info(player.Name .. " selected color", color)
 	LobbyManager.broadcastLobbyState()
 end

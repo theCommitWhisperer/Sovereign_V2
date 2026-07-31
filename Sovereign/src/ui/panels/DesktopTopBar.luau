@@ -23,6 +23,7 @@ local ResourcesData = require(ReplicatedStorage.Shared.GameData.ResourcesData)
 
 local Theme = require(script.Parent.Parent.Theme)
 local HUDStore = require(script.Parent.Parent.state.HUDStore)
+local MedievalCorners = require(script.Parent.Parent.components.MedievalCorners)
 
 -- Fixed order so the strip doesn't reshuffle as values change (a plain `pairs`
 -- over the resources table would).
@@ -56,24 +57,6 @@ local function statusChip(text: string, color: Color3, layoutOrder: number)
 	})
 end
 
-local function utilityButton(icon: string, active: boolean, layoutOrder: number, onClick: () -> ())
-	return React.createElement("TextButton", {
-		Size = UDim2.fromOffset(Theme.Metrics.DesktopTarget + 16, Theme.Metrics.DesktopTarget),
-		BackgroundColor3 = if active then Theme.Color.Accent else Theme.Color.SurfaceRaised,
-		BackgroundTransparency = if active then Theme.Transparency.CardActive else Theme.Transparency.Card,
-		AutoButtonColor = true,
-		Text = icon,
-		FontFace = Theme.FontFace.Body,
-		TextSize = Theme.TextSize.Heading,
-		TextColor3 = if active then Theme.Color.OnAccent else Theme.Color.TextPrimary,
-		LayoutOrder = layoutOrder,
-		[React.Event.Activated] = onClick,
-	}, {
-		Corner = React.createElement("UICorner", { CornerRadius = Theme.corner(Theme.Metrics.RadiusSmall) }),
-		Stroke = React.createElement("UIStroke", Theme.strokeProps()),
-	})
-end
-
 local function DesktopTopBar()
 	local resources = HUDStore.useHUDState(function(s)
 		return s.resources
@@ -102,18 +85,6 @@ local function DesktopTopBar()
 	local gameStartData = HUDStore.useHUDState(function(s)
 		return s.gameStartData
 	end)
-	local showMenuModal = HUDStore.useHUDState(function(s)
-		return s.showMenuModal
-	end)
-	local showStatsModal = HUDStore.useHUDState(function(s)
-		return s.showStatsModal
-	end)
-	local showPoliciesModal = HUDStore.useHUDState(function(s)
-		return s.showPoliciesModal
-	end)
-	local showTechTreeModal = HUDStore.useHUDState(function(s)
-		return s.showTechTreeModal
-	end)
 
 	-- Battle Arena has no economy: hiding the whole strip matches the legacy
 	-- TopBar's `not isArenaMode and ...` gate in DesktopShell.
@@ -133,6 +104,10 @@ local function DesktopTopBar()
 			VerticalAlignment = Enum.VerticalAlignment.Center,
 			Padding = UDim.new(0, Theme.Metrics.GapLoose),
 			SortOrder = Enum.SortOrder.LayoutOrder,
+		}),
+		Padding = React.createElement("UIPadding", {
+			PaddingLeft = UDim.new(0, 16),
+			PaddingRight = UDim.new(0, 16),
 		}),
 	}
 
@@ -183,48 +158,24 @@ local function DesktopTopBar()
 
 	return React.createElement("Frame", {
 		Name = "DesktopTopBar",
-		Size = UDim2.new(1, 0, 0, Theme.Metrics.ActionBarHeight),
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.new(0, 0, 0, Theme.Metrics.ActionBarHeight),
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 8),
 		BackgroundColor3 = Theme.Color.Surface,
 		BackgroundTransparency = Theme.Transparency.Panel,
 		BorderSizePixel = 0,
 		ZIndex = 10,
 	}, {
-		Stroke = React.createElement("UIStroke", Theme.strokeProps()),
+		Stroke = React.createElement("UIStroke", Theme.celticStrokeProps()),
+		Corner = React.createElement("UICorner", { CornerRadius = Theme.corner() }),
+		Corners = React.createElement(MedievalCorners, { size = 16, color = Theme.Color.Accent, thickness = 2.5 }),
 
-		LeftCluster = React.createElement("Frame", {
-			AnchorPoint = Vector2.new(0, 0.5),
-			Position = UDim2.new(0, Theme.Metrics.Pad, 0.5, 0),
+		ResourceStrip = React.createElement("Frame", {
 			AutomaticSize = Enum.AutomaticSize.X,
 			Size = UDim2.new(0, 0, 1, 0),
 			BackgroundTransparency = 1,
 		}, leftChildren),
-
-		RightCluster = React.createElement("Frame", {
-			AnchorPoint = Vector2.new(1, 0.5),
-			Position = UDim2.new(1, -Theme.Metrics.Pad, 0.5, 0),
-			AutomaticSize = Enum.AutomaticSize.X,
-			Size = UDim2.new(0, 0, 1, 0),
-			BackgroundTransparency = 1,
-		}, {
-			Layout = React.createElement("UIListLayout", {
-				FillDirection = Enum.FillDirection.Horizontal,
-				VerticalAlignment = Enum.VerticalAlignment.Center,
-				Padding = UDim.new(0, Theme.Metrics.Gap),
-				SortOrder = Enum.SortOrder.LayoutOrder,
-			}),
-			Menu = utilityButton("☰", showMenuModal, 1, function()
-				HUDStore.setMenuModal(not showMenuModal)
-			end),
-			Stats = utilityButton("🏰", showStatsModal, 2, function()
-				HUDStore.setStatsModal(not showStatsModal)
-			end),
-			Policies = utilityButton("📜", showPoliciesModal, 3, function()
-				HUDStore.togglePoliciesModal()
-			end),
-			TechTree = utilityButton("🔬", showTechTreeModal, 4, function()
-				HUDStore.setTechTreeModal(not showTechTreeModal)
-			end),
-		}),
 	})
 end
 

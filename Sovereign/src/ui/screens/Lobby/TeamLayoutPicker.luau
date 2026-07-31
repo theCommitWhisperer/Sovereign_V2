@@ -30,7 +30,7 @@ export type Props = {
 -- One layout as a square tile. The label ("2v2") is the thing you scan for, so
 -- it dominates; the description is a caption under it and the asymmetry warning
 -- replaces that caption rather than adding a line.
-local TILE = 78
+local TILE = 96
 
 local function optionTile(
 	layout: TeamLayoutsData.Layout,
@@ -71,20 +71,20 @@ local function optionTile(
 		}),
 		Label = React.createElement("TextLabel", {
 			LayoutOrder = 1,
-			Size = UDim2.new(1, 0, 0, 22),
+			Size = UDim2.new(1, 0, 0, 26),
 			BackgroundTransparency = 1,
 			Text = layout.label,
 			FontFace = Theme.FontFace.Display,
-			TextSize = Theme.TextSize.ScreenHeading,
+			TextSize = Theme.TextSize.ScreenTitle,
 			TextColor3 = if isSelected then Theme.Color.OnAccent else Theme.Color.TextPrimary,
 		}),
 		Detail = React.createElement("TextLabel", {
 			LayoutOrder = 2,
-			Size = UDim2.new(1, 0, 0, 30),
+			Size = UDim2.new(1, 0, 0, 40),
 			BackgroundTransparency = 1,
 			Text = if layout.asymmetric then "uneven teams" else layout.description,
 			FontFace = Theme.FontFace.Body,
-			TextSize = Theme.TextSize.Caption,
+			TextSize = Theme.TextSize.ScreenCaption,
 			TextColor3 = if isSelected then Theme.Color.OnAccent
 				elseif layout.asymmetric then Theme.Color.Warning
 				else Theme.Color.TextMuted,

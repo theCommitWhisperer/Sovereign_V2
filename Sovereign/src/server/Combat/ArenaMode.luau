@@ -309,6 +309,12 @@ function ArenaMode.startForPlayer(player: Player, playerData: any, settings: any
 			armyCap = maxPerSide,
 			zoneCenter = arenaCenter,
 			zoneRadius = 200,
+			-- The minimap reads its world extent from here rather than a
+			-- hardcoded constant. The arena is 400 studs, not 1000.
+			mapConfig = {
+				Name = "Battle Arena",
+				Size = 400,
+			},
 		})
 
 		NotificationManager.info(

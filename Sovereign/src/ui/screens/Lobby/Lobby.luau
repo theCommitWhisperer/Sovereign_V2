@@ -22,7 +22,6 @@ local Theme = require(script.Parent.Parent.Parent.Theme)
 local Platform = require(script.Parent.Parent.Parent.Platform)
 local LobbySettings = require(script.Parent.Parent.Parent.LobbySettings)
 local LobbySettingsPanel = require(script.Parent.Parent.Parent.panels.LobbySettingsPanel)
-local LobbyCountdownBanner = require(script.Parent.Parent.Parent.panels.LobbyCountdownBanner)
 local PlayerList = require(script.Parent.PlayerList)
 local MapPreview = require(script.Parent.MapPreview)
 local TeamLayoutPicker = require(script.Parent.TeamLayoutPicker)
@@ -36,7 +35,10 @@ local Lobby = React.Component:extend("Lobby")
 local localPlayer = Players.LocalPlayer
 
 local SETTINGS_GROUPS = {
-	{ title = "Map Settings", settings = LobbySettings.MapSettings },
+	-- Not "Map Settings": the map itself is picked in the left column, and this
+	-- group is random events / resource density / wildlife / raids -- rules about
+	-- the world, not about which map.
+	{ title = "World Rules", settings = LobbySettings.MapSettings },
 	{ title = "Starting Resources", settings = LobbySettings.StartingResources },
 	{ title = "Gameplay Modifiers", settings = LobbySettings.GameplayModifiers },
 	{ title = "Pacing & Economy", settings = LobbySettings.PacingAndEconomy },
@@ -226,8 +228,8 @@ function Lobby:init()
 		LobbyEvent:FireServer("SelectSpawn", spawnNumber)
 	end
 
-	self.selectColor = function(color)
-		LobbyEvent:FireServer("SelectColor", color)
+	self.selectColor = function(color, targetUserId)
+		LobbyEvent:FireServer("SelectColor", color, targetUserId)
 	end
 
 	self.selectFaction = function(faction, targetUserId)
@@ -361,13 +363,6 @@ function Lobby:render()
 		Size = UDim2.new(1, 0, 0, mapPreviewHeight),
 	})
 
-	local countdownBanner = React.createElement(LobbyCountdownBanner, {
-		LayoutOrder = 1,
-		active = state.countdownActive,
-		timeRemaining = state.countdownTimeRemaining,
-		compact = compact,
-		onCancel = self.toggleReady,
-	})
 
 	local playerList = React.createElement(PlayerList, {
 		players = state.players,
@@ -428,7 +423,6 @@ function Lobby:render()
 				Padding = UDim.new(0, Theme.Metrics.GapLoose),
 				SortOrder = Enum.SortOrder.LayoutOrder,
 			}),
-			Countdown = countdownBanner,
 			MapSection = React.createElement("Frame", {
 				LayoutOrder = 2,
 				Size = UDim2.new(1, 0, 0, 0),
@@ -537,7 +531,6 @@ function Lobby:render()
 				Padding = UDim.new(0, gap),
 				SortOrder = Enum.SortOrder.LayoutOrder,
 			}),
-			Countdown = countdownBanner,
 			-- The team layout belongs with the roster, not with the game settings:
 			-- "who is playing" and "how are they split" are one question, and the
 			-- picker's own label already says Teams.
@@ -665,9 +658,30 @@ function Lobby:render()
 					Size = UDim2.new(1, 0, 0, footerHeight),
 					BackgroundTransparency = 1,
 				}, {
-					-- Hidden entirely while the countdown banner is up -- that banner
-					-- is now the only Ready/Cancel affordance, so there's nothing for
-					-- this button to do until the countdown ends or gets cancelled.
+					-- WHILE COUNTING DOWN this slot becomes the countdown itself.
+					-- Previously the banner appeared at the top of the roster column
+					-- while the button disappeared from the footer, so the thing you
+					-- were watching for moved to the opposite corner of the screen at
+					-- the exact moment it mattered. It replaces the button in place.
+					Countdown = state.countdownActive and React.createElement("TextButton", {
+						Size = UDim2.new(1, -120, 1, -Theme.Metrics.Pad),
+						BackgroundColor3 = Theme.Color.Accent,
+						BackgroundTransparency = Theme.Transparency.ScreenCardActive,
+						AutoButtonColor = false,
+						Text = `Starting in {state.countdownTimeRemaining}…    tap to cancel`,
+						FontFace = Theme.FontFace.Display,
+						TextSize = Theme.TextSize.ScreenHeading,
+						TextColor3 = Theme.Color.OnAccent,
+						[React.Event.Activated] = self.toggleReady,
+					}, {
+						Corner = React.createElement("UICorner", { CornerRadius = Theme.corner() }),
+						Stroke = React.createElement("UIStroke", {
+							Color = Theme.Color.Accent,
+							Transparency = 0,
+							Thickness = 2,
+						}),
+					}) or nil,
+
 					ReadyButton = (not state.countdownActive) and React.createElement("TextButton", {
 						Size = UDim2.new(1, -120, 1, -Theme.Metrics.Pad),
 						BackgroundColor3 = if state.isReady then Theme.Color.Accent else Theme.Color.Action,

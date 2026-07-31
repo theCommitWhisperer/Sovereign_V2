@@ -110,17 +110,22 @@ end
 
 local function chip(text: string, order: number)
 	return React.createElement("TextLabel", {
-		Size = UDim2.fromOffset(0, 18),
+		Size = UDim2.fromOffset(0, 28),
 		AutomaticSize = Enum.AutomaticSize.X,
-		BackgroundColor3 = Theme.Color.SurfaceRaised,
-		BackgroundTransparency = Theme.Transparency.Card,
+		BackgroundColor3 = Theme.Color.CelticGreen,
+		BackgroundTransparency = 0.6,
 		Text = "  " .. text .. "  ",
-		FontFace = Theme.FontFace.Body,
-		TextSize = Theme.TextSize.Caption,
-		TextColor3 = Theme.Color.TextSecondary,
+		FontFace = Theme.FontFace.BodyBold,
+		TextSize = Theme.TextSize.Body,
+		TextColor3 = Theme.Color.TextPrimary,
 		LayoutOrder = order,
 	}, {
 		Corner = React.createElement("UICorner", { CornerRadius = Theme.corner(Theme.Metrics.RadiusSmall) }),
+		Stroke = React.createElement("UIStroke", {
+			Color = Theme.Color.CelticGreenBright,
+			Transparency = 0.5,
+			Thickness = 1,
+		}),
 	})
 end
 
@@ -188,15 +193,27 @@ local function optionButton(
 end
 
 local function sectionLabel(text: string, order: number)
-	return React.createElement("TextLabel", {
-		Size = UDim2.new(1, 0, 0, 16),
+	return React.createElement("Frame", {
+		Size = UDim2.new(1, 0, 0, 30),
 		BackgroundTransparency = 1,
-		Text = text,
-		FontFace = Theme.FontFace.BodyBold,
-		TextSize = Theme.TextSize.Small,
-		TextColor3 = Theme.Color.TextSecondary,
-		TextXAlignment = Enum.TextXAlignment.Left,
 		LayoutOrder = order,
+	}, {
+		Label = React.createElement("TextLabel", {
+			Size = UDim2.new(1, 0, 0, 24),
+			BackgroundTransparency = 1,
+			Text = text,
+			FontFace = Theme.FontFace.Display,
+			TextSize = Theme.TextSize.Heading,
+			TextColor3 = Theme.Color.Accent,
+			TextXAlignment = Enum.TextXAlignment.Left,
+		}),
+		Divider = React.createElement("Frame", {
+			Size = UDim2.new(1, 0, 0, 1),
+			Position = UDim2.new(0, 0, 1, -1),
+			BackgroundColor3 = Theme.Color.Accent,
+			BackgroundTransparency = 0.6,
+			BorderSizePixel = 0,
+		}),
 	})
 end
 
@@ -204,7 +221,7 @@ local function ArmyPanel(props: Props)
 	local units = props.selectedUnits or {}
 	local breakdown, total = composition(units)
 
-	local rowHeight = if props.compact then Theme.Metrics.TouchTarget else Theme.Metrics.DesktopTarget + 6
+	local rowHeight = if props.compact then Theme.Metrics.TouchTarget else 56
 
 	local children: { [string]: any } = {
 		Layout = React.createElement("UIListLayout", {
@@ -226,12 +243,12 @@ local function ArmyPanel(props: Props)
 	-- different tactical situations.
 	order += 1
 	children.Header = React.createElement("TextLabel", {
-		Size = UDim2.new(1, 0, 0, 20),
+		Size = UDim2.new(1, 0, 0, 34),
 		BackgroundTransparency = 1,
-		Text = ("%d unit%s selected"):format(total, total == 1 and "" or "s"),
+		Text = ("⚔ %d warrior%s selected"):format(total, total == 1 and "" or "s"),
 		FontFace = Theme.FontFace.Display,
-		TextSize = Theme.TextSize.Heading,
-		TextColor3 = Theme.Color.TextPrimary,
+		TextSize = Theme.TextSize.Title,
+		TextColor3 = Theme.Color.Accent,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		LayoutOrder = order,
 	})

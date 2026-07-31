@@ -624,9 +624,27 @@ end
 -- Every set of isPlacing goes through here precisely so no exit path can forget
 -- to clear the shared flag: a stuck-true value disables ALL RTS selection and
 -- orders game-wide, which is a much worse bug than the one being fixed.
+local HUDStoreRef: any = nil
+local function getHUDStore()
+	if not HUDStoreRef then
+		pcall(function()
+			HUDStoreRef = require(player.PlayerScripts.UI.state.HUDStore)
+		end)
+	end
+	return HUDStoreRef
+end
+
 local function setPlacing(value: boolean)
 	isPlacing = value
 	ViewMode.setPlacementActive(value)
+	local store = getHUDStore()
+	if store then
+		if value then
+			store.setState({ isPlacingBuilding = true, selectedBuilding = currentBuildingName })
+		else
+			store.setState({ isPlacingBuilding = false, selectedBuilding = store.None })
+		end
+	end
 end
 
 local function cleanup()

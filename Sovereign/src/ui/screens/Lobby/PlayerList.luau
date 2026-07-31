@@ -225,6 +225,9 @@ local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: stri
 		}),
 	}
 
+	-- Editable = your own card, or an AI kingdom.
+	local canEdit = isLocal or entry.isAI
+
 	-- Row 1: identity + ready + (AI) remove.
 	local identityChildren: { [string]: any } = {
 		Layout = React.createElement("UIListLayout", {
@@ -236,19 +239,29 @@ local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: stri
 		-- Your own swatch IS the colour dropdown: a plain 16px dot gave no hint it
 		-- was interactive, so it is a 30px button with the caret drawn inside it.
 		-- Other players' swatches stay decorative dots.
-		Swatch = if isLocal
+		Swatch = if canEdit
 			then React.createElement("TextButton", {
 				LayoutOrder = 1,
 				Size = UDim2.fromOffset(SWATCH_TRIGGER, SWATCH_TRIGGER),
 				BackgroundColor3 = swatch,
 				BorderSizePixel = 0,
 				AutoButtonColor = true,
-				Text = if colorOpen then "▴" else "▾",
-				FontFace = Theme.FontFace.BodyBold,
-				TextSize = Theme.TextSize.ScreenSmall,
-				TextColor3 = contrastOn(swatch),
+				Text = "",
 				[React.Event.Activated] = onToggleColor,
 			}, {
+				-- Caret tucked into the bottom-right rather than centred: dead
+				-- centre it looked like a label ON the colour, at the corner it
+				-- reads as the affordance the whole circle is.
+				Caret = React.createElement("TextLabel", {
+					AnchorPoint = Vector2.new(1, 1),
+					Position = UDim2.new(1, 1, 1, 1),
+					Size = UDim2.fromOffset(12, 12),
+					BackgroundTransparency = 1,
+					Text = if colorOpen then "▴" else "▾",
+					FontFace = Theme.FontFace.BodyBold,
+					TextSize = Theme.TextSize.ScreenCaption,
+					TextColor3 = contrastOn(swatch),
+				}),
 				Corner = React.createElement("UICorner", { CornerRadius = UDim.new(1, 0) }),
 				-- Gold ring: the same "this is yours / this is active" signal the
 				-- rest of the lobby uses.
@@ -298,7 +311,9 @@ local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: stri
 			Size = UDim2.fromOffset(Theme.Metrics.DesktopTarget, Theme.Metrics.DesktopTarget),
 			BackgroundTransparency = 1,
 			AutoButtonColor = false,
-			Text = "✕",
+			-- A bare ✕ read as "close this panel" rather than "remove this
+			-- kingdom"; the bin is unambiguous and matches the HUD's delete control.
+			Text = "🗑",
 			FontFace = Theme.FontFace.BodyBold,
 			TextSize = Theme.TextSize.ScreenBody,
 			TextColor3 = Theme.Color.Danger,
@@ -315,9 +330,10 @@ local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: stri
 		BackgroundTransparency = 1,
 	}, identityChildren)
 
-	-- Row 2: faction -- interactive chips for the local player, a read-only
-	-- chip for everyone else.
-	if isLocal then
+	-- Rows 2-3: faction and colour are editable for YOUR card and for AI
+	-- kingdoms -- you are choosing how your opponents present, same rule as
+	-- renaming them. Another human's are read-only.
+	if canEdit then
 		local factionChildren: { [string]: any } = {
 			Layout = React.createElement("UIListLayout", {
 				FillDirection = Enum.FillDirection.Horizontal,
@@ -335,7 +351,7 @@ local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: stri
 				end
 			end
 			factionChildren[faction] = pickChip(faction, entry.faction == faction, takenByOther, nil, i, function()
-				props.onSelectFaction(faction, nil)
+				props.onSelectFaction(faction, entry.userId)
 			end)
 		end
 		children.Factions = if expanded
@@ -359,8 +375,7 @@ local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: stri
 		})
 	end
 
-	-- Row 3: colour -- local player only (see module comment).
-	if isLocal then
+	if canEdit then
 		local colorChildren: { [string]: any } = {
 			Layout = React.createElement("UIListLayout", {
 				FillDirection = Enum.FillDirection.Horizontal,
@@ -379,7 +394,7 @@ local function playerCard(entry: PlayerEntry, isLocal: boolean, spawnLabel: stri
 			end
 			local mine = colorsEqual(entry.selectedColor, opt.r, opt.g, opt.b)
 			colorChildren[opt.name] = colorSwatch(opt.name, opt.r, opt.g, opt.b, mine, takenByOther, i, function()
-				props.onSelectColor({ opt.r, opt.g, opt.b })
+				props.onSelectColor({ opt.r, opt.g, opt.b }, entry.userId)
 			end)
 		end
 		colorChildren.Layout = React.createElement("UIListLayout", {
@@ -486,34 +501,9 @@ end
 --- Section header for one team when the layout isn't a free-for-all -- see
 --- the module comment. Plain caption text, same weight/colour as the map
 --- list's "Maps" label in Lobby.luau, so it reads as structure, not a card.
---- Always-available Add AI.
----
---- The per-slot "Waiting for players" invitation only exists while a seat is
---- empty, so a full 1v1 offered no way to add a third opponent at all -- the
---- button vanished exactly when you wanted it. This one stays until the MAP is
---- out of spawns; the server grows the layout to make room (see
---- LobbyManager.addAI).
-local function addAIAction(canAdd: boolean, mapSeats: number, filled: number, compact: boolean, order: number, onAddAI: () -> ())
-	local height = if compact then Theme.Metrics.TouchTarget else Theme.Metrics.DesktopTarget
-	return React.createElement("TextButton", {
-		key = "AddAIAction",
-		LayoutOrder = order,
-		Size = UDim2.new(1, 0, 0, height),
-		BackgroundColor3 = if canAdd then Theme.Color.Action else Theme.Color.SurfaceRaised,
-		BackgroundTransparency = if canAdd then 0 else Theme.Transparency.ScreenCard,
-		AutoButtonColor = canAdd,
-		Active = canAdd,
-		Text = if canAdd then "+ Add AI opponent" else `Map is full ({filled}/{mapSeats})`,
-		FontFace = Theme.FontFace.BodyBold,
-		TextSize = Theme.TextSize.ScreenSmall,
-		TextColor3 = if canAdd then Theme.Color.TextPrimary else Theme.Color.TextMuted,
-		[React.Event.Activated] = if canAdd then onAddAI else nil,
-	}, {
-		Corner = React.createElement("UICorner", { CornerRadius = Theme.corner(Theme.Metrics.RadiusSmall) }),
-		Stroke = React.createElement("UIStroke", Theme.strokeProps(canAdd)),
-	})
-end
-
+--- Section header for one team when the layout isn't a free-for-all -- see
+--- the module comment. Plain caption text, same weight/colour as the map
+--- list's "Maps" label in Lobby.luau, so it reads as structure, not a card.
 local function teamHeader(teamIndex: number, order: number)
 	return React.createElement("TextLabel", {
 		key = "TeamHeader" .. teamIndex,
@@ -561,11 +551,16 @@ local function PlayerList(props: Props)
 	end
 	-- Colour has its own open state: it is a dropdown off the swatch, not part
 	-- of the card's general expand.
-	local colorOpen, setColorOpen = React.useState(false)
-	local function toggleColorOpen()
-		setColorOpen(function(was)
-			return not was
-		end)
+	-- Which card's colour picker is open, by userId. A single boolean opened the
+	-- picker on every editable card at once, because all of them read the same
+	-- flag.
+	local colorOpenFor, setColorOpenFor = React.useState(nil :: number?)
+	local function makeColorToggle(userId: number)
+		return function()
+			setColorOpenFor(function(current)
+				return if current == userId then nil else userId
+			end)
+		end
 	end
 	local players = props.players or {}
 	local isFFA = TeamLayoutsData.isFreeForAll(props.teamLayout)
@@ -607,14 +602,16 @@ local function PlayerList(props: Props)
 			order += 1
 			local spawnNum = spawnByUserId[entry.userId]
 			local spawnLabel = if spawnNum then ("#" .. spawnNum) else "not chosen"
-			rowChildren["Player" .. entry.userId] = playerCard(entry, entry.userId == props.localPlayerId, spawnLabel, players, props, order, expanded, toggleExpanded, colorOpen, toggleColorOpen)
+			rowChildren["Player" .. entry.userId] = playerCard(entry, entry.userId == props.localPlayerId, spawnLabel, players, props, order, expanded, toggleExpanded, colorOpenFor == entry.userId, makeColorToggle(entry.userId))
 		end
 
 		-- Seats come from the LAYOUT, not the map. Rendering maxPlayers meant a
 		-- 1v1 on a four-spawn map showed four slots, two of which offered an
 		-- "Add AI" that the server then refused because the layout was full.
-		local seats = TeamLayoutsData.getSlotCount(props.teamLayout)
-		local emptyCount = math.max(0, seats - #players)
+		-- Empty seats run to the MAP's capacity, not the layout's. The layout grows
+		-- when you add an opponent, so a 1v1 on a four-spawn map still offers two
+		-- further invitations -- which is what replaces the separate Add AI button.
+		local emptyCount = math.max(0, props.maxPlayers - #players)
 		for i = 1, emptyCount do
 			order += 1
 			rowChildren["Empty" .. i] = emptySlot(order, props.compact, props.onAddAI)
@@ -644,25 +641,13 @@ local function PlayerList(props: Props)
 				local entry: PlayerEntry? = if userId then playerByUserId[userId] else nil
 				if entry then
 					rowChildren["Player" .. entry.userId] =
-						playerCard(entry, entry.userId == props.localPlayerId, "#" .. slotNum, players, props, order, expanded, toggleExpanded, colorOpen, toggleColorOpen)
+						playerCard(entry, entry.userId == props.localPlayerId, "#" .. slotNum, players, props, order, expanded, toggleExpanded, colorOpenFor == entry.userId, makeColorToggle(entry.userId))
 				else
 					rowChildren["EmptySlot" .. slotNum] = emptySlot(order, props.compact, props.onAddAI)
 				end
 			end
 		end
 	end
-
-	-- Capacity here is the MAP's, not the layout's: the layout grows to fit, so
-	-- what actually limits the roster is how many spawns exist.
-	order += 1
-	rowChildren.AddAI = addAIAction(
-		#players < props.maxPlayers,
-		props.maxPlayers,
-		#players,
-		props.compact,
-		order,
-		props.onAddAI
-	)
 
 	-- Server-authored: empty seats auto-fill with AI, so the only real blocker
 	-- is more humans than the layout has seats.

@@ -38,6 +38,7 @@ export type Entry = {
 	staffing: string?,
 	role: string?,
 	gloryRequired: number,
+	iconAssetId: string?,
 }
 
 -- Category membership. Kept as an explicit list rather than derived from
@@ -193,6 +194,7 @@ function BuildingCatalog.get(name: string): Entry?
 		staffing = staffing,
 		role = role,
 		gloryRequired = spec.gloryRequired,
+		iconAssetId = spec.iconAssetId,
 	}
 	cache[name] = entry
 	return entry

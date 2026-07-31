@@ -1,118 +1,254 @@
 --!strict
--- Interactive minimap with clickable camera movement and unit/building indicators
+-- MiniMap: the single minimap component, used by both DesktopShell and
+-- MobileShell.
+--
+-- There used to be two of these (MiniMap and MiniMapEnhanced) with duplicated
+-- coordinate maths, which is how `MAP_SIZE = 1000` survived in both files while
+-- the shipped map was 1600 studs -- every dot was drawn at 62% of its true
+-- offset and click-to-move sent the camera to the wrong place.
+--
+-- Two rules hold this together:
+--
+--  1. Blips come from the server (MinimapService), never from scanning
+--     workspace. The old version called CheckVisibility:InvokeServer() once per
+--     unit twice a second, and under StreamingEnabled it could only ever see
+--     objects inside the client's streaming radius.
+--
+--  2. Blips are painted onto a pool of reused Frames by direct property writes,
+--     never through setState. Reconciling a few hundred dots at 4Hz is what made
+--     the old one expensive. React here owns only the static chrome and the
+--     handful of alert pings.
 
 local React = require(game.ReplicatedStorage.Packages.react)
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
 
-local player = Players.LocalPlayer
-local UIConfig = require(script.Parent.Parent.Parent.UIConfig)
+local MinimapBlips = require(ReplicatedStorage.Shared.MinimapBlips)
+local MinimapService = require(ReplicatedStorage.Shared.MinimapService)
 
--- Remote function for checking visibility
-local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
-local CheckVisibility = RemoteEvents:WaitForChild("CheckVisibility")
+local Kind = MinimapBlips.Kind
+local Relation = MinimapBlips.Relation
 
 local MiniMap = React.Component:extend("MiniMap")
 
--- Map constants
-local MAP_SIZE = 1000  -- 1000x1000 stud map
-local MINIMAP_SIZE = UIConfig.HUD.MinimapSize or 170
+-- Pool grows on demand up to MinimapBlips.MAX_BLIPS rather than allocating the
+-- ceiling up front, since most matches never approach it.
+local POOL_INITIAL = 64
+
+local PING_LIFETIME = 5
+
+local COLOR_BY_RELATION = {
+	[Relation.Self] = Color3.fromRGB(90, 190, 255),
+	[Relation.Ally] = Color3.fromRGB(110, 235, 200),
+	[Relation.Enemy] = Color3.fromRGB(255, 95, 95),
+	[Relation.Neutral] = Color3.fromRGB(180, 175, 160),
+}
+
+-- Buildings read slightly differently from units so a base is findable at a
+-- glance without needing an icon per structure.
+local BUILDING_COLOR_BY_RELATION = {
+	[Relation.Self] = Color3.fromRGB(140, 245, 150),
+	[Relation.Ally] = Color3.fromRGB(150, 230, 210),
+	[Relation.Enemy] = Color3.fromRGB(255, 140, 140),
+	[Relation.Neutral] = Color3.fromRGB(190, 185, 170),
+}
+
+local RESOURCE_COLOR = {
+	[MinimapBlips.ResourceSubtype.Wood] = Color3.fromRGB(70, 130, 60),
+	[MinimapBlips.ResourceSubtype.Stone] = Color3.fromRGB(150, 150, 155),
+	[MinimapBlips.ResourceSubtype.Food] = Color3.fromRGB(215, 180, 90),
+	[MinimapBlips.ResourceSubtype.Iron_Ore] = Color3.fromRGB(120, 110, 130),
+	[MinimapBlips.ResourceSubtype.Gold] = Color3.fromRGB(230, 195, 80),
+}
+
+local KEEP_SUBTYPE = MinimapBlips.BuildingSubtype.Keep
 
 function MiniMap:init()
 	self:setState({
-		unitDots = {},
-		buildingIcons = {},
+		pings = {},
+		previewImage = MinimapService.getMapConfig().PreviewImage,
 	})
 
-	-- Update minimap every 0.5 seconds. Wrapped in pcall so one bad frame
-	-- (e.g. a unit destroyed mid-InvokeServer) can't silently kill the loop.
+	self.blipLayerRef = React.createRef()
+	self.pool = {} :: { Frame }
+	self.unsubscribe = nil :: (() -> ())?
+	self.pingConnection = nil :: RBXScriptConnection?
+	self.pingCleanup = nil
+	self.unmounted = false
+end
+
+function MiniMap:growPool(needed: number)
+	local layer = self.blipLayerRef.current
+	if not layer then
+		return
+	end
+
+	local target = math.min(math.max(needed, POOL_INITIAL), MinimapBlips.MAX_BLIPS)
+	for i = #self.pool + 1, target do
+		local frame = Instance.new("Frame")
+		frame.Name = `Blip{i}`
+		frame.AnchorPoint = Vector2.new(0.5, 0.5)
+		frame.BorderSizePixel = 0
+		frame.Visible = false
+		frame.Parent = layer
+
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(1, 0)
+		corner.Parent = frame
+
+		self.pool[i] = frame
+	end
+end
+
+--- Repaint every blip. Called on each server snapshot (~4Hz). Writes properties
+--- directly on pooled Frames -- no allocation, no reconciliation.
+function MiniMap:repaint()
+	local layer = self.blipLayerRef.current
+	if not layer then
+		return
+	end
+
+	local buf, count = MinimapService.getBlips()
+	if not buf then
+		return
+	end
+
+	if count > #self.pool then
+		self:growPool(count)
+	end
+
+	local drawn = 0
+	for i = 0, math.min(count, #self.pool) - 1 do
+		local x, z, _ownerSlot, relation, kind, subtype = MinimapBlips.read(buf, i)
+		local u, v = MinimapService.worldToMinimap(x, z)
+
+		local frame = self.pool[i + 1]
+		if not frame then
+			break
+		end
+
+		local size, color, zIndex
+		if kind == Kind.Building then
+			-- Keeps are the thing you actually navigate by, so give them a
+			-- noticeably bigger footprint than ordinary structures.
+			size = if subtype == KEEP_SUBTYPE then 9 else 6
+			color = BUILDING_COLOR_BY_RELATION[relation] or BUILDING_COLOR_BY_RELATION[Relation.Neutral]
+			zIndex = 4
+		elseif kind == Kind.Resource then
+			size = 4
+			color = RESOURCE_COLOR[subtype] or COLOR_BY_RELATION[Relation.Neutral]
+			zIndex = 2
+		else
+			size = 3
+			color = COLOR_BY_RELATION[relation] or COLOR_BY_RELATION[Relation.Neutral]
+			zIndex = 3
+		end
+
+		frame.Size = UDim2.fromOffset(size, size)
+		frame.Position = UDim2.fromScale(u, v)
+		frame.BackgroundColor3 = color
+		frame.ZIndex = zIndex
+		frame.Visible = true
+		drawn += 1
+	end
+
+	for i = drawn + 1, #self.pool do
+		self.pool[i].Visible = false
+	end
+
+	-- The preview image only arrives once, with GameStarted, so this settles
+	-- after the first snapshot and never churns again.
+	local preview = MinimapService.getMapConfig().PreviewImage
+	if preview ~= self.state.previewImage then
+		self:setState({ previewImage = preview })
+	end
+end
+
+function MiniMap:addPing(position: Vector3?, color: Color3?, message: string?)
+	if not position then
+		return
+	end
+	local u, v = MinimapService.worldToMinimap(position.X, position.Z)
+
+	local pings = table.clone(self.state.pings)
+	table.insert(pings, {
+		u = u,
+		v = v,
+		color = color or Color3.fromRGB(255, 80, 80),
+		message = message,
+		expiresAt = os.clock() + PING_LIFETIME,
+	})
+	self:setState({ pings = pings })
+end
+
+function MiniMap:didMount()
+	MinimapService.start()
+
+	self.unsubscribe = MinimapService.onSnapshot(function()
+		self:repaint()
+	end)
+
+	self:growPool(POOL_INITIAL)
+	self:repaint()
+
+	-- Spawned rather than inline: WaitForChild in didMount would yield React's
+	-- commit phase if RemoteEvents has not replicated yet. Same reason
+	-- MinimapService.start and FogVisibility.start defer theirs.
 	task.spawn(function()
+		local remotes = ReplicatedStorage:WaitForChild("RemoteEvents")
+		local gameEvent = remotes:WaitForChild("GameEvent") :: RemoteEvent
+		if self.unmounted then
+			return
+		end
+		self.pingConnection = gameEvent.OnClientEvent:Connect(function(action: string, data: any)
+			if action == "MinimapPing" and typeof(data) == "table" then
+				self:addPing(data.position, data.color, data.message)
+			elseif action == "BuildingUnderAttack" and typeof(data) == "table" then
+				self:addPing(data.position, Color3.fromRGB(255, 60, 60), "Under attack")
+			end
+		end)
+	end)
+
+	-- Expire pings on their own slow timer rather than inside repaint, so ping
+	-- lifetime does not depend on snapshots arriving.
+	self.pingCleanup = task.spawn(function()
 		while true do
-			task.wait(0.5)
-			local ok, err = pcall(function()
-				self:updateMinimapIndicators()
-			end)
-			if not ok then
-				warn(`[MiniMap] updateMinimapIndicators failed: {tostring(err)}`)
+			task.wait(1)
+			local pings = self.state.pings
+			if #pings > 0 then
+				local now = os.clock()
+				local kept = {}
+				for _, ping in pings do
+					if ping.expiresAt > now then
+						table.insert(kept, ping)
+					end
+				end
+				if #kept ~= #pings then
+					self:setState({ pings = kept })
+				end
 			end
 		end
 	end)
 end
 
-function MiniMap:updateMinimapIndicators()
-	local unitDots = {}
-	local buildingIcons = {}
-
-	-- Get units
-	local unitsFolder = workspace:FindFirstChild("Units")
-	if unitsFolder then
-		for _, unit in unitsFolder:GetChildren() do
-			if unit:IsA("Model") and unit.PrimaryPart then
-				-- Check if unit is visible (fog of war)
-				-- NOTE: InvokeServer yields — the unit can be destroyed by the
-				-- time it returns, so re-validate before touching PrimaryPart.
-				local ok, isVisible = pcall(CheckVisibility.InvokeServer, CheckVisibility, "Unit", unit)
-				if ok and isVisible and unit.Parent and unit.PrimaryPart then
-					local owner = unit:GetAttribute("OwnerId")
-					local pos = unit.PrimaryPart.Position
-
-					-- Convert world position to minimap position (0-1 scale)
-					local minimapX = (pos.X + MAP_SIZE/2) / MAP_SIZE
-					local minimapZ = (pos.Z + MAP_SIZE/2) / MAP_SIZE
-
-					-- Clamp to minimap bounds
-					minimapX = math.clamp(minimapX, 0, 1)
-					minimapZ = math.clamp(minimapZ, 0, 1)
-
-					table.insert(unitDots, {
-						x = minimapX,
-						z = minimapZ,
-						isOwned = owner == player.UserId,
-						unitType = unit:GetAttribute("UnitType"),
-					})
-				end
-			end
-		end
+function MiniMap:willUnmount()
+	self.unmounted = true
+	if self.unsubscribe then
+		self.unsubscribe()
+		self.unsubscribe = nil
 	end
-
-	-- Get buildings
-	local buildingsFolder = workspace:FindFirstChild("Buildings")
-	if buildingsFolder then
-		for _, building in buildingsFolder:GetChildren() do
-			if building:IsA("Model") and building.PrimaryPart then
-				-- Check if building is visible (fog of war)
-				-- NOTE: InvokeServer yields — the building can be destroyed by
-				-- the time it returns, so re-validate before touching PrimaryPart.
-				local ok, isVisible = pcall(CheckVisibility.InvokeServer, CheckVisibility, "Building", building)
-				if ok and isVisible and building.Parent and building.PrimaryPart then
-					local owner = building:GetAttribute("OwnerId")
-					local pos = building.PrimaryPart.Position
-
-					-- Convert world position to minimap position (0-1 scale)
-					local minimapX = (pos.X + MAP_SIZE/2) / MAP_SIZE
-					local minimapZ = (pos.Z + MAP_SIZE/2) / MAP_SIZE
-
-					-- Clamp to minimap bounds
-					minimapX = math.clamp(minimapX, 0, 1)
-					minimapZ = math.clamp(minimapZ, 0, 1)
-
-					table.insert(buildingIcons, {
-						x = minimapX,
-						z = minimapZ,
-						isOwned = owner == player.UserId,
-						buildingType = building:GetAttribute("BuildingType"),
-					})
-				end
-			end
-		end
+	if self.pingConnection then
+		self.pingConnection:Disconnect()
+		self.pingConnection = nil
 	end
-
-	self:setState({
-		unitDots = unitDots,
-		buildingIcons = buildingIcons,
-	})
+	if self.pingCleanup then
+		task.cancel(self.pingCleanup)
+		self.pingCleanup = nil
+	end
+	for _, frame in self.pool do
+		frame:Destroy()
+	end
+	self.pool = {}
 end
 
 function MiniMap:onMinimapClick(rbx: GuiObject, input: InputObject)
@@ -120,85 +256,64 @@ function MiniMap:onMinimapClick(rbx: GuiObject, input: InputObject)
 		return
 	end
 
-	-- Get click position relative to minimap
 	local mousePos = UserInputService:GetMouseLocation()
-	local minimapPos = rbx.AbsolutePosition
-	local minimapSize = rbx.AbsoluteSize
-
-	-- Calculate relative position (0-1)
-	local relativeX = (mousePos.X - minimapPos.X) / minimapSize.X
-	local relativeZ = (mousePos.Y - minimapPos.Y) / minimapSize.Y
-
-	-- Check if click is within circular boundary
-	-- Convert to centered coordinates (-0.5 to 0.5)
-	local centerX = relativeX - 0.5
-	local centerZ = relativeZ - 0.5
-	local distanceFromCenter = math.sqrt(centerX * centerX + centerZ * centerZ)
-
-	-- If click is outside the circle, ignore it
-	if distanceFromCenter > 0.5 then
+	local absolutePos = rbx.AbsolutePosition
+	local absoluteSize = rbx.AbsoluteSize
+	if absoluteSize.X <= 0 or absoluteSize.Y <= 0 then
 		return
 	end
 
-	-- Clamp to valid range
-	relativeX = math.clamp(relativeX, 0, 1)
-	relativeZ = math.clamp(relativeZ, 0, 1)
+	local u = (mousePos.X - absolutePos.X) / absoluteSize.X
+	local v = (mousePos.Y - absolutePos.Y) / absoluteSize.Y
 
-	-- Convert to world position
-	local worldX = (relativeX * MAP_SIZE) - (MAP_SIZE / 2)
-	local worldZ = (relativeZ * MAP_SIZE) - (MAP_SIZE / 2)
+	-- Both shells clip the minimap to a circle, so ignore clicks in the corners.
+	local dx, dz = u - 0.5, v - 0.5
+	if math.sqrt(dx * dx + dz * dz) > 0.5 then
+		return
+	end
 
-	-- Move camera to clicked position
+	local worldX, worldZ = MinimapService.minimapToWorld(math.clamp(u, 0, 1), math.clamp(v, 0, 1))
+
 	local camera = workspace.CurrentCamera
 	if camera then
-		local targetPos = Vector3.new(worldX, camera.CFrame.Position.Y, worldZ)
-		camera.CFrame = CFrame.new(targetPos, targetPos + camera.CFrame.LookVector)
+		local target = Vector3.new(worldX, camera.CFrame.Position.Y, worldZ)
+		camera.CFrame = CFrame.new(target, target + camera.CFrame.LookVector)
 	end
 end
 
 function MiniMap:render()
-	local unitDotElements = {}
-	local buildingIconElements = {}
-
-	-- Create unit dots
-	for i, unit in ipairs(self.state.unitDots) do
-		unitDotElements[`Unit{i}`] = React.createElement("Frame", {
-			Size = UDim2.new(0, 3, 0, 3),  -- Small dot
-			Position = UDim2.fromScale(unit.x, unit.z),
+	local pingElements = {}
+	for i, ping in self.state.pings do
+		pingElements[`Ping{i}`] = React.createElement("Frame", {
+			Size = UDim2.fromOffset(14, 14),
+			Position = UDim2.fromScale(ping.u, ping.v),
 			AnchorPoint = Vector2.new(0.5, 0.5),
-			BackgroundColor3 = unit.isOwned
-				and Color3.fromRGB(100, 200, 255)  -- Blue for owned units
-				or Color3.fromRGB(255, 100, 100),   -- Red for enemy units
-			BorderSizePixel = 0,
-			ZIndex = 3,
+			BackgroundTransparency = 1,
+			ZIndex = 6,
 		}, {
-			Corner = React.createElement("UICorner", {
-				CornerRadius = UDim.new(1, 0),  -- Make it circular
+			Ring = React.createElement("Frame", {
+				Size = UDim2.fromScale(1, 1),
+				BackgroundTransparency = 1,
+				ZIndex = 6,
+			}, {
+				Corner = React.createElement("UICorner", { CornerRadius = UDim.new(1, 0) }),
+				Stroke = React.createElement("UIStroke", {
+					Color = ping.color,
+					Thickness = 2,
+					Transparency = 0.15,
+				}),
 			}),
 		})
 	end
 
-	-- Create building icons
-	for i, building in ipairs(self.state.buildingIcons) do
-		buildingIconElements[`Building{i}`] = React.createElement("Frame", {
-			Size = UDim2.new(0, 6, 0, 6),  -- Larger square for buildings
-			Position = UDim2.fromScale(building.x, building.z),
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			BackgroundColor3 = building.isOwned
-				and Color3.fromRGB(150, 255, 150)  -- Green for owned buildings
-				or Color3.fromRGB(255, 150, 150),   -- Light red for enemy buildings
-			BorderSizePixel = 1,
-			BorderColor3 = Color3.fromRGB(0, 0, 0),
-			ZIndex = 2,
-		})
-	end
+	local previewImage = self.state.previewImage
 
 	return React.createElement("ImageButton", {
 		Name = "MiniMapButton",
 		Size = UDim2.fromScale(1, 1),
-		BackgroundColor3 = Color3.fromRGB(40, 60, 40),  -- Fallback color if image doesn't load
-		BackgroundTransparency = 1,  -- Transparent to show the background
-		Image = "",  -- No image here - the background is on the parent frame
+		BackgroundColor3 = Color3.fromRGB(40, 60, 40),
+		BackgroundTransparency = if previewImage then 1 else 0.35,
+		Image = previewImage or "",
 		ScaleType = Enum.ScaleType.Stretch,
 		BorderSizePixel = 0,
 		AutoButtonColor = false,
@@ -207,13 +322,12 @@ function MiniMap:render()
 			self:onMinimapClick(rbx, input)
 		end,
 	}, {
-		-- Grid lines for visual reference
-		GridOverlay = React.createElement("Frame", {
+		-- Only drawn when there is no baked map image to sit behind the blips.
+		GridOverlay = (not previewImage) and React.createElement("Frame", {
 			Size = UDim2.fromScale(1, 1),
 			BackgroundTransparency = 1,
 			ZIndex = 1,
 		}, {
-			-- Vertical center line
 			VLine = React.createElement("Frame", {
 				Size = UDim2.new(0, 1, 1, 0),
 				Position = UDim2.fromScale(0.5, 0),
@@ -221,7 +335,6 @@ function MiniMap:render()
 				BackgroundTransparency = 0.7,
 				BorderSizePixel = 0,
 			}),
-			-- Horizontal center line
 			HLine = React.createElement("Frame", {
 				Size = UDim2.new(1, 0, 0, 1),
 				Position = UDim2.fromScale(0, 0.5),
@@ -229,21 +342,22 @@ function MiniMap:render()
 				BackgroundTransparency = 0.7,
 				BorderSizePixel = 0,
 			}),
-		}),
+		}) or nil,
 
-		-- Unit dots layer
-		Units = React.createElement("Frame", {
-			Size = UDim2.fromScale(1, 1),
-			BackgroundTransparency = 1,
-			ZIndex = 3,
-		}, unitDotElements),
-
-		-- Building icons layer
-		Buildings = React.createElement("Frame", {
+		-- Pooled blip Frames are parented here imperatively; React must never
+		-- own children of this frame or it will fight the pool.
+		BlipLayer = React.createElement("Frame", {
 			Size = UDim2.fromScale(1, 1),
 			BackgroundTransparency = 1,
 			ZIndex = 2,
-		}, buildingIconElements),
+			ref = self.blipLayerRef,
+		}),
+
+		Pings = React.createElement("Frame", {
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			ZIndex = 6,
+		}, pingElements),
 	})
 end
 

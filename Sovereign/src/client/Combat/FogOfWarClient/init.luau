@@ -1,328 +1,191 @@
 --!strict
--- FogOfWarClient: Hides enemy units and buildings that are not in vision range
+-- FogOfWarClient: hides enemy units, buildings and resource nodes that are not
+-- in vision range, by reparenting them out of Workspace into ReplicatedStorage.
+--
+-- Rewritten to fix four things:
+--
+--  1. It called CheckVisibility:InvokeServer() once per object, twice a second.
+--     Visibility now comes from Shared.FogVisibility, which makes one batched
+--     call per sweep and caches the result.
+--
+--  2. It ran unconditionally. Fog of war is OFF by default (it is an admin
+--     toggle, /fog on), so every one of those round trips answered "visible"
+--     and the entire sweep was pure cost. The loop now no-ops until the server
+--     pushes FogState.enabled = true.
+--
+--  3. It darkened Lighting at require time and never undid it -- so every
+--     player played a permanently dimmed, blue-tinted game to indicate a fog
+--     mode that was not on. Visuals now apply and revert with the toggle.
+--
+--  4. A single failed pcall did `return` out of updateVisibility(), abandoning
+--     every object after it in the sweep. Failures are now contained per object.
 
-local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
 
--- Remote function for checking visibility
-local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
-local CheckVisibility = RemoteEvents:WaitForChild("CheckVisibility")
-
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
-local FogClientDebug = DebugManager.createChannel("FogOfWarClient", false)  -- Enable debug
+local FogVisibility = require(ReplicatedStorage.Shared.FogVisibility)
+
+local FogClientDebug = DebugManager.createChannel("FogOfWarClient", false)
 
 local FogOfWarClient = {}
 
--- Track visibility state of units/buildings
-local lastVisibility: { [Model]: boolean } = {}
-local hiddenModels: { [Model]: Folder } = {}  -- Store hidden models here
+local SWEEP_INTERVAL = 0.5
 
--- Create a folder to store hidden models
-local HiddenFolder = Instance.new("Folder")
-HiddenFolder.Name = "HiddenByFog"
-HiddenFolder.Parent = ReplicatedStorage
+-- Which Workspace folder each hidden model came from, so it can be put back.
+local originFolder: { [Model]: string } = {}
 
--- Update visibility of units and buildings
+local HiddenFolder = FogVisibility.getHiddenFolder()
+
+local savedLighting: { Brightness: number, Ambient: Color3, OutdoorAmbient: Color3 }? = nil
+
+local function hide(model: Model, folderName: string)
+	if model.Parent == HiddenFolder then
+		return
+	end
+	originFolder[model] = folderName
+	model.Parent = HiddenFolder
+	FogClientDebug:info(`Hidden: {model.Name}`)
+end
+
+local function reveal(model: Model)
+	local folderName = originFolder[model]
+	if not folderName then
+		return
+	end
+	local folder = workspace:FindFirstChild(folderName)
+	if folder then
+		model.Parent = folder
+		originFolder[model] = nil
+		FogClientDebug:info(`Revealed: {model.Name}`)
+	end
+end
+
+--- Put everything back where it came from. Called when fog is switched off.
+local function revealAll()
+	for model, _ in originFolder do
+		if model.Parent then
+			reveal(model)
+		else
+			originFolder[model] = nil
+		end
+	end
+	table.clear(originFolder)
+end
+
+local function sweepFolder(folderName: string, ownedByPlayerIsAlwaysVisible: boolean)
+	local folder = workspace:FindFirstChild(folderName)
+	if not folder then
+		return
+	end
+
+	for _, model in folder:GetChildren() do
+		if not model:IsA("Model") or not model.PrimaryPart then
+			continue
+		end
+
+		if ownedByPlayerIsAlwaysVisible and model:GetAttribute("OwnerId") == player.UserId then
+			continue
+		end
+
+		-- One failing model must not abandon the rest of the sweep, which is
+		-- exactly what the old `return`-inside-the-loop did.
+		local ok, err = pcall(function()
+			if not FogVisibility.isVisible(model) then
+				hide(model, folderName)
+			end
+		end)
+		if not ok then
+			FogClientDebug:warn(`sweep failed for {model.Name}: {tostring(err)}`)
+		end
+	end
+end
+
+--- Anything in the hidden folder that has come back into vision.
+local function sweepHidden()
+	for _, model in HiddenFolder:GetChildren() do
+		if model:IsA("Model") and FogVisibility.isVisible(model) then
+			reveal(model)
+		end
+	end
+end
+
 local function updateVisibility()
-	-- Update units
-	local unitsFolder = workspace:FindFirstChild("Units")
-	if unitsFolder then
-		for _, unit in unitsFolder:GetChildren() do
-			if unit:IsA("Model") and unit.PrimaryPart then
-				local owner = unit:GetAttribute("OwnerId")
-
-				-- Always show own units
-				if owner == player.UserId then
-					-- Make sure it's visible (restore from hidden if needed)
-					if hiddenModels[unit] then
-						unit.Parent = unitsFolder
-						hiddenModels[unit] = nil
-					end
-				else
-					-- Check if enemy unit is visible
-					local success, isVisible = pcall(function()
-						return CheckVisibility:InvokeServer("Unit", unit)
-					end)
-
-					if not success then
-						FogClientDebug:warn(`Failed to check visibility for unit {unit.Name}: {isVisible}`)
-						return
-					end
-
-					FogClientDebug:info(`Unit {unit.Name} visibility: {isVisible}`)
-
-					-- Only update if visibility changed (to reduce lag)
-					if lastVisibility[unit] ~= isVisible then
-						lastVisibility[unit] = isVisible
-
-						if isVisible then
-							-- Restore from hidden folder
-							if hiddenModels[unit] then
-								unit.Parent = unitsFolder
-								hiddenModels[unit] = nil
-								FogClientDebug:info(`Unit revealed: {unit.Name}`)
-							end
-						else
-							-- Hide in fog of war by moving to hidden folder
-							if not hiddenModels[unit] then
-								unit.Parent = HiddenFolder
-								hiddenModels[unit] = HiddenFolder
-								FogClientDebug:info(`Unit hidden: {unit.Name}`)
-							end
-						end
-					end
-				end
-			end
-		end
+	if not FogVisibility.isEnabled() then
+		return
 	end
 
-	-- Also check hidden folder for units that might have become visible
-	for _, unit in HiddenFolder:GetChildren() do
-		if unit:IsA("Model") and unit:GetAttribute("UnitType") then
-			local isVisible = CheckVisibility:InvokeServer("Unit", unit)
-			if isVisible then
-				unit.Parent = unitsFolder
-				hiddenModels[unit] = nil
-				FogClientDebug:info(`Hidden unit revealed: {unit.Name}`)
-			end
-		end
-	end
+	sweepFolder("Units", true)
+	sweepFolder("Buildings", true)
+	sweepFolder("ResourceNodes", false)
+	sweepHidden()
 
-	-- Update buildings
-	local buildingsFolder = workspace:FindFirstChild("Buildings")
-	if buildingsFolder then
-		for _, building in buildingsFolder:GetChildren() do
-			if building:IsA("Model") and building.PrimaryPart then
-				local owner = building:GetAttribute("OwnerId")
-
-				-- Always show own buildings
-				if owner == player.UserId then
-					-- Make sure it's visible
-					if hiddenModels[building] then
-						building.Parent = buildingsFolder
-						hiddenModels[building] = nil
-					end
-				else
-					-- Check if enemy building is visible
-					local success, isVisible = pcall(function()
-						return CheckVisibility:InvokeServer("Building", building)
-					end)
-
-					if not success then
-						FogClientDebug:warn(`Failed to check visibility for building {building.Name}: {isVisible}`)
-						return
-					end
-
-					FogClientDebug:info(`Building {building.Name} visibility: {isVisible}`)
-
-					-- Only update if visibility changed
-					if lastVisibility[building] ~= isVisible then
-						lastVisibility[building] = isVisible
-
-						if isVisible then
-							-- Restore from hidden folder
-							if hiddenModels[building] then
-								building.Parent = buildingsFolder
-								hiddenModels[building] = nil
-								FogClientDebug:info(`Building revealed: {building.Name}`)
-							end
-						else
-							-- Hide in fog of war
-							if not hiddenModels[building] then
-								building.Parent = HiddenFolder
-								hiddenModels[building] = HiddenFolder
-								FogClientDebug:info(`Building hidden: {building.Name}`)
-							end
-						end
-					end
-				end
-			end
-		end
-	end
-
-	-- Check hidden folder for buildings that might have become visible
-	for _, building in HiddenFolder:GetChildren() do
-		if building:IsA("Model") and building:GetAttribute("BuildingType") then
-			local isVisible = CheckVisibility:InvokeServer("Building", building)
-			if isVisible then
-				building.Parent = buildingsFolder
-				hiddenModels[building] = nil
-				FogClientDebug:info(`Hidden building revealed: {building.Name}`)
-			end
-		end
-	end
-
-	-- Update resource nodes (trees, rocks, etc.)
-	local resourceNodesFolder = workspace:FindFirstChild("ResourceNodes")
-	if resourceNodesFolder then
-		for _, node in resourceNodesFolder:GetChildren() do
-			if node:IsA("Model") and node.PrimaryPart then
-				-- Check if resource node is visible (fog of war)
-				local success, isVisible = pcall(function()
-					-- Resource nodes use same logic as buildings (position-based visibility)
-					return CheckVisibility:InvokeServer("Building", node)
-				end)
-
-				if success then
-					-- Only update if visibility changed
-					if lastVisibility[node] ~= isVisible then
-						lastVisibility[node] = isVisible
-
-						if isVisible then
-							-- Restore from hidden folder
-							if hiddenModels[node] then
-								node.Parent = resourceNodesFolder
-								hiddenModels[node] = nil
-								FogClientDebug:info(`Resource node revealed: {node.Name}`)
-							end
-						else
-							-- Hide in fog of war
-							if not hiddenModels[node] then
-								node.Parent = HiddenFolder
-								hiddenModels[node] = HiddenFolder
-								FogClientDebug:info(`Resource node hidden: {node.Name}`)
-							end
-						end
-					end
-				end
-			end
-		end
-	end
-
-	-- Check hidden folder for resource nodes that might have become visible
-	for _, node in HiddenFolder:GetChildren() do
-		if node:IsA("Model") and node.Name:find("_Node") then
-			local success, isVisible = pcall(function()
-				return CheckVisibility:InvokeServer("Building", node)
-			end)
-			if success and isVisible then
-				local resourceNodesFolder2 = workspace:FindFirstChild("ResourceNodes")
-				if resourceNodesFolder2 then
-					node.Parent = resourceNodesFolder2
-					hiddenModels[node] = nil
-					FogClientDebug:info(`Hidden resource node revealed: {node.Name}`)
-				end
-			end
-		end
-	end
-
-	-- Clean up destroyed models from tracking
-	for model, _ in lastVisibility do
-		if not model or not model.Parent then
-			lastVisibility[model] = nil
-			hiddenModels[model] = nil
+	-- Drop tracking for anything that has been destroyed.
+	for model, _ in originFolder do
+		if not model.Parent then
+			originFolder[model] = nil
 		end
 	end
 end
 
--- Listen for new objects being added and immediately check their visibility
-local function setupObjectListeners()
-	local unitsFolder = workspace:FindFirstChild("Units")
-	if unitsFolder then
-		unitsFolder.ChildAdded:Connect(function(unit)
-			task.wait(0.1)  -- Small delay to ensure attributes are set
-			if unit:IsA("Model") and unit.PrimaryPart then
-				local owner = unit:GetAttribute("OwnerId")
-				if owner ~= player.UserId then
-					-- Immediately check and hide if not visible
-					local success, isVisible = pcall(function()
-						return CheckVisibility:InvokeServer("Unit", unit)
-					end)
-					if success and not isVisible then
-						unit.Parent = HiddenFolder
-						hiddenModels[unit] = HiddenFolder
-						lastVisibility[unit] = false
-						FogClientDebug:info(`New unit immediately hidden: {unit.Name}`)
-					end
-				end
-			end
-		end)
-	end
+--- Slight dimming and a blue tint, to signal that fog is active. Applied only
+--- while fog is on, and reverted exactly when it goes off.
+local function applyFogVisuals(enabled: boolean)
+	local lighting = game:GetService("Lighting")
 
-	local buildingsFolder = workspace:FindFirstChild("Buildings")
-	if buildingsFolder then
-		buildingsFolder.ChildAdded:Connect(function(building)
-			task.wait(0.1)  -- Small delay to ensure attributes are set
-			if building:IsA("Model") and building.PrimaryPart then
-				local owner = building:GetAttribute("OwnerId")
-				if owner ~= player.UserId then
-					-- Immediately check and hide if not visible
-					local success, isVisible = pcall(function()
-						return CheckVisibility:InvokeServer("Building", building)
-					end)
-					if success and not isVisible then
-						building.Parent = HiddenFolder
-						hiddenModels[building] = HiddenFolder
-						lastVisibility[building] = false
-						FogClientDebug:info(`New building immediately hidden: {building.Name}`)
-					end
-				end
-			end
-		end)
-	end
-
-	local resourceNodesFolder = workspace:FindFirstChild("ResourceNodes")
-	if resourceNodesFolder then
-		resourceNodesFolder.ChildAdded:Connect(function(node)
-			task.wait(0.1)  -- Small delay to ensure attributes are set
-			if node:IsA("Model") and node.PrimaryPart then
-				-- Immediately check and hide if not visible
-				local success, isVisible = pcall(function()
-					return CheckVisibility:InvokeServer("Building", node)
-				end)
-				if success and not isVisible then
-					node.Parent = HiddenFolder
-					hiddenModels[node] = HiddenFolder
-					lastVisibility[node] = false
-					FogClientDebug:info(`New resource node immediately hidden: {node.Name}`)
-				end
-			end
-		end)
+	if enabled then
+		if savedLighting then
+			return
+		end
+		savedLighting = {
+			Brightness = lighting.Brightness,
+			Ambient = lighting.Ambient,
+			OutdoorAmbient = lighting.OutdoorAmbient,
+		}
+		lighting.Brightness = math.max(1, lighting.Brightness * 0.85)
+		lighting.Ambient = Color3.new(lighting.Ambient.R * 0.8, lighting.Ambient.G * 0.8, lighting.Ambient.B * 0.9)
+		lighting.OutdoorAmbient = Color3.new(
+			lighting.OutdoorAmbient.R * 0.75,
+			lighting.OutdoorAmbient.G * 0.75,
+			lighting.OutdoorAmbient.B * 0.85
+		)
+		FogClientDebug:info("Applied fog of war lighting")
+	else
+		local saved = savedLighting
+		if not saved then
+			return
+		end
+		lighting.Brightness = saved.Brightness
+		lighting.Ambient = saved.Ambient
+		lighting.OutdoorAmbient = saved.OutdoorAmbient
+		savedLighting = nil
+		FogClientDebug:info("Reverted fog of war lighting")
 	end
 end
 
-setupObjectListeners()
+FogVisibility.start()
 
--- Update visibility every 0.5 seconds (same as server fog of war updates)
-task.spawn(function()
-	while true do
-		task.wait(0.5)
-		updateVisibility()
+FogVisibility.onStateChanged(function(enabled: boolean)
+	applyFogVisuals(enabled)
+	if not enabled then
+		revealAll()
 	end
 end)
 
--- Create visual fog effect (darken the world slightly to show fog is active)
-local function setupFogVisuals()
-	local lighting = game:GetService("Lighting")
+task.spawn(function()
+	while true do
+		task.wait(SWEEP_INTERVAL)
+		if FogVisibility.isEnabled() then
+			local ok, err = pcall(updateVisibility)
+			if not ok then
+				FogClientDebug:warn(`updateVisibility failed: {tostring(err)}`)
+			end
+		end
+	end
+end)
 
-	-- Store original lighting settings
-	local originalBrightness = lighting.Brightness
-	local originalAmbient = lighting.Ambient
-	local originalOutdoorAmbient = lighting.OutdoorAmbient
-
-	-- Slightly darken the world to indicate fog of war is active
-	lighting.Brightness = math.max(1, originalBrightness * 0.85)
-	lighting.Ambient = Color3.new(
-		originalAmbient.R * 0.8,
-		originalAmbient.G * 0.8,
-		originalAmbient.B * 0.9
-	)
-
-	-- Add a slight blue tint to fog of war
-	lighting.OutdoorAmbient = Color3.new(
-		originalOutdoorAmbient.R * 0.75,
-		originalOutdoorAmbient.G * 0.75,
-		originalOutdoorAmbient.B * 0.85
-	)
-
-	FogClientDebug:info("Applied fog of war visual effects to lighting")
-end
-
-setupFogVisuals()
-
-FogClientDebug:info("FogOfWarClient initialized - enemy units/buildings will be hidden in fog of war")
+FogClientDebug:info("FogOfWarClient initialized (idle until fog of war is enabled)")
 
 return FogOfWarClient

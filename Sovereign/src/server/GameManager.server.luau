@@ -119,6 +119,7 @@ local VictorySystem = require(Systems.VictorySystem)
 local WallSystemServer = require(Systems.WallSystemServer)
 local TerrainGenerator = require(Systems.TerrainGenerator)
 local SiegeTowerSystem = require(Systems.SiegeTowerSystem)
+local BlipReplicator = require(Systems.BlipReplicator)
 local ArenaMode = require(script.Parent.Combat.ArenaMode)
 local WeaponVisuals = require(script.Parent.Combat.WeaponVisuals)
 
@@ -155,6 +156,19 @@ local CheckVisibilityFunc = Instance.new("RemoteFunction")
 CheckVisibilityFunc.Name = "CheckVisibility"
 CheckVisibilityFunc.Parent = RemoteEvents
 
+-- Minimap blip snapshots. See src/shared/MinimapBlips.luau for the format.
+--
+-- This is a latest-state-wins stream at 4Hz, which is textbook
+-- UnreliableRemoteEvent territory -- but measured in Studio Play Solo, an
+-- UnreliableRemoteEvent delivers NOTHING, at any payload size, while a reliable
+-- RemoteEvent delivered 3KB without complaint. Studio is where this gets tested,
+-- and a transport you cannot test is worse than a marginally suboptimal one.
+-- Unreliable also caps payloads at 900 bytes, which would force chunking.
+-- Reliable it is; revisit only with numbers from a live server.
+local BlipSnapshotEvent = Instance.new("RemoteEvent")
+BlipSnapshotEvent.Name = "BlipSnapshot"
+BlipSnapshotEvent.Parent = RemoteEvents
+
 -- Create LobbyEvent for multiplayer lobby system
 local LobbyEvent = Instance.new("RemoteEvent")
 LobbyEvent.Name = "LobbyEvent"
@@ -189,12 +203,50 @@ GameManagerDebug:info("RemoteEvents-dependent systems initialized")
 FogOfWarManager.startUpdates()
 GameManagerDebug:info("FogOfWarManager updates started")
 
+-- Minimap snapshots. Safe to start at boot: the loop no-ops until a player is
+-- actually InGame, and it shares FogOfWarManager's vision index.
+BlipReplicator.init(BlipSnapshotEvent)
+BlipReplicator.start()
+GameManagerDebug:info("BlipReplicator started")
+
 -- Handle visibility checks from client
-CheckVisibilityFunc.OnServerInvoke = function(player: Player, objectType: string, object: Instance): boolean
-	if objectType == "Unit" and object:IsA("Model") then
-		return FogOfWarManager.isUnitVisible(player, object)
-	elseif objectType == "Building" and object:IsA("Model") then
-		return FogOfWarManager.isBuildingVisible(player, object)
+-- Two shapes:
+--   ("Unit"|"Building", Model)  -> boolean
+--   ("Batch", { Model })        -> { boolean }
+--
+-- The batch form exists because FogOfWarClient and HealthBarManager used to call
+-- the single form once per object, twice a second, each. That is a blocking
+-- round trip per unit per client. Everything hot now goes through
+-- Shared.FogVisibility, which makes exactly one batched call per sweep.
+CheckVisibilityFunc.OnServerInvoke = function(player: Player, objectType: string, object: any): any
+	if objectType == "Batch" then
+		if typeof(object) ~= "table" then
+			return {}
+		end
+		local results = table.create(#object)
+		for index, model in ipairs(object) do
+			if typeof(model) ~= "Instance" or not model:IsA("Model") then
+				results[index] = false
+				continue
+			end
+			-- Route by what the model actually is. The two checks are identical
+			-- today, but hardcoding isUnitVisible here would silently apply unit
+			-- rules to buildings the moment they diverge.
+			if model:GetAttribute("BuildingType") ~= nil then
+				results[index] = FogOfWarManager.isBuildingVisible(player, model)
+			else
+				results[index] = FogOfWarManager.isUnitVisible(player, model)
+			end
+		end
+		return results
+	end
+
+	if typeof(object) == "Instance" and object:IsA("Model") then
+		if objectType == "Unit" then
+			return FogOfWarManager.isUnitVisible(player, object)
+		elseif objectType == "Building" then
+			return FogOfWarManager.isBuildingVisible(player, object)
+		end
 	end
 	return false
 end
@@ -1129,6 +1181,15 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 			spawnZone = spawnZone,
 			peaceTimeSeconds = peaceTimeMinutes * 60,
 			victoryCondition = settings.victoryCondition or "Score",
+			-- The client had no way to learn the map's real dimensions, so both
+			-- minimaps hardcoded MAP_SIZE = 1000 while TheIslands is 1600 --
+			-- every dot was plotted at 62% of its true offset. Send the config.
+			mapConfig = {
+				Name = mapConfig.Name,
+				Size = mapConfig.Size,
+				PreviewImage = mapConfig.PreviewImage,
+				KeepSpawnZones = mapConfig.KeepSpawnZones,
+			},
 		})
 
 		-- Start game-loop systems on the first game start (not during lobby).
@@ -1140,7 +1201,9 @@ GameEvent.OnServerEvent:Connect(function(player, action, data)
 			-- Immediate: needed from the very first frame
 			MovementSystem.startLoop()
 			CombatManager.startLoop()
-			FogOfWarManager.startUpdates()
+			-- FogOfWarManager.startUpdates() / BlipReplicator.start() already
+			-- ran at boot. Both are idempotent now, but calling them here as
+			-- well used to spawn a second competing update loop.
 			WorkerManager.startLoop()
 			VikingRaidSystem.startLoop()
 			SiegeTowerSystem.startLoop()
@@ -2128,8 +2191,8 @@ LobbyEvent.OnServerEvent:Connect(function(player, action, ...)
 		local spawnNumber = ...
 		LobbyManager.selectSpawn(player, spawnNumber)
 	elseif action == "SelectColor" then
-		local color = ...
-		LobbyManager.selectColor(player, color)
+		local color, targetUserId = ...
+		LobbyManager.selectColor(player, color, targetUserId)
 	elseif action == "SelectFaction" then
 		local faction, targetUserId = ...
 		LobbyManager.selectFaction(player, faction, targetUserId)

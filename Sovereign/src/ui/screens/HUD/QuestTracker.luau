@@ -1,23 +1,17 @@
 --!strict
 -- QuestTracker: Side panel showing active quests with progress.
---
--- Presentational: `quests` comes in as a prop (HUDStore.activeQuests, kept
--- current by the "QuestsData"/"QuestProgress"/"QuestCompleted" GameEvent
--- handling in HUDStore.init()) instead of this panel independently fetching
--- and listening to GameEvent itself. It used to ignore the `quests` prop
--- entirely and self-fetch, which meant HUD.luau's own activeQuests state was
--- dead code -- see the migration report for the full list of panels with the
--- same pre-existing mismatch.
+-- Returns nil when there are zero active quests so no empty panel or stray brackets render.
 
 local React = require(game.ReplicatedStorage.Packages.react)
 local UIConfig = require(script.Parent.Parent.Parent.UIConfig)
+local Theme = require(script.Parent.Parent.Parent.Theme)
 local Panel = require(script.Parent.Parent.Parent.components.Panel)
 
 local QuestTracker = React.Component:extend("QuestTracker")
 
 function QuestTracker:init()
 	self:setState({
-		collapsed = false,
+		collapsed = true,
 	})
 end
 
@@ -25,10 +19,19 @@ function QuestTracker:render()
 	local quests = self.props.quests or {}
 	local collapsed = self.state.collapsed
 
-	-- Calculate total height based on quests
+	-- Count active, non-completed quests
 	local questCount = 0
-	for _ in pairs(quests) do
-		questCount += 1
+	local activeQuestsList = {}
+	for questId, quest in pairs(quests) do
+		if quest and quest.isActive and not quest.isCompleted then
+			questCount += 1
+			activeQuestsList[questId] = quest
+		end
+	end
+
+	-- Return nil if zero active quests so no empty panel or stray brackets render!
+	if questCount == 0 then
+		return nil
 	end
 
 	local headerHeight = 35
@@ -40,93 +43,85 @@ function QuestTracker:render()
 	local questElements = {}
 	local index = 0
 
-	for questId, quest in pairs(quests) do
-		if quest.isActive and not quest.isCompleted then
-			index += 1
+	for questId, quest in pairs(activeQuestsList) do
+		index += 1
 
-			-- Calculate overall progress
-			local totalObjectives = #quest.objectives
-			local completedObjectives = 0
-			for _, objective in ipairs(quest.objectives) do
-				if objective.current >= objective.required then
-					completedObjectives += 1
-				end
+		-- Calculate overall progress
+		local totalObjectives = #quest.objectives
+		local completedObjectives = 0
+		for _, objective in ipairs(quest.objectives) do
+			if objective.current >= objective.required then
+				completedObjectives += 1
 			end
-			local overallProgress = completedObjectives / totalObjectives
-
-			-- Build objective text
-			local objectiveTexts = {}
-			for objIndex, objective in ipairs(quest.objectives) do
-				local isDone = objective.current >= objective.required
-				local checkmark = isDone and "✅" or "⬜"
-				table.insert(
-					objectiveTexts,
-					string.format("%s %s (%d/%d)", checkmark, objective.description, objective.current, objective.required)
-				)
-			end
-
-			questElements["Quest_" .. questId] = React.createElement("Frame", {
-				Size = UDim2.new(1, 0, 0, questHeight),
-				Position = UDim2.fromOffset(0, (index - 1) * questHeight),
-				BackgroundColor3 = UIConfig.HUD.DarkWood,
-				BorderSizePixel = 1,
-				BorderColor3 = UIConfig.HUD.StrokeColor,
-			}, {
-				QuestName = React.createElement("TextLabel", {
-					Size = UDim2.new(1, -10, 0, 18),
-					Position = UDim2.fromOffset(5, 3),
-					BackgroundTransparency = 1,
-					Text = quest.name,
-					TextColor3 = UIConfig.HUD.AccentGold,
-					TextSize = 13,
-					FontFace = UIConfig.Font.Title,
-					TextXAlignment = Enum.TextXAlignment.Left,
-					TextTruncate = Enum.TextTruncate.AtEnd,
-				}),
-
-				ProgressBar = React.createElement("Frame", {
-					Size = UDim2.new(1, -10, 0, 4),
-					Position = UDim2.fromOffset(5, 23),
-					BackgroundColor3 = Color3.fromRGB(50, 50, 50),
-					BorderSizePixel = 0,
-				}, {
-					Fill = React.createElement("Frame", {
-						Size = UDim2.new(overallProgress, 0, 1, 0),
-						BackgroundColor3 = UIConfig.HUD.AccentGold,
-						BorderSizePixel = 0,
-					}),
-				}),
-
-				Objectives = React.createElement("TextLabel", {
-					Size = UDim2.new(1, -10, 0, 48),
-					Position = UDim2.fromOffset(5, 30),
-					BackgroundTransparency = 1,
-					Text = table.concat(objectiveTexts, "\n"),
-					TextColor3 = UIConfig.HUD.PanelTextColor,
-					TextSize = 11,
-					FontFace = UIConfig.Font.Default,
-					TextXAlignment = Enum.TextXAlignment.Left,
-					TextYAlignment = Enum.TextYAlignment.Top,
-					TextWrapped = true,
-				}),
-
-				UIStroke = React.createElement("UIStroke", {
-					Color = UIConfig.HUD.StrokeColor,
-					Thickness = 1,
-				}),
-			})
 		end
+		local overallProgress = if totalObjectives > 0 then completedObjectives / totalObjectives else 0
+
+		-- Build objective text
+		local objectiveTexts = {}
+		for _, objective in ipairs(quest.objectives) do
+			local isDone = objective.current >= objective.required
+			local checkmark = isDone and "✅" or "⬜"
+			table.insert(
+				objectiveTexts,
+				string.format("%s %s (%d/%d)", checkmark, objective.description, objective.current, objective.required)
+			)
+		end
+
+		questElements["Quest_" .. tostring(questId)] = React.createElement("Frame", {
+			Size = UDim2.new(1, 0, 0, questHeight),
+			Position = UDim2.fromOffset(0, (index - 1) * questHeight),
+			BackgroundColor3 = UIConfig.HUD.DarkWood,
+			BorderSizePixel = 1,
+			BorderColor3 = UIConfig.HUD.StrokeColor,
+		}, {
+			QuestName = React.createElement("TextLabel", {
+				Size = UDim2.new(1, -10, 0, 18),
+				Position = UDim2.fromOffset(5, 3),
+				BackgroundTransparency = 1,
+				Text = quest.name or "Quest",
+				TextColor3 = UIConfig.HUD.AccentGold,
+				TextSize = Theme.TextSize.Body,
+				FontFace = Theme.FontFace.Display,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+			}),
+
+			ProgressBar = React.createElement("Frame", {
+				Size = UDim2.new(1, -10, 0, 4),
+				Position = UDim2.fromOffset(5, 23),
+				BackgroundColor3 = Color3.fromRGB(50, 50, 50),
+				BorderSizePixel = 0,
+			}, {
+				Fill = React.createElement("Frame", {
+					Size = UDim2.new(overallProgress, 0, 1, 0),
+					BackgroundColor3 = UIConfig.HUD.AccentGold,
+					BorderSizePixel = 0,
+				}),
+			}),
+
+			Objectives = React.createElement("TextLabel", {
+				Size = UDim2.new(1, -10, 0, 48),
+				Position = UDim2.fromOffset(5, 30),
+				BackgroundTransparency = 1,
+				Text = table.concat(objectiveTexts, "\n"),
+				TextColor3 = UIConfig.HUD.PanelTextColor,
+				TextSize = Theme.TextSize.Caption,
+				FontFace = Theme.FontFace.Body,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextYAlignment = Enum.TextYAlignment.Top,
+				TextWrapped = true,
+			}),
+
+			UIStroke = React.createElement("UIStroke", {
+				Color = UIConfig.HUD.StrokeColor,
+				Thickness = 1,
+			}),
+		})
 	end
 
 	return React.createElement(Panel, {
-		medieval = true,
-		Size = UDim2.new(0, 280, 0, totalHeight),
-		-- Desktop leaves `position` nil and keeps the original top-right spot.
-		-- MobileShell passes one that clears its display-only top strip: this
-		-- panel's own ToggleButton is interactive, so it cannot be allowed to
-		-- land inside the top-60px no-interactive zone the hardcoded desktop
-		-- offset would put it in.
-		Position = self.props.position or UDim2.new(1, -290, 0, UIConfig.HUD.TopBarHeight + 10),
+		medieval = false, -- Disable redundant medieval corners inside modal
+		Size = UDim2.new(1, 0, 0, totalHeight),
 		BackgroundColor3 = UIConfig.HUD.PanelBackground,
 	}, {
 		Header = React.createElement("Frame", {
@@ -139,8 +134,8 @@ function QuestTracker:render()
 				BackgroundTransparency = 1,
 				Text = "📜 Active Quests",
 				TextColor3 = UIConfig.HUD.PanelHeaderColor,
-				TextSize = 18,
-				FontFace = UIConfig.Font.Title,
+				TextSize = Theme.TextSize.Heading,
+				FontFace = Theme.FontFace.Display,
 				TextXAlignment = Enum.TextXAlignment.Left,
 			}),
 
@@ -152,8 +147,8 @@ function QuestTracker:render()
 				BorderColor3 = UIConfig.HUD.StrokeColor,
 				Text = collapsed and "▼" or "▲",
 				TextColor3 = UIConfig.HUD.PanelTextColor,
-				TextSize = 16,
-				FontFace = UIConfig.Font.Default,
+				TextSize = Theme.TextSize.Small,
+				FontFace = Theme.FontFace.Body,
 				[React.Event.Activated] = function()
 					self:setState({ collapsed = not collapsed })
 				end,
@@ -165,8 +160,8 @@ function QuestTracker:render()
 				BackgroundTransparency = 1,
 				Text = string.format("(%d)", questCount),
 				TextColor3 = UIConfig.HUD.PanelTextColor,
-				TextSize = 14,
-				FontFace = UIConfig.Font.Default,
+				TextSize = Theme.TextSize.Caption,
+				FontFace = Theme.FontFace.Body,
 				TextXAlignment = Enum.TextXAlignment.Right,
 			}) or nil,
 		}),
@@ -176,18 +171,6 @@ function QuestTracker:render()
 			Position = UDim2.fromOffset(5, headerHeight + 5),
 			BackgroundTransparency = 1,
 		}, questElements) or nil,
-
-		NoQuestsLabel = (not collapsed and questCount == 0) and React.createElement("TextLabel", {
-			Size = UDim2.new(1, -20, 0, 40),
-			Position = UDim2.fromOffset(10, headerHeight + 10),
-			BackgroundTransparency = 1,
-			Text = "No active quests.\n\nComplete tasks to unlock more!",
-			TextColor3 = UIConfig.HUD.PanelTextColor,
-			TextSize = 12,
-			FontFace = UIConfig.Font.Default,
-			TextXAlignment = Enum.TextXAlignment.Center,
-			TextYAlignment = Enum.TextYAlignment.Top,
-		}) or nil,
 	})
 end
 

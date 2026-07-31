@@ -1,5 +1,5 @@
 local React = require(game.ReplicatedStorage.Packages.react)
-local UIConfig = require(script.Parent.Parent.Parent.UIConfig)
+local Theme = require(script.Parent.Parent.Parent.Theme)
 
 local BattleLog = React.Component:extend("BattleLog")
 
@@ -38,8 +38,8 @@ function BattleLog:render()
 			BackgroundTransparency = 1,
 			Text = message.text,
 			TextColor3 = message.color or Color3.fromRGB(255, 255, 255),
-			TextSize = 12,
-			Font = Enum.Font.Gotham,
+			TextSize = Theme.TextSize.Small,
+			FontFace = Theme.FontFace.Body,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextYAlignment = Enum.TextYAlignment.Top,
 			TextWrapped = true,
@@ -48,26 +48,26 @@ function BattleLog:render()
 	end
 
 	return React.createElement("Frame", {
-		Size = UDim2.new(0, 350, 0, self.state.isExpanded and 250 or 80),
-		Position = UDim2.new(1, -370, 1, -(UIConfig.HUD.BottomBarHeight + (self.state.isExpanded and 270 or 100))),
-		BackgroundColor3 = Color3.fromRGB(20, 20, 20),
-		BackgroundTransparency = 0.3,
-		BorderSizePixel = 2,
-		BorderColor3 = UIConfig.HUD.TopButtonBorder,
+		Size = UDim2.new(1, 0, 0, self.state.isExpanded and 250 or 80),
+		BackgroundColor3 = Theme.Color.Surface,
+		BackgroundTransparency = Theme.Transparency.Panel,
 		ZIndex = 15,
 	}, {
+		Stroke = React.createElement("UIStroke", Theme.strokeProps(true)),
+		Corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, Theme.Metrics.RadiusSmall) }),
 		Header = React.createElement("Frame", {
 			Size = UDim2.new(1, 0, 0, 25),
-			BackgroundColor3 = Color3.fromRGB(40, 30, 20),
+			BackgroundColor3 = Theme.Color.SurfaceRaised,
 			BorderSizePixel = 0,
 		}, {
+			HeaderCorner = React.createElement("UICorner", { CornerRadius = UDim.new(0, Theme.Metrics.RadiusSmall) }),
 			Title = React.createElement("TextLabel", {
 				Size = UDim2.new(1, -30, 1, 0),
 				BackgroundTransparency = 1,
 				Text = "⚔️ Battle Log",
-				TextColor3 = UIConfig.HUD.AccentGold,
-				TextSize = 14,
-				Font = Enum.Font.GothamBold,
+				TextColor3 = Theme.Color.Accent,
+				TextSize = Theme.TextSize.Body,
+				FontFace = Theme.FontFace.Display,
 				TextXAlignment = Enum.TextXAlignment.Left,
 			}, {
 				Padding = React.createElement("UIPadding", {
@@ -80,8 +80,8 @@ function BattleLog:render()
 				BackgroundTransparency = 1,
 				Text = self.state.isExpanded and "▼" or "▲",
 				TextColor3 = Color3.fromRGB(200, 200, 200),
-				TextSize = 12,
-				Font = Enum.Font.GothamBold,
+				TextSize = Theme.TextSize.Caption,
+				FontFace = Theme.FontFace.Body,
 				[React.Event.MouseButton1Click] = function()
 					self:setState({ isExpanded = not self.state.isExpanded })
 				end,

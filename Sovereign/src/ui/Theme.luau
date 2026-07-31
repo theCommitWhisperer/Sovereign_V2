@@ -29,33 +29,29 @@ local Theme = {}
 Theme.Color = {
 	-- Surfaces. Translucency is carried in the matching *Transparency values
 	-- below, because Roblox has no alpha channel on Color3.
-	--
-	-- Lightened from 15,19,25. Combined with the near-opaque panel transparency
-	-- this used to read as a solid black slab across the bottom third of the
-	-- screen -- the world behind it was completely hidden, which is the opposite
-	-- of what a translucent overlay is for.
-	Surface = Color3.fromRGB(32, 28, 24), -- panel/base: peat, not slate
-	SurfaceRaised = Color3.fromRGB(45, 39, 33), -- drawer, cards
+	Surface = Color3.fromRGB(22, 18, 12), -- deep peat brown
+	SurfaceRaised = Color3.fromRGB(35, 28, 18), -- warm wood brown
 	Overlay = Color3.fromRGB(255, 255, 255), -- used at high transparency as a wash
 
-	Accent = Color3.fromRGB(239, 159, 39), -- gold
-	AccentMuted = Color3.fromRGB(160, 106, 26),
-	-- Text and icons drawn ON a gold fill. Selected controls were using Accent
-	-- for BOTH the background and the label, which is gold on gold -- legible
-	-- only because the fill happened to be semi-transparent, and not legible at
-	-- all once it wasn't. Anything sitting on Accent uses this.
-	OnAccent = Color3.fromRGB(26, 18, 4),
-	Action = Color3.fromRGB(24, 95, 165), -- primary buttons (assign, confirm)
+	Accent = Color3.fromRGB(212, 175, 55), -- Celtic gold
+	AccentMuted = Color3.fromRGB(140, 115, 36), -- aged gold
+	OnAccent = Color3.fromRGB(20, 14, 6), -- text on gold fill
+
+	-- Celtic Irish greens for action buttons and military accents
+	Action = Color3.fromRGB(34, 85, 52), -- deep Irish green
+	ActionHover = Color3.fromRGB(56, 128, 72), -- brighter Irish green
+	CelticGreen = Color3.fromRGB(34, 85, 52), -- alias for thematic access
+	CelticGreenBright = Color3.fromRGB(56, 128, 72),
 
 	TextPrimary = Color3.fromRGB(244, 235, 216), -- warm parchment white
 	TextSecondary = Color3.fromRGB(186, 172, 148),
 	TextMuted = Color3.fromRGB(150, 137, 118),
 
 	Danger = Color3.fromRGB(240, 149, 149),
-	Success = Color3.fromRGB(143, 196, 122), -- Irish green: allied, ready, output
-	Warning = Color3.fromRGB(239, 159, 39),
+	Success = Color3.fromRGB(56, 128, 72), -- Irish green: allied, ready, output
+	Warning = Color3.fromRGB(212, 175, 55), -- gold warning
 
-	Border = Color3.fromRGB(255, 255, 255), -- at BorderTransparency
+	Border = Color3.fromRGB(212, 175, 55), -- Celtic gold borders
 }
 
 -- Per-resource colours so a glance at the top strip is readable without labels.
@@ -89,88 +85,47 @@ end
 -- TRANSPARENCY
 -- Flat translucent panels over the world, rather than opaque artwork.
 -- ============================================================
--- These were far too opaque. Panel at 0.08 is 92% solid, which turned the HUD
--- into black bars rather than glass over the battlefield. An RTS overlay has to
--- let you see the ground it covers, otherwise the playable viewport is only
--- whatever is left in the middle.
 Theme.Transparency = {
-	Panel = 0.32, -- top strip, bottom bar: glass, not a slab
-	Card = 0.82, -- building tiles: a faint wash
+	Panel = 0.32,
+	Card = 0.82,
 	CardActive = 0.62,
-	Drawer = 0.18, -- denser than Panel: it holds a scrolling list that must stay legible
+	Drawer = 0.18,
 	Border = 0.82,
 	BorderStrong = 0.62,
-	Ghost = 0.8, -- placement preview fill
+	Ghost = 0.8,
 
-	-- ============================================================
-	-- FULL-SCREEN MENUS (lobby, settings, post-game)
-	--
-	-- These are DELIBERATELY far more opaque than the in-match values above, and
-	-- the distinction matters. The HUD is translucent because it sits over live
-	-- gameplay you need to keep seeing -- translucency there is the point. A
-	-- menu has no battlefield behind it, only a static backdrop image, so the
-	-- same values buy nothing and cost legibility.
-	--
-	-- Applying Panel/Card to the lobby is exactly what made it unreadable:
-	-- panels at 68% transparent over a fully transparent root, so text was
-	-- competing with whatever happened to be behind the screen.
-	-- ============================================================
-	ScreenScrim = 0.25, -- darkens the backdrop image so text can sit on it
-	ScreenPanel = 0.06, -- a menu card: essentially solid
-	ScreenCard = 0.14, -- a row/slot inside a menu card
+	ScreenScrim = 0.25,
+	ScreenPanel = 0.06,
+	ScreenCard = 0.14,
 	ScreenCardActive = 0.0,
 }
 
 -- ============================================================
 -- TYPE
---
--- NAMED FontFace, NOT Font, DELIBERATELY.
--- TextLabel has two separate properties: `Font` takes an Enum.Font, and
--- `FontFace` takes a Font object. Font.new(...) produces the latter, so
--- assigning it to `Font` throws "EnumItem, number, or string expected, got
--- Font" at render time. That happened in 37 places here, and 37 more in the
--- legacy screens which had the same confusion against UIConfig -- those errors
--- were already being thrown before this rebuild, they were just lost in the
--- noise. Naming the table FontFace makes the only correct assignment
--- (`FontFace = Theme.FontFace.Body`) read naturally and the broken one read
--- obviously wrong.
---
--- Two weights only. Fondamento (the game's display face) is kept for headings
--- so the HUD still reads as Sovereign, but body/data uses a plain face because
--- Fondamento is genuinely hard to read at 11-12px on a phone.
 -- ============================================================
 Theme.FontFace = {
 	Display = Font.new("rbxasset://fonts/families/Fondamento.json"),
-	Body = Font.new("rbxasset://fonts/families/SourceSansPro.json"),
-	BodyBold = Font.new("rbxasset://fonts/families/SourceSansPro.json", Enum.FontWeight.SemiBold),
+	Body = Font.new("rbxasset://fonts/families/Fondamento.json"),
+	BodyBold = Font.new("rbxasset://fonts/families/Fondamento.json", Enum.FontWeight.SemiBold),
 	Number = Font.new("rbxasset://fonts/families/RobotoMono.json"),
 }
 
 Theme.TextSize = {
-	Caption = 11,
-	Small = 12,
-	Body = 13,
-	Heading = 15,
-	Title = 18,
+	Caption = 16,
+	Small = 18,
+	Body = 20,
+	Heading = 24,
+	Title = 30,
 
-	-- Full-screen menus read LARGER than the HUD, for the same reason they are
-	-- more opaque. 11px is defensible for overlay data you glance at mid-battle
-	-- with the whole screen as context; it is not defensible for a lobby you sit
-	-- and read, and it was the main reason the lobby text was hard to make out
-	-- (13 of its labels were at Caption).
-	ScreenCaption = 13,
-	ScreenSmall = 14,
-	ScreenBody = 15,
-	ScreenHeading = 17,
-	ScreenTitle = 22,
+	ScreenCaption = 17,
+	ScreenSmall = 19,
+	ScreenBody = 22,
+	ScreenHeading = 26,
+	ScreenTitle = 34,
 }
 
 -- ============================================================
 -- METRICS
---
--- Mobile hit targets are 44px minimum. That single constraint is why the old
--- bar could not be adapted: its PNG buttons are 57px wide but stacked into a
--- fixed 300px strip that assumed a landscape desktop viewport.
 -- ============================================================
 Theme.Metrics = {
 	Radius = 8,
@@ -178,7 +133,7 @@ Theme.Metrics = {
 	RadiusCard = 8,
 
 	TouchTarget = 44,
-	DesktopTarget = 30,
+	DesktopTarget = 36,
 
 	GapTight = 5,
 	Gap = 8,
@@ -188,38 +143,44 @@ Theme.Metrics = {
 	Pad = 10,
 	PadLoose = 14,
 
-	-- Mobile: nothing interactive may sit above this line.
 	TopSafeZone = 60,
 	MinimapMobile = 64,
-	MinimapDesktop = 84,
+	MinimapDesktop = 180,
 
-	-- Mobile drawer. Tall is acceptable here: the drawer is transient, you open
-	-- it to choose a building and it closes again.
 	DrawerMaxHeight = 330,
 	CategoryRailHeight = 46,
-	ActionBarHeight = 46,
+	ActionBarHeight = 56,
 
-	-- Desktop bottom bar. DELIBERATELY MUCH SHORTER than the mobile drawer.
-	-- It was originally reusing DrawerMaxHeight (330px), but unlike the drawer
-	-- this bar is permanently on screen -- 330px is a third of a 1080p display
-	-- given up forever. The build grid is a compact single scrolling row instead
-	-- of a multi-row wall of large tiles.
-	BottomBarDesktop = 164,
-	BuildTileWidth = 132,
-	BuildTileHeight = 116,
+	BottomBarDesktop = 220,
+	BottomBarLeftCol = 200,
+	BottomBarRightCol = 120,
+	CategoryTabHeight = 48,
+	CommandBarHeight = 60,
+	BuildTileWidth = 160,
+	BuildTileHeight = 150,
 }
 
 -- ============================================================
 -- HELPERS
 -- ============================================================
 
---- Standard stroke for a panel edge. Returned as props rather than an
---- instance so callers stay declarative.
+--- Standard stroke for a panel edge. Explicitly sets ApplyStrokeMode to Border so text is never stroked.
 function Theme.strokeProps(strong: boolean?)
 	return {
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
 		Color = Theme.Color.Border,
 		Transparency = strong and Theme.Transparency.BorderStrong or Theme.Transparency.Border,
-		Thickness = 1,
+		Thickness = strong and 2 or 1.5,
+	}
+end
+
+--- Thicker gold Celtic border for prominent panels. Explicitly sets ApplyStrokeMode to Border.
+function Theme.celticStrokeProps()
+	return {
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Color = Theme.Color.Accent,
+		Transparency = 0.15,
+		Thickness = 2.5,
 	}
 end
 
@@ -227,9 +188,6 @@ function Theme.corner(radius: number?)
 	return UDim.new(0, radius or Theme.Metrics.Radius)
 end
 
--- The shared backdrop for full-screen menus. MainMenu owns this asset; the
--- lobby and post-game screens reference it here so the whole out-of-match flow
--- is visibly one place rather than three unrelated screens.
 Theme.MenuBackgroundImage = "rbxassetid://99876577284469"
 
 return Theme

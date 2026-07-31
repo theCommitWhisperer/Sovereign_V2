@@ -7,9 +7,13 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
 
--- Remote function for checking visibility
-local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
-local CheckVisibility = RemoteEvents:WaitForChild("CheckVisibility")
+-- Visibility used to be a blocking CheckVisibility:InvokeServer() per unit per
+-- refresh, from inside updateHealthBar. FogVisibility answers from a cache and
+-- never yields; when fog is off (the default) it is a single boolean read.
+local FogVisibility = require(ReplicatedStorage.Shared.FogVisibility)
+-- Idempotent; FogOfWarClient calls it too. Health bars must not depend on that
+-- module having loaded first.
+FogVisibility.start()
 
 local DebugManager = require(ReplicatedStorage.Shared.DebugManager)
 local HealthBarDebug = DebugManager.createChannel("HealthBar", false) -- Corrected to be off by default
@@ -145,7 +149,7 @@ local function updateHealthBar(unit: Model, billboard: BillboardGui)
 	end
 
 	-- Check if unit is visible (fog of war)
-	local isVisible = CheckVisibility:InvokeServer("Unit", unit)
+	local isVisible = FogVisibility.isVisible(unit)
 	local owner = unit:GetAttribute("OwnerId")
 
 	-- Always show health bars for own units, only show enemy bars if visible
